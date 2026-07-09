@@ -67,3 +67,4 @@ class TrainSearchResult:
 @dataclass(frozen=True)
 class HtmlPage:
     text: str
+    raw: str
