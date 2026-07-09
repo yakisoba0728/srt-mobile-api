@@ -11,6 +11,7 @@ class SrtSessionClient:
         self.current: SrtSession | None = None
 
     def login(self, login_id: str, password: str, *, login_type: str = "3") -> SrtSession:
+        self.clear_session()
         self.http.get_text("/login/login.do")
         response = self.http.post_form(
             "/apb/selectListApb01080_n.do",
@@ -32,8 +33,10 @@ class SrtSessionClient:
         )
         user_map = response.get("userMap")
         if not isinstance(user_map, dict):
+            self.clear_session()
             raise SrtProtocolError("SRT login response missing userMap")
         if user_map.get("RTNCD") != "Y":
+            self.clear_session()
             raise SrtAuthError(str(user_map.get("MSG") or "SRT login failed"))
         self.http.get_text("/main/main.do", params={"deviceId": self.http.config.device_key})
         self.http.get_text("/ara/ara0101v.do")

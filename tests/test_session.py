@@ -42,3 +42,66 @@ def test_login_failure_raises_auth_error(load_json_fixture):
         assert "로그인 실패" in str(exc)
     else:
         raise AssertionError("SrtAuthError was not raised")
+
+
+def test_failed_relogin_clears_existing_session_and_cookies(load_json_fixture):
+    responses = iter(
+        [
+            httpx.Response(200, text="<html>login</html>"),
+            httpx.Response(200, json=load_json_fixture("login_success.json")),
+            httpx.Response(200, text="<html>main</html>"),
+            httpx.Response(200, text="<html>booking</html>"),
+            httpx.Response(200, text="<html>login</html>"),
+            httpx.Response(200, json=load_json_fixture("login_failure.json")),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return next(responses)
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    client.login("login-id", "pw")
+    client.http.cookies.set("JSESSIONID", "stale")
+
+    try:
+        client.login("other-id", "bad")
+    except SrtAuthError:
+        pass
+    else:
+        raise AssertionError("SrtAuthError was not raised")
+
+    assert client.session.current is None
+    assert "JSESSIONID" not in client.http.cookies
+
+
+def test_clear_session_and_logout_clear_current_and_cookies(load_json_fixture):
+    responses = iter(
+        [
+            httpx.Response(200, text="<html>login</html>"),
+            httpx.Response(200, json=load_json_fixture("login_success.json")),
+            httpx.Response(200, text="<html>main</html>"),
+            httpx.Response(200, text="<html>booking</html>"),
+            httpx.Response(200, text="<html>login</html>"),
+            httpx.Response(200, json=load_json_fixture("login_success.json")),
+            httpx.Response(200, text="<html>main</html>"),
+            httpx.Response(200, text="<html>booking</html>"),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return next(responses)
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    client.login("login-id", "pw")
+    client.http.cookies.set("JSESSIONID", "keep")
+    client.clear_session()
+
+    assert client.session.current is None
+    assert "JSESSIONID" not in client.http.cookies
+
+    client.login("login-id", "pw")
+    client.http.cookies.set("JSESSIONID", "keep")
+    client.logout()
+
+    assert client.session.current is None
+    assert "JSESSIONID" not in client.http.cookies
