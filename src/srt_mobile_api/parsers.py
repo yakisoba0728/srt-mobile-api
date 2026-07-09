@@ -4,6 +4,7 @@ import re
 from html.parser import HTMLParser
 from typing import Any
 
+from .errors import SrtAppError
 from .models import TrainSearchResult, TrainSummary
 
 
@@ -43,6 +44,10 @@ def normalize_result_row(data: dict[str, Any]) -> dict[str, Any]:
 
 def parse_train_search_response(data: dict[str, Any]) -> TrainSearchResult:
     result = normalize_result_row(data)
+    result_code = str(result.get("msgCd") or "")
+    result_status = str(result.get("strResult") or "")
+    if result and result_status and result_status != "SUCC":
+        raise SrtAppError(result_code or None, str(result.get("msgTxt") or "") or None, raw=data)
     out = data.get("outDataSets") or {}
     rows = out.get("dsOutput1") if isinstance(out, dict) else []
     trains = []

@@ -28,4 +28,7 @@ def parse_netfunnel_response(body: str, *, action: str) -> NetFunnelToken:
         if "=" in item:
             key, val = item.split("=", 1)
             params[key] = val
-    return NetFunnelToken(action=action, key=params.get("key", ""), raw_type=raw_type, code=code, params=params)
+    key = params.get("key", "")
+    if not key:
+        raise SrtNetFunnelError("NetFunnel response did not include a non-empty key parameter")
+    return NetFunnelToken(action=action, key=key, raw_type=raw_type, code=code, params=params)
