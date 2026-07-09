@@ -7,6 +7,8 @@ def test_redact_mapping_masks_sensitive_values():
         "srchDvNm": "login-id",
         "hmpgPwdCphd": "password",
         "netfunnelKey": "NF",
+        "cookie": "abc",
+        "set-cookie": "def",
         "pnrNo": "123456789012",
         "safe": "value",
     }
@@ -14,6 +16,8 @@ def test_redact_mapping_masks_sensitive_values():
     assert redacted["srchDvNm"] == "[REDACTED]"
     assert redacted["hmpgPwdCphd"] == "[REDACTED]"
     assert redacted["netfunnelKey"] == "[REDACTED]"
+    assert redacted["cookie"] == "[REDACTED]"
+    assert redacted["set-cookie"] == "[REDACTED]"
     assert redacted["pnrNo"] == "[REDACTED]"
     assert redacted["safe"] == "value"
 

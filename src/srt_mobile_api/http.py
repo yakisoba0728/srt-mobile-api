@@ -5,6 +5,7 @@ from typing import Any, Mapping
 import httpx
 
 from .config import SrtConfig
+from .errors import SrtProtocolError
 from .errors import SrtTransportError
 
 
@@ -24,6 +25,24 @@ class SrtHttpClient:
 
     def close(self) -> None:
         self._client.close()
+
+    @staticmethod
+    def _is_json_content_type(content_type: str) -> bool:
+        return "json" in content_type.lower()
+
+    @staticmethod
+    def _expects_json(accept: str) -> bool:
+        return "json" in accept.lower()
+
+    @staticmethod
+    def _parse_json_object(response: httpx.Response) -> dict[str, Any]:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise SrtProtocolError("Expected JSON object but response body was not valid JSON") from exc
+        if not isinstance(payload, dict):
+            raise SrtProtocolError("Expected JSON object but received a non-object JSON payload")
+        return payload
 
     def get_text(
         self,
@@ -57,7 +76,7 @@ class SrtHttpClient:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise SrtTransportError(str(exc)) from exc
-        return response.json()
+        return self._parse_json_object(response)
 
     def post_form(
         self,
@@ -81,9 +100,6 @@ class SrtHttpClient:
         except httpx.HTTPError as exc:
             raise SrtTransportError(str(exc)) from exc
         content_type = response.headers.get("content-type", "")
-        if "json" in content_type:
-            return response.json()
-        try:
-            return response.json()
-        except ValueError:
-            return {"html": response.text}
+        if self._expects_json(accept) or self._is_json_content_type(content_type):
+            return self._parse_json_object(response)
+        return {"html": response.text}

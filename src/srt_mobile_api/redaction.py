@@ -5,14 +5,14 @@ from collections.abc import Mapping
 from typing import Any
 
 SENSITIVE_KEYS = {
-    "srchDvNm",
-    "hmpgPwdCphd",
+    "srchdvnm",
+    "hmpgpwdcphd",
     "password",
-    "Cookie",
-    "Set-Cookie",
-    "netfunnelKey",
+    "cookie",
+    "set-cookie",
+    "netfunnelkey",
     "key",
-    "pnrNo",
+    "pnrno",
 }
 
 CARD_RE = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
@@ -25,7 +25,7 @@ def redact_text(value: str) -> str:
 def redact_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
     redacted: dict[str, Any] = {}
     for key, value in data.items():
-        if key in SENSITIVE_KEYS:
+        if key.lower() in SENSITIVE_KEYS:
             redacted[key] = "[REDACTED]"
         elif isinstance(value, str):
             redacted[key] = redact_text(value)
