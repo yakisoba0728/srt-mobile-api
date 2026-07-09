@@ -46,3 +46,24 @@ card-shaped values in the repository. The smoke script reads credentials from
 environment variables and avoids valid reservation/payment authorization by
 default.
 
+## Python Package MVP
+
+This repository now contains an installable Python client package under `src/srt_mobile_api`.
+
+Default tests are offline:
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+Live smoke is opt-in and limited to login plus read/query calls:
+
+```bash
+export SRT_MOBILE_API_LIVE=1
+export SRT_LOGIN_ID="<login-id>"
+export SRT_LOGIN_PASSWORD="<password>"
+python -c "from srt_mobile_api.live import run_live_smoke_from_env; print(run_live_smoke_from_env())"
+```
+
+Reservation, payment, refund, cancellation, ARD, ATA, and native bridge flows are not implemented in this package version.
