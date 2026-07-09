@@ -78,6 +78,17 @@ class SrtHttpClient:
             raise SrtTransportError(str(exc)) from exc
         return self._parse_json_object(response)
 
+    def get_text_url(self, url: str, *, referer: str | None = None) -> str:
+        headers = {}
+        if referer:
+            headers["Referer"] = referer
+        try:
+            response = self._client.get(url, headers=headers)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise SrtTransportError(str(exc)) from exc
+        return response.text
+
     def post_form(
         self,
         path: str,
