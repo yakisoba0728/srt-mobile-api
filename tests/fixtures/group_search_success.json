@@ -1,0 +1,1 @@
+{"ErrorCode":"0","outDataSets":{"dsOutput0":{"msgCd":"IRG000000","strResult":"SUCC","qryCnqeCnt":"1"},"dsOutput1":[{"trnNo":"301","trnGpCd":"300","stlbTrnClsfCd":"17","runDt":"20260710","dptDt":"20260710","dptTm":"053000","arvDt":"20260710","arvTm":"080000","dptRsStnCd":"0551","arvRsStnCd":"0020"}]}}
