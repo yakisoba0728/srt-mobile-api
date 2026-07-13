@@ -44,8 +44,13 @@ external seat map are not callable.
 ## Verification
 
 - Final whole-feature review fix: the focused offline command covering mutual
-  verification, models, and redaction safety passed with `69 passed`. No full
-  suite, package build, or live request was run for this final secrecy fix.
+  verification, models, and redaction safety passed with `69 passed`.
+- Final controller verification after the secrecy fix: `243 passed, 1 skipped`;
+  wheel/sdist build, isolated wheel imports, the `routes=19`, `mutual=1`,
+  `netfunnel=1` boundary, and excluded-route scan all passed. The working tree
+  was clean with one normal worktree, no stash, and no remote.
+- The bounded live call was not repeated after the rendering-only secrecy fix;
+  no request behavior, route, live ordering, or bounded result field changed.
 - Prior Task 4 full offline suite: `242 passed, 1 skipped`; the only skip was
   the explicitly opted-in live-service test.
 - Prior Task 4 package build: `srt_mobile_api-0.1.0-py3-none-any.whl` and
