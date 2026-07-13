@@ -47,18 +47,49 @@ def test_mutual_parser_rejects_malformed_framing(payload):
         parse_mutual_verification_response(payload)
 
 
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"ErrorCode": "WRAPPER_ERR", "ErrorMsg": "wrapper failed"},
-        {"ErrorCode": "0", "outDataSets": {"dsOutput0": [{"msgCd": "OTHER", "msgTxt": "wrong code", "strResult": "SUCC", "mutMrkVrfCd": "code"}]}},
-        {"ErrorCode": "0", "outDataSets": {"dsOutput0": [{"msgCd": "IRZ000008", "msgTxt": "wrong status", "strResult": "FAIL", "mutMrkVrfCd": "code"}]}},
-    ],
-)
-def test_mutual_parser_classifies_wrapper_and_business_failures(payload):
+def test_mutual_parser_classifies_wrapper_failure():
+    payload = {"ErrorCode": "WRAPPER_ERR", "ErrorMsg": "wrapper failed"}
     with pytest.raises(SrtAppError) as exc_info:
         parse_mutual_verification_response(payload)
     assert exc_info.value.raw is payload
+
+
+@pytest.mark.parametrize(
+    ("message_code", "message", "status"),
+    [
+        ("OTHER", "wrong code", "SUCC"),
+        ("IRZ000008", "wrong status", "FAIL"),
+    ],
+)
+def test_mutual_parser_classifies_business_failures_without_leaking_raw_values(
+    message_code,
+    message,
+    status,
+):
+    verification_secret = "synthetic-mutual-verification-secret-6f4b0e9c"
+    raw_only_marker = "synthetic-mutual-raw-only-marker-a31d8c72"
+    payload = {
+        "ErrorCode": "0",
+        "outDataSets": {
+            "dsOutput0": [
+                {
+                    "msgCd": message_code,
+                    "msgTxt": message,
+                    "strResult": status,
+                    "mutMrkVrfCd": verification_secret,
+                }
+            ]
+        },
+        "syntheticRawOnlyMarker": raw_only_marker,
+    }
+
+    with pytest.raises(SrtAppError) as exc_info:
+        parse_mutual_verification_response(payload)
+
+    assert exc_info.value.raw is payload
+    for exception_text in (str(exc_info.value), repr(exc_info.value)):
+        assert verification_secret not in exception_text
+        assert raw_only_marker not in exception_text
 
 
 def test_client_sends_exact_empty_mutual_form_headers_and_referer(
@@ -74,6 +105,8 @@ def test_client_sends_exact_empty_mutual_form_headers_and_referer(
         )
 
     client = SrtClient(transport=httpx.MockTransport(handler))
+    configured_user_agent = client.config.user_agent
+    client.http.cookies.set("JSESSIONID", "synthetic-mutual-session-cookie")
     try:
         result = client.get_mutual_verification()
     finally:
@@ -95,6 +128,10 @@ def test_client_sends_exact_empty_mutual_form_headers_and_referer(
     assert request.headers["referer"] == (
         "https://app.srail.or.kr/ara/selectListAra10007_n.do"
     )
+    assert request.headers["cookie"] == (
+        "JSESSIONID=synthetic-mutual-session-cookie"
+    )
+    assert request.headers["user-agent"] == configured_user_agent
 
 
 def test_mutual_login_form_clears_session_and_cookies():

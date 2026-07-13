@@ -11,7 +11,7 @@ Last updated: 2026-07-13 KST
   isolated wheel import, exact static boundary, independent review, and bounded
   live gate all passed.
 - NetFunnel behavior remains unchanged, and physical seat selection remains a
-  separate safety-reviewed candidate rather than part of this package.
+  candidate requiring a separate safety review rather than part of this package.
 
 ## Implemented Public Operations
 
@@ -44,8 +44,10 @@ external seat map are not callable.
   `srt_mobile_api-0.1.0.tar.gz` built successfully.
 - Isolated wheel install/import: `MutualVerificationResult SrtClient` imported
   successfully from a fresh virtual environment.
-- Exact static boundary: `routes=19 mutual=1 netfunnel=1`; the excluded-route
-  pattern scan across `src/` and `scripts/` returned no matches.
+- Exact static boundary: the earlier checks established `routes=19` and
+  `netfunnel=1`; a separate exact-tuple sum assertion established
+  `mutual_route_count=1`. The excluded-route pattern scan across `src/` and
+  `scripts/` returned no matches.
 - Independent read-only review approved proceeding to the bounded live gate.
 - Bounded live result: `loggedIn=True`, `mainLoaded=True`,
   `bookingLoaded=True`, `selectorLoadedCount=6`, `noticeCount=1`,
@@ -74,9 +76,9 @@ remain outside the current core package.
 
 ## Next Candidate Phase
 
-Keep the physical seat-selection page as a separate safety-reviewed candidate
-because it is adjacent to reservation flow. Continue to exclude every mutation
-endpoint.
+Keep the physical seat-selection page as a candidate requiring a separate
+safety review because it is adjacent to reservation flow. Continue to exclude
+every mutation endpoint.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.
