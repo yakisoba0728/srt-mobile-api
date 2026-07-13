@@ -22,6 +22,7 @@ READ_ONLY_ROUTES = frozenset(
         ReadOnlyRoute("GET", "app", "/atc/selectListAtc14017_n.do"),
         ReadOnlyRoute("GET", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10007_n.do"),
+        ReadOnlyRoute("POST", "app", "/ara/selectListAra10130_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10082_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra12009_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra13010_n.do"),

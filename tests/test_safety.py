@@ -17,6 +17,7 @@ from srt_mobile_api.safety import READ_ONLY_ROUTES, assert_read_only_request
         ("GET", "/atc/selectListAtc14017_n.do"),
         ("GET", "/ara/selectListAra10007_n.do"),
         ("POST", "/ara/selectListAra10007_n.do"),
+        ("POST", "/ara/selectListAra10130_n.do"),
         ("POST", "/ara/selectListAra10082_n.do"),
         ("POST", "/ara/selectListAra12009_n.do"),
         ("POST", "/ara/selectListAra13010_n.do"),
@@ -88,7 +89,7 @@ def test_selector_policy_rejects_wrong_method_legacy_neighbor_and_seat_page(meth
 
 
 def test_route_registry_has_exact_expanded_size():
-    assert len(READ_ONLY_ROUTES) == 18
+    assert len(READ_ONLY_ROUTES) == 19
 
 
 @pytest.mark.parametrize(
@@ -102,3 +103,26 @@ def test_selector_policy_rejects_percent_encoded_allowed_paths(path):
     config = SrtConfig()
     with pytest.raises(SrtProtocolError):
         assert_read_only_request("POST", httpx.URL(f"{config.base_url}{path}"), config)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/ara/selectListAra10130_n.do"),
+        ("POST", "/ara/selectListAra10h01.do"),
+        ("POST", "/ara/%73electListAra10130_n.do"),
+        ("POST", "/ara/selectListAra10130_n.do/extra"),
+        ("POST", "/arc/selectListArc02012_n.do"),
+    ],
+)
+def test_mutual_policy_rejects_wrong_method_legacy_encoded_and_seat_neighbors(
+    method,
+    path,
+):
+    config = SrtConfig()
+    with pytest.raises(SrtProtocolError):
+        assert_read_only_request(
+            method,
+            httpx.URL(f"{config.base_url}{path}"),
+            config,
+        )

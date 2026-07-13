@@ -13,6 +13,7 @@ from .http import SrtHttpClient
 from .models import (
     FarePage,
     HtmlPage,
+    MutualVerificationResult,
     PassengerCounts,
     SearchPageState,
     SrtSession,
@@ -25,6 +26,7 @@ from .netfunnel import build_act10_url, parse_netfunnel_response
 from .parsers import (
     parse_fare_page,
     parse_html_page,
+    parse_mutual_verification_response,
     parse_notice_list_response,
     parse_search_page_state,
     parse_timetable_page,
@@ -185,6 +187,19 @@ class SrtClient:
                 train_group_selector_payload(train_group_code, train_group_name),
                 context="train group selector",
             )
+
+    def get_mutual_verification(self) -> MutualVerificationResult:
+        with self._session_guard():
+            data = self.http.post_form(
+                "/ara/selectListAra10130_n.do",
+                {},
+                accept="application/json, text/javascript, */*; q=0.01",
+                referer=(
+                    f"{self.config.base_url}"
+                    "/ara/selectListAra10007_n.do"
+                ),
+            )
+            return parse_mutual_verification_response(data)
 
     def _get_act10_key(self, referer: str) -> str:
         url = build_act10_url(

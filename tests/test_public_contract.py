@@ -18,6 +18,7 @@ def test_client_public_method_set_is_stable():
         "get_date_selector",
         "get_fare",
         "get_main",
+        "get_mutual_verification",
         "get_notice_list",
         "get_passenger_selector",
         "get_seat_option_selector",
@@ -97,3 +98,17 @@ def test_selector_method_signatures_are_stable():
     assert list(train_group_parameters) == ["self", "train_group_code", "train_group_name"]
     assert train_group_parameters["train_group_code"].default == "109"
     assert train_group_parameters["train_group_name"].default == "전체"
+
+
+def test_mutual_method_signature_type_and_export_are_stable():
+    from typing import get_type_hints
+
+    from srt_mobile_api import MutualVerificationResult
+
+    signature = inspect.signature(SrtClient.get_mutual_verification)
+    assert list(signature.parameters) == ["self"]
+    assert (
+        get_type_hints(SrtClient.get_mutual_verification)["return"]
+        is MutualVerificationResult
+    )
+    assert srt_mobile_api.MutualVerificationResult is MutualVerificationResult
