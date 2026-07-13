@@ -75,9 +75,17 @@ The live helper calls all six after booking-page hydration and reports only the
 bounded integer `selectorLoadedCount`; it never emits popup HTML or extracted
 popup text.
 
-These APIs select search-form preferences only. Mutual verification, the
-physical seat-selection page, reservation, payment, refund, cancellation,
-`act_19`, ATA/ARD, native bridges, and external seat maps remain excluded.
+These APIs select search-form preferences only. The physical seat-selection
+page, reservation, payment, refund, cancellation, `act_19`, ATA/ARD, native
+bridges, and external seat maps remain excluded.
+
+### Mutual verification
+
+`get_mutual_verification()` manually performs the evidenced empty-form mutual
+verification read and returns a repr-safe `MutualVerificationResult`. It is not
+called automatically by login or search and does not start seat selection or a
+reservation. The opted-in live helper calls it only after personal search and
+reports `mutualVerificationLoaded`, never the verification value or raw JSON.
 
 Live smoke is opt-in and limited to login plus read/query calls:
 

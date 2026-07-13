@@ -19,6 +19,8 @@ SENSITIVE_KEYS = frozenset(
         "netfunnelKey",
         "key",
         "pnrNo",
+        "mutMrkVrfCd",
+        "verification_code",
     }
 )
 CARD_RE = re.compile(r"\b(?:\d[ -]*?){13,19}\b")

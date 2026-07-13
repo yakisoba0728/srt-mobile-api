@@ -11,6 +11,7 @@ def test_read_only_live_smoke():
         pytest.skip("SRT live smoke requires explicit opt-in")
     result = run_live_smoke_from_env()
     assert result["loggedIn"] is True
+    assert result["mutualVerificationLoaded"] is True
     assert result["personalTrainCount"] >= 0
     assert result["groupTrainCount"] >= 0
     assert result["selectorLoadedCount"] == 6

@@ -18,6 +18,8 @@ def test_redact_mapping_masks_sensitive_values():
         "cookie": "abc",
         "set-cookie": "def",
         "pnrNo": "123456789012",
+        "mutMrkVrfCd": "server-secret",
+        "verification_code": "model-secret",
         "safe": "value",
     }
     redacted = redact_mapping(data)
@@ -27,6 +29,8 @@ def test_redact_mapping_masks_sensitive_values():
     assert redacted["cookie"] == "[REDACTED]"
     assert redacted["set-cookie"] == "[REDACTED]"
     assert redacted["pnrNo"] == "[REDACTED]"
+    assert redacted["mutMrkVrfCd"] == "[REDACTED]"
+    assert redacted["verification_code"] == "[REDACTED]"
     assert redacted["safe"] == "value"
 
 
@@ -63,14 +67,36 @@ def test_recursive_redaction_is_case_insensitive():
             "outer": [
                 {
                     "HMPGPWDCphd": "password-secret",
+                    "MUTMRKVRFCD": "server-secret",
+                    "VERIFICATION_CODE": "model-secret",
                     "url": "https://host/path?netfunnelKey=key-secret&safe=1",
                 }
             ]
         }
     )
     assert redacted["outer"][0]["HMPGPWDCphd"] == "[REDACTED]"
+    assert redacted["outer"][0]["MUTMRKVRFCD"] == "[REDACTED]"
+    assert redacted["outer"][0]["VERIFICATION_CODE"] == "[REDACTED]"
     assert "key-secret" not in redacted["outer"][0]["url"]
     assert "safe=1" in redacted["outer"][0]["url"]
+
+
+def test_mutual_verification_names_are_redacted_everywhere():
+    redacted = redact_mapping(
+        {
+            "mutMrkVrfCd": "server-secret",
+            "VERIFICATION_CODE": "model-secret",
+        }
+    )
+    assert redacted == {
+        "mutMrkVrfCd": "[REDACTED]",
+        "VERIFICATION_CODE": "[REDACTED]",
+    }
+    rendered = redact_text(
+        'mutMrkVrfCd="server-secret" verification_code=model-secret'
+    )
+    assert "server-secret" not in rendered
+    assert "model-secret" not in rendered
 
 
 def test_redaction_handles_urls_sessions_tuples_and_dataclasses():

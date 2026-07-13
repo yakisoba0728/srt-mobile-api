@@ -13,6 +13,7 @@ from srt_mobile_api.models import (
     FareItem,
     FarePage,
     HtmlPage,
+    MutualVerificationResult,
     SrtSession,
     TimetablePage,
     TimetableRow,
@@ -66,6 +67,12 @@ def test_live_result_contains_counts_not_ticket_text():
     client.get_notice_list.return_value = {"noticeList": [{"title": "notice"}]}
     client.get_ticket_list.return_value = HtmlPage(text="ticket", raw="<html>ticket</html>")
     client.search_trains.return_value = TrainSearchResult(trains=[train], result={}, raw={})
+    client.get_mutual_verification.return_value = MutualVerificationResult(
+        message_code="IRZ000008",
+        status="SUCC",
+        verification_code="mutual-secret",
+        raw={"mutMrkVrfCd": "mutual-secret"},
+    )
     client.search_group_trains.return_value = TrainSearchResult(trains=[train], result={}, raw={})
     client.get_timetable.return_value = TimetablePage(
         text="06:00",
@@ -97,12 +104,14 @@ def test_live_result_contains_counts_not_ticket_text():
         "noticeCount",
         "ticketPageLoaded",
         "personalTrainCount",
+        "mutualVerificationLoaded",
         "groupTrainCount",
         "timetableRowCount",
         "fareItemCount",
         "selectorLoadedCount",
     }
     assert result["selectorLoadedCount"] == 5
+    assert result["mutualVerificationLoaded"] is True
     assert "text" not in repr(result).lower()
     assert "raw" not in result
     for method_name in (
@@ -118,6 +127,7 @@ def test_live_result_contains_counts_not_ticket_text():
         "get_notice_list",
         "get_ticket_list",
         "search_trains",
+        "get_mutual_verification",
         "search_group_trains",
         "get_timetable",
         "get_fare",
@@ -131,6 +141,14 @@ def test_live_result_contains_counts_not_ticket_text():
     method_order = [call[0] for call in client.method_calls]
     assert method_order.index("get_booking_page") < method_order.index("get_station_selector")
     assert method_order.index("get_train_group_selector") < method_order.index("search_trains")
+    assert method_order.index("search_trains") < method_order.index(
+        "get_mutual_verification"
+    )
+    assert method_order.index("get_mutual_verification") < method_order.index(
+        "search_group_trains"
+    )
+    assert "mutual-secret" not in repr(result)
+    assert "mutMrkVrfCd" not in repr(result)
 
 
 def test_live_from_env_requires_explicit_test_date(monkeypatch):

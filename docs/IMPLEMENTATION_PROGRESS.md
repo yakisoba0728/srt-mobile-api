@@ -4,12 +4,13 @@ Last updated: 2026-07-13 KST
 
 ## Current State
 
-- The six-selector implementation plus offline, build, and isolated-import
-  verification are complete.
-- The bounded live completion gate passed with a one-off future
-  `SRT_TEST_DATE`; no credential file change was required.
-- The selector expansion phase is complete and committed on `main` by the
-  finalization commit containing this document.
+- The manual mutual-verification method and repr-safe result are implemented.
+- The transport boundary now allows 19 exact app/NetFunnel routes while every
+  mutation route remains excluded.
+- Task-focused offline redaction and live-helper tests pass, and the live-service
+  test remains an explicit offline skip.
+- The full offline suite, package build, isolated-import check, and bounded live
+  gate for this phase remain pending.
 
 ## Implemented Public Operations
 
@@ -19,6 +20,7 @@ Last updated: 2026-07-13 KST
 - Ticket-list page read
 - Personal train search
 - Group train search
+- Manual mutual-verification read
 - Timetable read with structured rows
 - Fare read with structured items and six passenger slots
 - NetFunnel `act_10` acquisition, parsing, and one fresh-key retry
@@ -29,22 +31,18 @@ Last updated: 2026-07-13 KST
 - Seat-option preference selector popup read
 - Train-group selector popup read
 
-The transport currently allows 18 exact app/NetFunnel routes. Reservation,
+The transport currently allows 19 exact app/NetFunnel routes. Reservation,
 `act_19`, payment, cancellation, refund, ATA/ARD flows, native bridges, and the
 external seat map are not callable.
 
 ## Verification
 
-- Offline tests: `216 passed, 1 skipped`
-- Wheel and sdist build: passed
-- Fresh-venv wheel install/import: passed
-- Full bounded read-only live smoke with the provided account: passed
-- Selector-expansion live gate: all six selector popup reads passed
-- Live reads: main, booking page, one notice, ticket page, 10 personal trains,
-  10 group trains, 7 timetable rows, and 9 fare items
-- Live summary reported `selectorLoadedCount: 6`
-- Adult plus child passenger mapping was exercised against the live fare page
-- Live NetFunnel `5002:200` response framing is covered by a sanitized fixture
+- Task-focused redaction/live-helper tests: `16 passed`
+- Live-service test with live opt-in removed: `1 skipped` intentionally
+- The prior selector phase completed its full offline suite, wheel/sdist build,
+  isolated wheel import, and bounded live smoke.
+- This mutual-verification phase still requires the full suite, package build,
+  isolated-import check, and bounded live gate.
 
 The local credential file remains ignored and is not tracked. No credential,
 cookie, session token, NetFunnel key, or raw personal response is stored.
@@ -54,20 +52,17 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
 - Documented endpoint-matrix entries: 38, including runtime, static, helper,
   excluded, and repeated failure scenarios
 - Runtime-success entries: 19
-- Currently implemented underlying routes: 18, including NetFunnel `act_10`
+- Currently implemented underlying routes: 19, including NetFunnel `act_10`
 - Therefore the complete documented endpoint matrix is not yet implemented
 
-Runtime-success read candidates still outside the package are mutual
-verification and the seat-selection page. Static aliases, reservation
-execution, payment handoff, and native integrations remain outside the current
-core package.
+The runtime-success seat-selection page remains outside the package. Static
+aliases, reservation execution, payment handoff, and native integrations also
+remain outside the current core package.
 
 ## Next Candidate Phase
 
-Evaluate mutual verification as a separate read-only phase with its own exact
-request evidence, safety review, offline tests, and bounded live gate. Keep the
-physical seat-selection page separate because it is adjacent to reservation
-flow and needs an explicit safety review. Continue to exclude every mutation
+Keep the physical seat-selection page as a separate safety-reviewed candidate
+because it is adjacent to reservation flow. Continue to exclude every mutation
 endpoint.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the

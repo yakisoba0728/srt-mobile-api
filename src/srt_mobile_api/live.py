@@ -48,6 +48,7 @@ def run_live_smoke(
     notices = client.get_notice_list()
     tickets = client.get_ticket_list()
     personal = client.search_trains(query)
+    mutual = client.get_mutual_verification()
     group = client.search_group_trains(query)
     timetable = client.get_timetable(personal.trains[0]) if personal.trains else None
     fare = client.get_fare(personal.trains[0], query.passengers) if personal.trains else None
@@ -58,6 +59,7 @@ def run_live_smoke(
         "noticeCount": len(notices["noticeList"]),
         "ticketPageLoaded": bool(tickets.text),
         "personalTrainCount": len(personal.trains),
+        "mutualVerificationLoaded": bool(mutual.verification_code),
         "groupTrainCount": len(group.trains),
         "timetableRowCount": len(timetable.rows) if timetable else 0,
         "fareItemCount": len(fare.items) if fare else 0,
