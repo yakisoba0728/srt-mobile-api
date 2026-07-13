@@ -97,6 +97,5 @@ every mutation endpoint.
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.
 
-The parent handoff must be refreshed after the final reviewed SRT and KORAIL
-heads are both available. This repository records that requirement without
-editing the parent handoff file.
+The shared parent handoff was refreshed after the final reviewed SRT and KORAIL
+heads and final verification counts became available.
