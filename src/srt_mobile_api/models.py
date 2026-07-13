@@ -100,6 +100,15 @@ class TrainSearchResult:
 
 
 @dataclass(frozen=True)
+class MutualVerificationResult:
+    message_code: str
+    status: str
+    message: str = ""
+    verification_code: str = field(default="", repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
 class HtmlPage:
     text: str = field(repr=False)
     raw: str = field(repr=False)

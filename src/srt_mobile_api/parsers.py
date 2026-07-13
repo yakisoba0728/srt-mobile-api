@@ -11,6 +11,7 @@ from .models import (
     FareItem,
     FarePage,
     HtmlPage,
+    MutualVerificationResult,
     SearchPageState,
     TimetablePage,
     TimetableRow,
@@ -220,6 +221,72 @@ def normalize_result_row(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(out, dict) and "dsOutput0" in out:
         return _first_row(out.get("dsOutput0"))
     return _first_row(data.get("resultMap"))
+
+
+def parse_mutual_verification_response(
+    data: dict[str, Any],
+) -> MutualVerificationResult:
+    if not isinstance(data, dict):
+        raise SrtProtocolError(
+            "SRT mutual verification response must be a JSON object"
+        )
+    wrapper_code = data.get("ErrorCode", "")
+    wrapper_message = data.get("ErrorMsg", "")
+    if not isinstance(wrapper_code, str):
+        raise SrtProtocolError(
+            "SRT mutual verification ErrorCode must be a string"
+        )
+    if not isinstance(wrapper_message, str):
+        raise SrtProtocolError(
+            "SRT mutual verification ErrorMsg must be a string"
+        )
+    if wrapper_code not in {"", "0"}:
+        raise SrtAppError(wrapper_code, wrapper_message, raw=data)
+
+    datasets = data.get("outDataSets")
+    if not isinstance(datasets, dict):
+        raise SrtProtocolError(
+            "SRT mutual verification response missing outDataSets"
+        )
+    value = datasets.get("dsOutput0")
+    if isinstance(value, list):
+        if len(value) != 1 or not isinstance(value[0], dict):
+            raise SrtProtocolError(
+                "SRT mutual verification dsOutput0 must contain one object"
+            )
+        row = value[0]
+    elif isinstance(value, dict):
+        row = value
+    else:
+        raise SrtProtocolError(
+            "SRT mutual verification response missing dsOutput0 object"
+        )
+
+    code = row.get("msgCd")
+    status = row.get("strResult")
+    message = row.get("msgTxt", "")
+    verification_code = row.get("mutMrkVrfCd")
+    if not isinstance(code, str) or not isinstance(status, str):
+        raise SrtProtocolError(
+            "SRT mutual verification code and status must be strings"
+        )
+    if not isinstance(message, str):
+        raise SrtProtocolError(
+            "SRT mutual verification message must be a string"
+        )
+    if code != "IRZ000008" or status != "SUCC":
+        raise SrtAppError(code or None, message or status, raw=data)
+    if not isinstance(verification_code, str) or not verification_code.strip():
+        raise SrtProtocolError(
+            "SRT mutual verification mutMrkVrfCd must be a non-empty string"
+        )
+    return MutualVerificationResult(
+        message_code=code,
+        status=status,
+        message=message,
+        verification_code=verification_code,
+        raw=data,
+    )
 
 
 def parse_train_search_response(data: dict[str, Any]) -> TrainSearchResult:

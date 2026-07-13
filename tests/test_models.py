@@ -1,4 +1,4 @@
-from dataclasses import fields, is_dataclass
+from dataclasses import FrozenInstanceError, fields, is_dataclass
 
 import pytest
 
@@ -15,6 +15,7 @@ from srt_mobile_api.models import (
     FareItem,
     FarePage,
     HtmlPage,
+    MutualVerificationResult,
     NetFunnelToken,
     PassengerCounts,
     SrtSession,
@@ -263,3 +264,16 @@ def test_html_page_has_text_and_raw_fields():
     assert page.raw == "<html></html>"
     TimetablePage,
     TimetableRow,
+
+
+def test_mutual_verification_model_is_frozen_and_repr_safe():
+    value = MutualVerificationResult(
+        message_code="IRZ000008",
+        status="SUCC",
+        verification_code="mutual-secret",
+        raw={"mutMrkVrfCd": "mutual-secret"},
+    )
+    assert is_dataclass(value)
+    assert "mutual-secret" not in repr(value)
+    with pytest.raises(FrozenInstanceError):
+        value.status = "FAIL"
