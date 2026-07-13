@@ -7,10 +7,11 @@ Last updated: 2026-07-13 KST
 - The manual mutual-verification method and repr-safe result are implemented.
 - The transport boundary now allows 19 exact app/NetFunnel routes while every
   mutation route remains excluded.
-- Task-focused offline redaction and live-helper tests pass, and the live-service
-  test remains an explicit offline skip.
-- The full offline suite, package build, isolated-import check, and bounded live
-  gate for this phase remain pending.
+- Task 4 verification is complete: the full offline suite, package build,
+  isolated wheel import, exact static boundary, independent review, and bounded
+  live gate all passed.
+- NetFunnel behavior remains unchanged, and physical seat selection remains a
+  separate safety-reviewed candidate rather than part of this package.
 
 ## Implemented Public Operations
 
@@ -37,12 +38,24 @@ external seat map are not callable.
 
 ## Verification
 
-- Task-focused redaction/live-helper tests: `16 passed`
-- Live-service test with live opt-in removed: `1 skipped` intentionally
-- The prior selector phase completed its full offline suite, wheel/sdist build,
-  isolated wheel import, and bounded live smoke.
-- This mutual-verification phase still requires the full suite, package build,
-  isolated-import check, and bounded live gate.
+- Full offline suite: `242 passed, 1 skipped`; the only skip was the explicitly
+  opted-in live-service test.
+- Package build: `srt_mobile_api-0.1.0-py3-none-any.whl` and
+  `srt_mobile_api-0.1.0.tar.gz` built successfully.
+- Isolated wheel install/import: `MutualVerificationResult SrtClient` imported
+  successfully from a fresh virtual environment.
+- Exact static boundary: `routes=19 mutual=1 netfunnel=1`; the excluded-route
+  pattern scan across `src/` and `scripts/` returned no matches.
+- Independent read-only review approved proceeding to the bounded live gate.
+- Bounded live result: `loggedIn=True`, `mainLoaded=True`,
+  `bookingLoaded=True`, `selectorLoadedCount=6`, `noticeCount=1`,
+  `ticketPageLoaded=True`, `personalTrainCount=10`,
+  `mutualVerificationLoaded=True`, `groupTrainCount=10`,
+  `timetableRowCount=7`, and `fareItemCount=9`.
+- NetFunnel remains the single unchanged `act_10` read-only route with its
+  existing acquisition, parsing, and one-fresh-key retry behavior.
+- Physical seat selection continues to require its own separate safety review
+  before any implementation or live verification.
 
 The local credential file remains ignored and is not tracked. No credential,
 cookie, session token, NetFunnel key, or raw personal response is stored.
