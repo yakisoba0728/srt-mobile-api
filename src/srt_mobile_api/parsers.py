@@ -241,7 +241,11 @@ def parse_mutual_verification_response(
             "SRT mutual verification ErrorMsg must be a string"
         )
     if wrapper_code not in {"", "0"}:
-        raise SrtAppError(wrapper_code, wrapper_message, raw=data)
+        raise SrtAppError(
+            wrapper_code,
+            "SRT mutual verification request failed",
+            raw=data,
+        )
 
     datasets = data.get("outDataSets")
     if not isinstance(datasets, dict):
@@ -275,7 +279,11 @@ def parse_mutual_verification_response(
             "SRT mutual verification message must be a string"
         )
     if code != "IRZ000008" or status != "SUCC":
-        raise SrtAppError(code or None, message or status, raw=data)
+        raise SrtAppError(
+            code or None,
+            "SRT mutual verification failed",
+            raw=data,
+        )
     if not isinstance(verification_code, str) or not verification_code.strip():
         raise SrtProtocolError(
             "SRT mutual verification mutMrkVrfCd must be a non-empty string"

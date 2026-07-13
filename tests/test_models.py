@@ -270,10 +270,12 @@ def test_mutual_verification_model_is_frozen_and_repr_safe():
     value = MutualVerificationResult(
         message_code="IRZ000008",
         status="SUCC",
+        message="mutual-secret",
         verification_code="mutual-secret",
         raw={"mutMrkVrfCd": "mutual-secret"},
     )
     assert is_dataclass(value)
+    assert value.message == "mutual-secret"
     assert "mutual-secret" not in repr(value)
     with pytest.raises(FrozenInstanceError):
         value.status = "FAIL"

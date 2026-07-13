@@ -103,7 +103,7 @@ class TrainSearchResult:
 class MutualVerificationResult:
     message_code: str
     status: str
-    message: str = ""
+    message: str = field(default="", repr=False)
     verification_code: str = field(default="", repr=False)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 

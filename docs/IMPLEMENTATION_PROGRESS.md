@@ -5,11 +5,16 @@ Last updated: 2026-07-13 KST
 ## Current State
 
 - The manual mutual-verification method and repr-safe result are implemented.
+- Final whole-feature review hardening keeps the successful result's server
+  message, verification code, and raw response out of `repr()` while leaving
+  each value caller-accessible. Wrapper and business `SrtAppError` rendering
+  now uses fixed local messages; the original response remains available via
+  the repr-hidden `raw` attribute.
 - The transport boundary now allows 19 exact app/NetFunnel routes while every
   mutation route remains excluded.
-- Task 4 verification is complete: the full offline suite, package build,
-  isolated wheel import, exact static boundary, independent review, and bounded
-  live gate all passed.
+- The prior Task 4 verification gate remains recorded: its full offline suite,
+  package build, isolated wheel import, exact static boundary, independent
+  review, and bounded live gate all passed.
 - NetFunnel behavior remains unchanged, and physical seat selection remains a
   candidate requiring a separate safety review rather than part of this package.
 
@@ -38,18 +43,22 @@ external seat map are not callable.
 
 ## Verification
 
-- Full offline suite: `242 passed, 1 skipped`; the only skip was the explicitly
-  opted-in live-service test.
-- Package build: `srt_mobile_api-0.1.0-py3-none-any.whl` and
+- Final whole-feature review fix: the focused offline command covering mutual
+  verification, models, and redaction safety passed with `69 passed`. No full
+  suite, package build, or live request was run for this final secrecy fix.
+- Prior Task 4 full offline suite: `242 passed, 1 skipped`; the only skip was
+  the explicitly opted-in live-service test.
+- Prior Task 4 package build: `srt_mobile_api-0.1.0-py3-none-any.whl` and
   `srt_mobile_api-0.1.0.tar.gz` built successfully.
-- Isolated wheel install/import: `MutualVerificationResult SrtClient` imported
-  successfully from a fresh virtual environment.
-- Exact static boundary: the earlier checks established `routes=19` and
-  `netfunnel=1`; a separate exact-tuple sum assertion established
-  `mutual_route_count=1`. The excluded-route pattern scan across `src/` and
-  `scripts/` returned no matches.
-- Independent read-only review approved proceeding to the bounded live gate.
-- Bounded live result: `loggedIn=True`, `mainLoaded=True`,
+- Prior Task 4 isolated wheel install/import: `MutualVerificationResult
+  SrtClient` imported successfully from a fresh virtual environment.
+- Prior Task 4 exact static boundary: the earlier checks established
+  `routes=19` and `netfunnel=1`; a separate exact-tuple sum assertion
+  established `mutual_route_count=1`. The excluded-route pattern scan across
+  `src/` and `scripts/` returned no matches.
+- Prior independent read-only review approved proceeding to the bounded live
+  gate.
+- Prior bounded live result: `loggedIn=True`, `mainLoaded=True`,
   `bookingLoaded=True`, `selectorLoadedCount=6`, `noticeCount=1`,
   `ticketPageLoaded=True`, `personalTrainCount=10`,
   `mutualVerificationLoaded=True`, `groupTrainCount=10`,
@@ -82,3 +91,7 @@ every mutation endpoint.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.
+
+The parent handoff must be refreshed after the final reviewed SRT and KORAIL
+heads are both available. This repository records that requirement without
+editing the parent handoff file.

@@ -27,6 +27,30 @@ def test_mutual_parser_accepts_evidenced_list_and_object_rows(
     assert "fixture-mutual-code" not in repr(result)
 
 
+def test_mutual_parser_hides_verification_value_repeated_in_success_message():
+    verification_secret = "synthetic-mutual-success-secret-72f530b1"
+    payload = {
+        "ErrorCode": "0",
+        "ErrorMsg": "",
+        "outDataSets": {
+            "dsOutput0": [
+                {
+                    "msgCd": "IRZ000008",
+                    "msgTxt": verification_secret,
+                    "strResult": "SUCC",
+                    "mutMrkVrfCd": verification_secret,
+                }
+            ]
+        },
+    }
+
+    result = parse_mutual_verification_response(payload)
+
+    assert result.message == verification_secret
+    assert result.verification_code == verification_secret
+    assert verification_secret not in repr(result)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -48,10 +72,18 @@ def test_mutual_parser_rejects_malformed_framing(payload):
 
 
 def test_mutual_parser_classifies_wrapper_failure():
-    payload = {"ErrorCode": "WRAPPER_ERR", "ErrorMsg": "wrapper failed"}
+    verification_secret = "synthetic-mutual-wrapper-secret-573ac90e"
+    raw_only_marker = "synthetic-mutual-wrapper-raw-marker-24c916bd"
+    payload = {
+        "ErrorCode": "WRAPPER_ERR",
+        "ErrorMsg": f"wrapper failed {verification_secret} {raw_only_marker}",
+    }
     with pytest.raises(SrtAppError) as exc_info:
         parse_mutual_verification_response(payload)
     assert exc_info.value.raw is payload
+    for exception_text in (str(exc_info.value), repr(exc_info.value)):
+        assert verification_secret not in exception_text
+        assert raw_only_marker not in exception_text
 
 
 @pytest.mark.parametrize(
@@ -74,7 +106,7 @@ def test_mutual_parser_classifies_business_failures_without_leaking_raw_values(
             "dsOutput0": [
                 {
                     "msgCd": message_code,
-                    "msgTxt": message,
+                    "msgTxt": f"{message} {verification_secret} {raw_only_marker}",
                     "strResult": status,
                     "mutMrkVrfCd": verification_secret,
                 }
