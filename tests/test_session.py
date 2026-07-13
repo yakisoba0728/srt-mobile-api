@@ -1,7 +1,8 @@
 import httpx
+import pytest
 
 from srt_mobile_api import SrtClient, SrtConfig
-from srt_mobile_api.errors import SrtAuthError
+from srt_mobile_api.errors import SrtApiError, SrtAuthError
 
 
 def test_login_flow_posts_expected_fields(load_json_fixture):
@@ -103,5 +104,36 @@ def test_clear_session_and_logout_clear_current_and_cookies(load_json_fixture):
     client.http.cookies.set("JSESSIONID", "keep")
     client.logout()
 
+    assert client.session.current is None
+    assert "JSESSIONID" not in client.http.cookies
+
+
+@pytest.mark.parametrize(
+    "failure_path",
+    [
+        "/login/login.do",
+        "/apb/selectListApb01080_n.do",
+        "/main/main.do",
+        "/ara/ara0101v.do",
+    ],
+)
+def test_login_rolls_back_cookie_and_current_on_every_step(failure_path, load_json_fixture):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == failure_path:
+            return httpx.Response(503, text="failed")
+        if request.url.path == "/login/login.do":
+            return httpx.Response(200, text="<html>login</html>")
+        if request.url.path == "/apb/selectListApb01080_n.do":
+            return httpx.Response(
+                200,
+                json=load_json_fixture("login_success.json"),
+                headers={"Set-Cookie": "JSESSIONID=new-cookie; Path=/"},
+            )
+        return httpx.Response(200, text="<html>ok</html>")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    client.http.cookies.set("JSESSIONID", "old-cookie")
+    with pytest.raises(SrtApiError):
+        client.login("login-id", "pw")
     assert client.session.current is None
     assert "JSESSIONID" not in client.http.cookies

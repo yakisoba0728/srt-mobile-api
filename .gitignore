@@ -2,6 +2,7 @@
 /build/
 /srt.apk
 /.worktrees/
+/.local-live-smoke.env
 __pycache__/
 *.py[cod]
 *.egg-info/
