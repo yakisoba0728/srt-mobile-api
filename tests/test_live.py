@@ -4,6 +4,8 @@ import pytest
 
 from srt_mobile_api import SrtClient
 from srt_mobile_api.live import (
+    _embedded_seat_inventory_candidate_present,
+    _first_complete_srt_seat_train,
     live_enabled,
     read_credentials_from_env,
     run_live_smoke,
@@ -14,6 +16,7 @@ from srt_mobile_api.models import (
     FarePage,
     HtmlPage,
     MutualVerificationResult,
+    SeatSelectionPage,
     SrtSession,
     TimetablePage,
     TimetableRow,
@@ -45,8 +48,13 @@ def test_live_result_contains_counts_not_ticket_text():
         train_group_code="300",
         service_class_code="17",
         run_date="20260710",
+        departure_date="20260710",
+        departure_time="060000",
         departure_station_code="0551",
         arrival_station_code="0020",
+        departure_run_order="000001",
+        arrival_run_order="000010",
+        seat_attr_code="015",
         departure_station_name="수서",
         arrival_station_name="부산",
     )
@@ -67,6 +75,14 @@ def test_live_result_contains_counts_not_ticket_text():
     client.get_notice_list.return_value = {"noticeList": [{"title": "notice"}]}
     client.get_ticket_list.return_value = HtmlPage(text="ticket", raw="<html>ticket</html>")
     client.search_trains.return_value = TrainSearchResult(trains=[train], result={}, raw={})
+    client.get_seat_page.return_value = SeatSelectionPage(
+        text="좌석선택",
+        raw=(
+            "<html><body><h1>좌석선택</h1>"
+            "<script>const map='https://www.korail.com/ticket/search/list?srtJob=seatmap';"
+            "</script></body></html>"
+        ),
+    )
     client.get_mutual_verification.return_value = MutualVerificationResult(
         message_code="IRZ000008",
         status="SUCC",
@@ -104,6 +120,10 @@ def test_live_result_contains_counts_not_ticket_text():
         "noticeCount",
         "ticketPageLoaded",
         "personalTrainCount",
+        "seatPageLoaded",
+        "seatSelectionMarkerPresent",
+        "externalSeatMapHandoffPresent",
+        "embeddedSeatInventoryCandidatePresent",
         "mutualVerificationLoaded",
         "groupTrainCount",
         "timetableRowCount",
@@ -112,6 +132,10 @@ def test_live_result_contains_counts_not_ticket_text():
     }
     assert result["selectorLoadedCount"] == 5
     assert result["mutualVerificationLoaded"] is True
+    assert result["seatPageLoaded"] is True
+    assert result["seatSelectionMarkerPresent"] is True
+    assert result["externalSeatMapHandoffPresent"] is True
+    assert result["embeddedSeatInventoryCandidatePresent"] is False
     assert "text" not in repr(result).lower()
     assert "raw" not in result
     for method_name in (
@@ -127,6 +151,7 @@ def test_live_result_contains_counts_not_ticket_text():
         "get_notice_list",
         "get_ticket_list",
         "search_trains",
+        "get_seat_page",
         "get_mutual_verification",
         "search_group_trains",
         "get_timetable",
@@ -142,6 +167,9 @@ def test_live_result_contains_counts_not_ticket_text():
     assert method_order.index("get_booking_page") < method_order.index("get_station_selector")
     assert method_order.index("get_train_group_selector") < method_order.index("search_trains")
     assert method_order.index("search_trains") < method_order.index(
+        "get_seat_page"
+    )
+    assert method_order.index("get_seat_page") < method_order.index(
         "get_mutual_verification"
     )
     assert method_order.index("get_mutual_verification") < method_order.index(
@@ -149,6 +177,44 @@ def test_live_result_contains_counts_not_ticket_text():
     )
     assert "mutual-secret" not in repr(result)
     assert "mutMrkVrfCd" not in repr(result)
+    client.get_seat_page.assert_called_once_with(train)
+    assert "korail.com" not in repr(result)
+
+
+def test_first_complete_srt_seat_train_does_not_fallback_or_read_raw():
+    complete = TrainSummary(
+        train_no="303",
+        train_group_code="300",
+        run_date="20260710",
+        departure_date="20260710",
+        departure_time="060000",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+        departure_run_order="000001",
+        arrival_run_order="000010",
+        seat_attr_code="015",
+        raw={"must_not_be_read": object()},
+    )
+    trains = [
+        TrainSummary("101", train_group_code="900"),
+        TrainSummary("301", train_group_code="300"),
+        complete,
+        TrainSummary("305", train_group_code="300"),
+    ]
+
+    assert _first_complete_srt_seat_train(trains) is complete
+
+
+def test_embedded_inventory_probe_uses_structure_without_returning_it():
+    page = SeatSelectionPage(
+        text="좌석선택",
+        raw=(
+            '<div class="seat available"></div>'
+            '<button data-seat-no="SYNTHETIC"></button>'
+        ),
+    )
+
+    assert _embedded_seat_inventory_candidate_present(page) is True
 
 
 def test_live_from_env_requires_explicit_test_date(monkeypatch):

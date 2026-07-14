@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Sequence
+from html.parser import HTMLParser
 from typing import Any
 
 from .client import SrtClient
 from .config import SrtConfig
-from .models import PassengerCounts, TrainSearchQuery
+from .models import PassengerCounts, SeatSelectionPage, TrainSearchQuery, TrainSummary
 from .payloads import TRAIN_GROUP_OPTIONS
 
 
@@ -19,6 +22,73 @@ def read_credentials_from_env() -> tuple[str, str]:
     if not login_id or not password:
         raise RuntimeError("SRT_LOGIN_ID and SRT_LOGIN_PASSWORD are required for live smoke")
     return login_id, password
+
+
+def _first_complete_srt_seat_train(
+    trains: Sequence[TrainSummary],
+) -> TrainSummary | None:
+    for train in trains:
+        required = (
+            train.train_no,
+            train.run_date,
+            train.departure_date,
+            train.departure_time,
+            train.departure_station_code,
+            train.arrival_station_code,
+            train.departure_run_order,
+            train.arrival_run_order,
+            train.seat_attr_code,
+        )
+        if train.train_group_code == "300" and all(
+            isinstance(value, str) and bool(value) for value in required
+        ):
+            return train
+    return None
+
+
+def _external_seat_map_handoff_present(page: SeatSelectionPage | None) -> bool:
+    if page is None:
+        return False
+    raw_lower = page.raw.casefold()
+    return "korail.com" in raw_lower and "srtjob=seatmap" in raw_lower
+
+
+SEAT_IDENTIFIER_RE = re.compile(
+    r"(?:^|[\s_-])(?:seat|scar)(?:[\s_-]|$)",
+    re.IGNORECASE,
+)
+
+
+class _EmbeddedSeatInventoryProbe(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.candidate_count = 0
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag.casefold() in {"a", "form", "input", "script", "style"}:
+            return
+        values = {name.casefold(): value or "" for name, value in attrs}
+        identifiers = f"{values.get('id', '')} {values.get('class', '')}"
+        has_seat_data_attribute = any(
+            name.casefold().startswith("data-") and "seat" in name.casefold()
+            for name, _value in attrs
+        )
+        if has_seat_data_attribute or SEAT_IDENTIFIER_RE.search(identifiers):
+            self.candidate_count += 1
+
+
+def _embedded_seat_inventory_candidate_present(
+    page: SeatSelectionPage | None,
+) -> bool:
+    if page is None:
+        return False
+    parser = _EmbeddedSeatInventoryProbe()
+    parser.feed(page.raw)
+    return parser.candidate_count >= 2
 
 
 def run_live_smoke(
@@ -48,6 +118,8 @@ def run_live_smoke(
     notices = client.get_notice_list()
     tickets = client.get_ticket_list()
     personal = client.search_trains(query)
+    seat_train = _first_complete_srt_seat_train(personal.trains)
+    seat_page = client.get_seat_page(seat_train) if seat_train is not None else None
     mutual = client.get_mutual_verification()
     group = client.search_group_trains(query)
     timetable = client.get_timetable(personal.trains[0]) if personal.trains else None
@@ -59,6 +131,16 @@ def run_live_smoke(
         "noticeCount": len(notices["noticeList"]),
         "ticketPageLoaded": bool(tickets.text),
         "personalTrainCount": len(personal.trains),
+        "seatPageLoaded": bool(seat_page and seat_page.text),
+        "seatSelectionMarkerPresent": bool(
+            seat_page and "좌석선택" in seat_page.text
+        ),
+        "externalSeatMapHandoffPresent": _external_seat_map_handoff_present(
+            seat_page
+        ),
+        "embeddedSeatInventoryCandidatePresent": (
+            _embedded_seat_inventory_candidate_present(seat_page)
+        ),
         "mutualVerificationLoaded": bool(mutual.verification_code),
         "groupTrainCount": len(group.trains),
         "timetableRowCount": len(timetable.rows) if timetable else 0,
