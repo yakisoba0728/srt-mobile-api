@@ -5,7 +5,7 @@ evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The current offline suite is
-`497 passed, 1 deselected`; the deselected case is the explicitly opted-in
+`498 passed, 1 deselected`; the deselected case is the explicitly opted-in
 live-service test.
 
 Internal editable installation and offline verification:

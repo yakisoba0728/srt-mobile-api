@@ -116,8 +116,14 @@ artifact was persisted.
   `srt_mobile_api-0.2.0.tar.gz` in a temporary artifact directory. The archive
   verifier accepted both artifacts. No live request or credential access was
   performed.
-- Fresh post-build controller gate: `497 passed, 1 deselected`; `git diff
+- Fresh post-review controller gate: `498 passed, 1 deselected`; `git diff
   --check` was clean. The only deselected test remained the explicit live case.
+- Final review hardening snapshots each page's empty state and last departure
+  time before yielding it. Caller mutation of the compatible public
+  `TrainSearchResult.trains` list therefore cannot alter continuation control or
+  its server-derived cursor.
+- The review regression and final focused pagination gate reported `1 passed`
+  and `172 passed`, respectively.
 - Fresh internal release gate: the focused contract test reported `1 passed`;
   the complete offline suite reported `286 passed, 1 skipped in 0.22s`, with
   only the explicit live-service opt-in skipped.

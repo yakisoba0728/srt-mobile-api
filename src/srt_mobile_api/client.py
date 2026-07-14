@@ -304,19 +304,23 @@ class SrtClient:
 
             while True:
                 has_following_page = parse_search_has_following_page(page.raw)
+                page_is_empty = not page.trains
+                last_departure_time = (
+                    None if page_is_empty else page.trains[-1].departure_time
+                )
                 yield page
                 yielded_pages += 1
                 if (
                     yielded_pages >= max_pages
                     or not has_following_page
-                    or not page.trains
+                    or page_is_empty
                 ):
                     return
 
                 try:
                     continuation_payload = search_continuation_payload(
                         payload,
-                        page.trains[-1].departure_time,
+                        last_departure_time,
                     )
                 except ValueError as exc:
                     raise SrtProtocolError(
@@ -343,7 +347,7 @@ class SrtClient:
                     )
                     continuation_payload = search_continuation_payload(
                         refreshed_payload,
-                        page.trains[-1].departure_time,
+                        last_departure_time,
                     )
                     next_page = self._post_search_page(
                         refreshed_path,

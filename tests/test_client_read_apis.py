@@ -503,6 +503,38 @@ def test_iter_train_search_pages_yields_empty_continuation_once_then_stops(load_
     assert sum(request.method == "POST" for request in calls) == 2
 
 
+def test_iter_snapshots_empty_state_and_cursor_before_yield(load_text_fixture):
+    posted_cursors: list[str] = []
+    responses = iter(
+        [
+            _paginated_search_response(["060000", "063000"], "Y"),
+            _paginated_search_response(["070000"], "N"),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        posted_cursors.append(
+            dict(parse_qsl(request.content.decode(), keep_blank_values=True))["dptTm"]
+        )
+        return httpx.Response(200, json=next(responses))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    iterator = client.iter_train_search_pages(
+        TrainSearchQuery("0551", "0020", "20260710", departure_time="050000")
+    )
+
+    first_page = next(iterator)
+    first_page.trains.clear()
+    second_page = next(iterator)
+
+    assert second_page.trains[0].departure_time == "070000"
+    assert posted_cursors == ["050000", "063001"]
+
+
 def test_iter_group_train_search_pages_keeps_group_route_and_state(load_text_fixture):
     calls: list[httpx.Request] = []
     responses = iter(
