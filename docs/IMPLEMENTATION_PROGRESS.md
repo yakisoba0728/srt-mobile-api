@@ -141,7 +141,12 @@ recorded production evidence result.
 - Final ambiguous-script RED: `3 failed, 27 passed`; nested templates and regex
   literals were misclassified, and a safe `.mjs` module reference was omitted.
 - Final ambiguous-script focused GREEN: `30 passed`.
-- Current full offline gate: `509 passed, 1 deselected`; the deselected case is
+- Ambiguous-script review full offline gate: `509 passed, 1 deselected`.
+- Final quoted-key RED: the focused regression failed once because
+  `"fetch(foo)"` was treated as executable structure. Quoted object keys are now
+  fully masked; only unquoted safe simple payload keys are collected.
+- Final quoted-key focused GREEN: `31 passed`.
+- Current full offline gate: `510 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
 - Pagination TDD gate: the expected RED was missing continuation/parser/public
   symbols; after implementation the focused client, payload/parser, and public

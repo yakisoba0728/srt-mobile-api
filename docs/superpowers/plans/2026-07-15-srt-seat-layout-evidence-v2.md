@@ -4,7 +4,7 @@
 
 **Goal:** Replace the coarse SRT seat-page evidence classification with a bounded, value-free schema that distinguishes generic scripts from actual embedded seat data, same-origin script references, Ajax contracts, forms, iframes, and external handoffs.
 
-**Architecture:** Parse the already-authorized single seat-page HTML without executing JavaScript or making additional requests. Emit only bounded structural names, counts, same-origin query/fragment-free paths, script metadata, captured-prefix inline SHA-256 digests and lengths, route literals, HTTP primitive/method indicators, payload-key names, response-property paths, and JSON key/type/cardinality summaries. Never retain input values, element identifiers, query strings, raw script text or truncated tails, seat/car numbers, credentials, cookies, tokens, or arbitrary URLs.
+**Architecture:** Parse the already-authorized single seat-page HTML without executing JavaScript or making additional requests. Emit only bounded structural names, counts, same-origin query/fragment-free paths, script metadata, captured-prefix inline SHA-256 digests and lengths, route literals, HTTP primitive/method indicators, unquoted safe simple payload-key names, response-property paths, and JSON key/type/cardinality summaries. Never retain input values, element identifiers, query strings, raw script text or truncated tails, seat/car numbers, credentials, cookies, tokens, or arbitrary URLs.
 
 **Tech Stack:** Python 3.11+, standard-library `html.parser`, `hashlib`, `json`, `urllib.parse`, pytest, existing SRT live safety helpers.
 

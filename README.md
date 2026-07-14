@@ -5,7 +5,7 @@ evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The current offline suite is
-`509 passed, 1 deselected`; the deselected case is the explicitly opted-in
+`510 passed, 1 deselected`; the deselected case is the explicitly opted-in
 live-service test.
 
 Internal editable installation and offline verification:
@@ -177,7 +177,8 @@ text or the truncated tail. JavaScript strings/comments cannot create structural
 inventory evidence; backtick and ambiguous slash tails are masked
 conservatively. `application/json` blocks retain only bounded key/type,
 array-cardinality, depth, and inventory-name summaries after dynamic seat keys
-are discarded.
+are discarded. Static JavaScript payload metadata accepts only unquoted safe
+simple key names; quoted object keys are ignored.
 
 Raw HTML, visible text, attribute/input values, element IDs, query strings,
 arbitrary URLs, train/car/seat values, credentials, cookies, tokens, and

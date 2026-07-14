@@ -370,6 +370,40 @@ def test_ambiguous_template_and_regex_tails_are_not_structural_evidence(script):
         assert forbidden not in serialized
 
 
+def test_quoted_object_keys_are_not_javascript_structural_evidence():
+    evidence = module.collect_page_evidence(
+        '<script>const x = {"response.seatCars": 1, '
+        '"response.seatRows": 2, "fetch(foo)": 3};</script>'
+    )
+
+    item = evidence["scripts"]["items"][0]
+    assert item["ajax_primitives"] == []
+    assert item["payload_keys"] == []
+    assert item["response_paths"] == []
+    assert item["inventory_names"] == []
+    assert evidence["source_categories"] == ["generic_script"]
+    assert module._result(
+        "success",
+        {"login": 1, "search": 1, "seat_page": 1},
+        evidence,
+    )["sufficiency"] == "no_inventory_source"
+    serialized = json.dumps(evidence)
+    for forbidden in ("response.seatCars", "response.seatRows", "fetch(foo)"):
+        assert forbidden not in serialized
+
+    control = module.collect_page_evidence(
+        "<script>"
+        '$.ajax({url: "/arc/seatList.do", type: "POST", '
+        'data: {"seatNo": "A1", scarSeatNo: "A2"}});'
+        "const rows = response.seatRows;"
+        "</script>"
+    )["scripts"]["items"][0]
+    assert control["http_methods"] == ["POST"]
+    assert control["route_paths"] == ["/arc/seatList.do"]
+    assert control["payload_keys"] == ["scarSeatNo"]
+    assert control["response_paths"] == ["response.seatRows"]
+
+
 def test_module_mjs_static_reference_is_retained_as_inventory_reference():
     evidence = module.collect_page_evidence(
         '<script type="module" '

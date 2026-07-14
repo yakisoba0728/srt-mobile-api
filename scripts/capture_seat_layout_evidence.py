@@ -67,7 +67,7 @@ _SAFE_LONG_LITERALS = frozenset(
 )
 _PAYLOAD_RE = re.compile(r"\b(?:body|data)\s*:\s*\{(?P<body>[^{}]{0,4096})\}")
 _OBJECT_KEY_RE = re.compile(
-    r"(?:^|[,\s])(?:['\"])?(?P<name>[A-Za-z][A-Za-z0-9_-]{0,63})(?:['\"])?\s*:"
+    r"(?:^|[,\s])(?P<name>[A-Za-z][A-Za-z0-9_-]{0,63})\s*:"
 )
 _RESPONSE_PATH_RE = re.compile(
     r"\b(?:data|response|result)(?:\s*\?*\.\s*[A-Za-z][A-Za-z0-9_-]{0,31}){1,4}"
@@ -242,14 +242,17 @@ def _scan_javascript(code: str) -> tuple[str, list[str]]:
             if end >= len(code):
                 break
             value = code[index + 1 : end]
-            if len(value) <= 512 and len(literals) < MAX_ITEMS:
-                literals.append(value)
             following = end + 1
             while following < len(code) and code[following].isspace():
                 following += 1
-            preserve = (
-                following < len(code) and code[following] == ":"
-            ) or value.upper() in methods
+            quoted_key = following < len(code) and code[following] == ":"
+            if (
+                not quoted_key
+                and len(value) <= 512
+                and len(literals) < MAX_ITEMS
+            ):
+                literals.append(value)
+            preserve = value.upper() in methods
             masked[index] = quote
             masked[end] = quote
             if preserve:
