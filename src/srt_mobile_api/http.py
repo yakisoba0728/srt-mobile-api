@@ -103,7 +103,7 @@ class SrtHttpClient:
         headers: Mapping[str, str] | None = None,
     ) -> httpx.Response:
         request = self._client.build_request(method, url, params=params, data=data, headers=headers)
-        assert_read_only_request(method, request.url, self.config)
+        assert_read_only_request(request, self.config)
         try:
             response = self._client.send(request)
         except httpx.HTTPError:

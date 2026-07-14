@@ -1,9 +1,50 @@
+from urllib.parse import urlencode
+
 import httpx
 import pytest
 
 from srt_mobile_api import SrtConfig
 from srt_mobile_api.errors import SrtProtocolError
 from srt_mobile_api.safety import READ_ONLY_ROUTES, assert_read_only_request
+
+
+def _request(method: str, url: str | httpx.URL) -> httpx.Request:
+    return httpx.Request(method, url)
+
+
+def _seat_form() -> dict[str, str]:
+    return {
+        "reqCode": "9",
+        "runDt": "20260710",
+        "dptDt": "20260710",
+        "trnNo": "00303",
+        "dptTm": "060000",
+        "trnGpCd": "300",
+        "dptRsStnCd": "0551",
+        "arvRsStnCd": "0020",
+        "psrmClCd": "1",
+        "seatAttCd": "015",
+        "dptStnRunOrdr": "000001",
+        "arvStnRunOrdr": "000010",
+        "choiceSeatCount": "1",
+    }
+
+
+def _seat_request(
+    *,
+    query: str = "",
+    body: str | None = None,
+    content_type: str = "application/x-www-form-urlencoded",
+) -> httpx.Request:
+    config = SrtConfig()
+    url = config.base_url + "/arc/selectListArc02012_n.do" + query
+    encoded = body if body is not None else urlencode(_seat_form())
+    return httpx.Request(
+        "POST",
+        url,
+        content=encoded.encode("ascii"),
+        headers={"Content-Type": content_type},
+    )
 
 
 @pytest.mark.parametrize(
@@ -31,7 +72,7 @@ from srt_mobile_api.safety import READ_ONLY_ROUTES, assert_read_only_request
 )
 def test_current_app_routes_are_allowed(method, path):
     config = SrtConfig()
-    assert_read_only_request(method, httpx.URL(config.base_url + path), config)
+    assert_read_only_request(_request(method, config.base_url + path), config)
 
 
 def test_only_exact_act10_netfunnel_url_is_allowed():
@@ -41,7 +82,7 @@ def test_only_exact_act10_netfunnel_url_is_allowed():
         + "/ts.wseq?opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B"
         + "&sid=service_1&aid=act_10&js=true&1712345678901"
     )
-    assert_read_only_request("GET", allowed, config)
+    assert_read_only_request(_request("GET", allowed), config)
     rejected_queries = (
         "opcode=5101&sid=service_1&aid=act_19&js=true",
         "opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B&sid=service_1&aid=act_10&js=true",
@@ -51,8 +92,7 @@ def test_only_exact_act10_netfunnel_url_is_allowed():
     for query in rejected_queries:
         with pytest.raises(SrtProtocolError):
             assert_read_only_request(
-                "GET",
-                httpx.URL(config.netfunnel_url + "/ts.wseq?" + query),
+                _request("GET", config.netfunnel_url + "/ts.wseq?" + query),
                 config,
             )
 
@@ -70,7 +110,7 @@ def test_only_exact_act10_netfunnel_url_is_allowed():
 )
 def test_off_host_mutation_and_wrong_method_routes_are_rejected(method, url):
     with pytest.raises(SrtProtocolError):
-        assert_read_only_request(method, httpx.URL(url), SrtConfig())
+        assert_read_only_request(_request(method, url), SrtConfig())
 
 
 @pytest.mark.parametrize(
@@ -79,17 +119,16 @@ def test_off_host_mutation_and_wrong_method_routes_are_rejected(method, url):
         ("GET", "/common/ARA/ARA0501P/view.do"),
         ("POST", "/common/ARA/ARA0401P/view.do"),
         ("POST", "/common/ARA/ARA0501P/view.do/extra"),
-        ("POST", "/arc/selectListArc02012_n.do"),
     ],
 )
 def test_selector_policy_rejects_wrong_method_legacy_neighbor_and_seat_page(method, path):
     config = SrtConfig()
     with pytest.raises(SrtProtocolError):
-        assert_read_only_request(method, httpx.URL(f"{config.base_url}{path}"), config)
+        assert_read_only_request(_request(method, f"{config.base_url}{path}"), config)
 
 
 def test_route_registry_has_exact_expanded_size():
-    assert len(READ_ONLY_ROUTES) == 19
+    assert len(READ_ONLY_ROUTES) == 20
 
 
 @pytest.mark.parametrize(
@@ -102,7 +141,7 @@ def test_route_registry_has_exact_expanded_size():
 def test_selector_policy_rejects_percent_encoded_allowed_paths(path):
     config = SrtConfig()
     with pytest.raises(SrtProtocolError):
-        assert_read_only_request("POST", httpx.URL(f"{config.base_url}{path}"), config)
+        assert_read_only_request(_request("POST", f"{config.base_url}{path}"), config)
 
 
 @pytest.mark.parametrize(
@@ -112,7 +151,6 @@ def test_selector_policy_rejects_percent_encoded_allowed_paths(path):
         ("POST", "/ara/selectListAra10h01.do"),
         ("POST", "/ara/%73electListAra10130_n.do"),
         ("POST", "/ara/selectListAra10130_n.do/extra"),
-        ("POST", "/arc/selectListArc02012_n.do"),
     ],
 )
 def test_mutual_policy_rejects_wrong_method_legacy_encoded_and_seat_neighbors(
@@ -122,7 +160,53 @@ def test_mutual_policy_rejects_wrong_method_legacy_encoded_and_seat_neighbors(
     config = SrtConfig()
     with pytest.raises(SrtProtocolError):
         assert_read_only_request(
-            method,
-            httpx.URL(f"{config.base_url}{path}"),
+            _request(method, f"{config.base_url}{path}"),
+            config,
+        )
+
+
+def test_exact_seat_page_form_is_allowed():
+    assert_read_only_request(_seat_request(), SrtConfig())
+
+
+@pytest.mark.parametrize(
+    "seat_request",
+    [
+        _request(
+            "GET",
+            SrtConfig().base_url + "/arc/selectListArc02012_n.do",
+        ),
+        _seat_request(query="?extra=1"),
+        _seat_request(body=urlencode(_seat_form()) + "&reqCode=9"),
+        _seat_request(
+            body=urlencode(
+                {
+                    name: value
+                    for name, value in _seat_form().items()
+                    if name != "seatAttCd"
+                }
+            )
+        ),
+        _seat_request(body=urlencode({**_seat_form(), "seatNo1_1": ""})),
+        _seat_request(body=urlencode({**_seat_form(), "choiceSeatCount": "2"})),
+        _seat_request(body=urlencode({**_seat_form(), "psrmClCd": "2"})),
+        _seat_request(body=urlencode({**_seat_form(), "trnGpCd": "900"})),
+        _seat_request(body=urlencode({**_seat_form(), "trnNo": "303"})),
+        _seat_request(content_type="application/json"),
+    ],
+)
+def test_seat_page_rejects_query_duplicates_unknown_fields_and_wrong_values(seat_request):
+    with pytest.raises(SrtProtocolError):
+        assert_read_only_request(seat_request, SrtConfig())
+
+
+def test_seat_page_rejects_percent_encoded_route_spelling():
+    config = SrtConfig()
+    with pytest.raises(SrtProtocolError):
+        assert_read_only_request(
+            _request(
+                "POST",
+                config.base_url + "/arc/%73electListArc02012_n.do",
+            ),
             config,
         )
