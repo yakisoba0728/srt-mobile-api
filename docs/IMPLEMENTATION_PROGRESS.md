@@ -63,8 +63,17 @@ bridges, callbacks, and external seat-map calls are not callable.
 - Retained live seat-page evidence is limited to the two false booleans in
   `tests/fixtures/seat_page_live_evidence.json`; no original page body, text,
   URL, identifier, value, DOM detail, or structural count is stored.
-- Task 5 final full offline suite: `272 passed, 1 skipped`; the only skip was
-  the explicitly opted-in live-service test.
+- Task 5 pre-review full offline suite: `272 passed, 1 skipped`; the only skip
+  was the explicitly opted-in live-service test.
+- Final seat-page whole-feature review found no Critical issues. Its three
+  Important boundary findings were fixed with regression tests: visible DOM
+  marker enforcement excluding script/style/plain JSON, ASCII-only numeric
+  form values in both validation layers, and rejection of a bare `?` query
+  delimiter. Direct tests now also cover every named adjacent/external route.
+- Fresh post-review controller verification: `285 passed, 1 skipped`; the only
+  skip was the explicitly opted-in live-service test. The exact boundary
+  remained `routes=20`, the excluded-route scan and diff check were clean, and
+  the production live call was not repeated.
 - Focused request tests verify a body with no query and exactly thirteen unique
   allowlisted fields, fixed general class and one seat, zero I/O on incomplete
   server row data, one seat-page POST, and no adjacent request.
