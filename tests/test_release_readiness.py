@@ -823,7 +823,9 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     assert "20 routes" in readme
     assert "510 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
-    assert "live continuation remains unverified" in readme.casefold()
+    assert "live continuation was verified" in readme.casefold()
+    assert "personal and group each returned two pages" in readme.casefold()
+    assert "inventory_source_candidate" in readme
     assert "docs/RELEASE.md" in readme
 
     specification = (ROOT / "docs/analysis/srt-app-api-library-spec-2026-07-09.md").read_text()

@@ -98,8 +98,9 @@ non-progressing/repeated cursors fail closed. If a continuation is rejected with
 once; earlier pages are neither replayed nor yielded again.
 
 This contract comes from static SRT Android app 2.0.41 evidence and synthetic
-offline request-sequence tests. Live continuation remains unverified. The
-iterator adds no route: the reviewed 20-route read-only boundary and all
+offline request-sequence tests. Live continuation was verified in one bounded
+2026-07-15 session: personal and group each returned two pages with 10 rows per
+page. The iterator adds no route: the reviewed 20-route read-only boundary and all
 reservation, payment, cancellation, refund, native-bridge, and external-seatmap
 exclusions remain unchanged.
 
@@ -186,6 +187,14 @@ exception messages are never written. Typed cars and physical seats remain
 unimplemented until a separately reviewed sanitized live report identifies a
 stable iterable source and availability vocabulary. Schema-v2 evidence does not
 authorize another origin, route, or mutation.
+
+The same bounded 2026-07-15 session loaded one seat page from the first
+complete personal-search row. The fixed summary reported the visible marker,
+9 scripts, 3 forms, no iframe, no embedded JSON block, 5 source categories,
+and `sufficiency=inventory_source_candidate`. It retained no category names,
+paths, digests, structural names, raw HTML, or identifiers. This proves only a
+candidate source exists; it does not yet prove an iterable car/seat schema or
+availability vocabulary, so typed physical seats remain excluded.
 
 ### Mutual verification
 

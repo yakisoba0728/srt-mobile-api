@@ -118,8 +118,15 @@ unavailable, and typed seats remain blocked. No raw evidence or temporary JSON
 artifact was persisted.
 
 The schema-v2 implementation and its offline verification made no live request
-and did not read credentials. The historical attempt above remains the only
-recorded production evidence result.
+and did not read credentials. A later combined 2026-07-15 run used one login
+session and retained fixed statuses and counts only. Personal and group
+pagination each yielded two 10-row pages, proving a continuation was observed.
+The first complete personal row loaded one seat page with the visible marker,
+9 scripts, 3 forms, no iframe, no embedded JSON block, 5 source categories,
+and `sufficiency=inventory_source_candidate`. No raw HTML, category name, path,
+digest, structural name, train/car/seat value, credential, cookie, or token was
+printed or persisted. The candidate classification is not yet a stable
+iterable car/seat or availability contract.
 
 ## Verification
 
@@ -148,6 +155,10 @@ recorded production evidence result.
 - Final quoted-key focused GREEN: `31 passed`.
 - Current full offline gate: `510 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
+- Final bounded live gate: login succeeded; personal and group pagination each
+  produced two pages with row counts `[10, 10]`; the seat evidence summary was
+  marker-present and `inventory_source_candidate`. The client session closed
+  after this one combined read-only run.
 - Pagination TDD gate: the expected RED was missing continuation/parser/public
   symbols; after implementation the focused client, payload/parser, and public
   contract suite reported `171 passed`.
@@ -262,11 +273,11 @@ and typed physical-seat inventory remain outside the current core package.
 ## Next Candidate Phase
 
 Keep typed physical-seat layout and selection as a future candidate requiring a
-separately reviewed sanitized live schema-v2 report that identifies a stable
-iterable source and availability vocabulary. Continue to exclude every mutation
-endpoint, external seat-map call, callback, and native bridge. A separately
-bounded read-only production run may verify the already implemented continuation
-contract; until then live continuation remains unverified.
+separately reviewed, more specific sanitized schema-v2 report that proves a
+stable iterable source and availability vocabulary. Continue to exclude every
+mutation endpoint, external seat-map call, callback, and native bridge. The
+implemented personal and group continuation contract now has bounded live
+evidence.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.

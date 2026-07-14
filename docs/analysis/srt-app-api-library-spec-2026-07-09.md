@@ -278,7 +278,7 @@ Search implementation notes:
 | Concern | Rule |
 |---|---|
 | GET vs POST same URL | `GET /ara/selectListAra10007_n.do` hydrates/result page; `POST` performs Ajax search. |
-| Pagination | `iter_train_search_pages(query, *, group=False, max_pages=10)` implements the static app `fn_search(sPagingDptTm)` contract. Existing search methods remain first-page-only. A continuation preserves the hydrated form/key and changes only `dptTm=last_row.dptTm[:5] + "1"` with `trnNo=""`; live continuation remains unverified. |
+| Pagination | `iter_train_search_pages(query, *, group=False, max_pages=10)` implements the static app `fn_search(sPagingDptTm)` contract. Existing search methods remain first-page-only. A continuation preserves the hydrated form/key and changes only `dptTm=last_row.dptTm[:5] + "1"` with `trnNo=""`; a bounded 2026-07-15 run observed two 10-row pages for both personal and group search. |
 | Response shape | `dsOutput0` may be array or object; parser should normalize. |
 | Empty results | HTTP 200 plus empty `dsOutput1[]` is a valid no-train result, not transport failure. |
 | Pagination stops | Require exact `fllwPgExt=Y/N`; stop on `N`, an empty page, caller closure, or `max_pages`. Reject missing/invalid flags and repeated or non-progress cursors before another POST. |
@@ -595,7 +595,7 @@ External-app package visibility notes:
 | ATA detail | Dummy PNR returned HTTP 500 app error. |
 | Ticket list | Before/after negative reservation bodies matched. |
 | Pagination offline contract | Personal/group sequencing, exact cursor, hydration/key reuse, metadata, bounds, non-progress, and continuation-only retry passed synthetic `MockTransport` tests. |
-| Pagination live status | Static APK provenance only; live continuation remains unverified. |
+| Pagination live status | Bounded 2026-07-15 login succeeded; personal and group each returned two 10-row pages. Only fixed status/count summaries were retained. |
 
 ## 11. Open Gaps Before Building A Full Library
 
