@@ -33,13 +33,17 @@ Last updated: 2026-07-15 KST
 - The prior Task 4 verification gate remains recorded: its full offline suite,
   package build, isolated wheel import, exact static boundary, independent
   review, and bounded live gate all passed.
+- The bounded seat-layout evidence command now emits `schema_version: 2` with
+  explicit source categories. A generic script is distinct from embedded
+  DOM/JSON inventory candidates, static Ajax contracts, same-origin references,
+  cross-origin reference counts, and external handoffs.
 - The route and mutation boundary remains unchanged. Typed physical seats remain
-  excluded unless a future task supplies a separately sanitized synthetic
-  fixture and concrete schema plan.
-- The separately invoked bounded seat-layout evidence gate itself introduced no
-  public API or version change in `0.1.0`. Its exact operation budget remains one
-  login, one personal search operation, and zero or one seat-page read for the
-  first complete SRT row.
+  excluded until sanitized live schema-v2 evidence identifies a stable iterable
+  source and availability vocabulary.
+- Schema v2 introduces no public API or package-version change; the package
+  remains `0.2.0`. Its exact operation budget remains one login, one personal
+  search operation, and zero or one seat-page read for the first complete SRT
+  row.
 
 ## Implemented Public Operations
 
@@ -83,17 +87,25 @@ with its already-reviewed internal hydration/NetFunnel behavior, and zero or one
 seat-page call for the first complete SRT row. It calls no broad smoke helper,
 adjacent read, external handoff, callback, or mutation route.
 
-The output is a bounded structural report only. Raw HTML, visible text,
-attribute values, element identifiers, URLs, credentials, cookies, tokens,
-dates, stations, train/car/seat numbers, and exception messages are forbidden.
-The serialized report is fail-closed scanned before a sorted UTF-8 temporary
-sibling is atomically replaced into the requested path.
+The output is a deterministic bounded `schema_version: 2` structural report.
+It records explicit `source_categories`, structural-name/count summaries,
+same-origin query/fragment-free paths, cross-origin counts, script type/flag and
+static Ajax metadata, bounded inline-script lengths and SHA-256 digests, form
+and iframe metadata, and bounded `application/json` key/type/cardinality
+summaries. Generic scripts alone remain `no_inventory_source`; only concrete
+inventory candidates or references can promote sufficiency.
 
-Typed cars and physical seats remain gated on a sanitized report plus a
-separately reviewed synthetic fixture that proves a stable iterable car/seat
-structure and availability vocabulary. A result categorized as
-`external_or_script_backed`, `no_inventory_candidate`, or `unavailable` leaves
-typed physical seats blocked and does not widen the origin or mutation boundary.
+The parser executes no JavaScript and follows no script, form, iframe, Ajax
+route, callback, or external handoff. Raw HTML, visible text, attribute/input
+values, element IDs, query strings, arbitrary URLs, raw script, credentials,
+cookies, tokens, dates, stations, train/car/seat values, and exception messages
+are forbidden. The serialized report is fail-closed scanned before a sorted
+UTF-8 temporary sibling is atomically replaced into the requested path.
+
+Typed cars and physical seats remain blocked until a separately reviewed,
+sanitized live schema-v2 report identifies a stable iterable car/seat source
+and availability vocabulary. No schema-v2 category widens the origin, route, or
+mutation boundary.
 
 The single authorized live evidence attempt on 2026-07-14 failed closed at the
 pre-client configuration gate with exit code 2. Network operation counts were
@@ -103,8 +115,18 @@ exist for this attempt. Typed physical-seat layout evidence is therefore
 unavailable, and typed seats remain blocked. No raw evidence or temporary JSON
 artifact was persisted.
 
+The schema-v2 implementation and its offline verification made no live request
+and did not read credentials. The historical attempt above remains the only
+recorded production evidence result.
+
 ## Verification
 
+- Seat-layout evidence v2 TDD RED: `7 failed, 14 passed`; each failure was the
+  intentionally absent v2 schema/classification behavior.
+- Seat-layout evidence v2 focused GREEN: `22 passed`.
+- Seat-layout evidence v2 full offline gate: `501 passed, 1 deselected`; the
+  deselected case was the explicit live-service test. `git diff --check` was
+  clean, and no live request or credential access occurred.
 - Pagination TDD gate: the expected RED was missing continuation/parser/public
   symbols; after implementation the focused client, payload/parser, and public
   contract suite reported `171 passed`.
@@ -217,12 +239,12 @@ and typed physical-seat inventory remain outside the current core package.
 
 ## Next Candidate Phase
 
-Keep typed physical-seat layout and selection as a future candidate requiring
-a separately sanitized synthetic fixture and concrete schema plan. Continue
-to exclude every mutation endpoint, external seat-map call, callback, and
-native bridge. A separately bounded read-only production run may verify the
-already implemented continuation contract; until then live continuation remains
-unverified.
+Keep typed physical-seat layout and selection as a future candidate requiring a
+separately reviewed sanitized live schema-v2 report that identifies a stable
+iterable source and availability vocabulary. Continue to exclude every mutation
+endpoint, external seat-map call, callback, and native bridge. A separately
+bounded read-only production run may verify the already implemented continuation
+contract; until then live continuation remains unverified.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.

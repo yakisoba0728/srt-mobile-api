@@ -138,8 +138,9 @@ JavaScript/callbacks, retry, or scan fallback trains. The live helper reports
 only bounded booleans and never emits the page body.
 
 The internal SRT page was loaded, but the bounded result alone does not prove
-a stable embedded car/seat DOM contract. Individual physical seats remain
-untyped pending a separately sanitized synthetic fixture.
+a stable embedded car/seat DOM or data-source contract. Individual physical
+seats remain untyped pending sanitized live schema-v2 evidence that identifies
+a stable iterable source and availability vocabulary.
 
 ### Bounded seat-layout evidence gate
 
@@ -159,17 +160,27 @@ PYTHONPATH="$PWD/src" python3 scripts/capture_seat_layout_evidence.py \
   --output /tmp/srt-seat-layout-evidence.json --force
 ```
 
-The command writes one bounded, sorted JSON report through a temporary sibling
-and atomic replace. It never writes or prints raw HTML, visible text, attribute
-values, identifiers, URLs, credentials, cookies, tokens, or exception messages.
-It does not follow an external handoff, invoke a callback, call an adjacent read
-API, or issue a mutation.
+The command writes one deterministic `schema_version: 2` report through a
+temporary sibling and atomic replace. It classifies embedded DOM/JSON
+candidates, generic scripts, same-origin script/form/iframe references, static
+Ajax contracts, cross-origin reference counts, and external seat-map handoffs.
+A generic script alone produces `no_inventory_source`; it is not evidence of a
+seat inventory source.
 
-Typed cars and physical seats remain gated on both a sanitized report and a
-separately reviewed synthetic fixture proving a stable iterable car/seat
-structure and availability vocabulary. An external/script-backed, absent, or
-unavailable result does not authorize typed seats or any wider origin or route
-boundary.
+The parser analyzes only the already-returned HTML. It does not execute
+JavaScript or follow a script, form, iframe, Ajax route, external handoff, or
+callback. Same-origin targets and inline route literals are retained only as
+query/fragment-free bounded paths; cross-origin targets are counts/categories
+only. Inline scripts retain bounded lengths, truncation flags, and SHA-256
+digests—not source text. `application/json` blocks retain only bounded key/type,
+array-cardinality, depth, and inventory-name summaries.
+
+Raw HTML, visible text, attribute/input values, element IDs, query strings,
+arbitrary URLs, train/car/seat values, credentials, cookies, tokens, and
+exception messages are never written. Typed cars and physical seats remain
+unimplemented until a separately reviewed sanitized live report identifies a
+stable iterable source and availability vocabulary. Schema-v2 evidence does not
+authorize another origin, route, or mutation.
 
 ### Mutual verification
 
