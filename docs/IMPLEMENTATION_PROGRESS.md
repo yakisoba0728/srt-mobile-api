@@ -1,22 +1,28 @@
 # SRT Python Package Implementation Progress
 
-Last updated: 2026-07-13 KST
+Last updated: 2026-07-14 KST
 
 ## Current State
 
+- The authenticated physical seat-selection page read is implemented as
+  `get_seat_page(train) -> SeatSelectionPage`.
+- Its request is fixed to general class and one seat. Prepared-request
+  validation requires no query and exactly thirteen unique allowlisted form
+  fields before the single POST is sent.
 - The manual mutual-verification method and repr-safe result are implemented.
 - Final whole-feature review hardening keeps the successful result's server
   message, verification code, and raw response out of `repr()` while leaving
   each value caller-accessible. Wrapper and business `SrtAppError` rendering
   now uses fixed local messages; the original response remains available via
   the repr-hidden `raw` attribute.
-- The transport boundary now allows 19 exact app/NetFunnel routes while every
-  mutation route remains excluded.
+- The transport boundary now allows 20 exact read-only app/NetFunnel routes
+  while every mutation route remains excluded.
 - The prior Task 4 verification gate remains recorded: its full offline suite,
   package build, isolated wheel import, exact static boundary, independent
   review, and bounded live gate all passed.
-- NetFunnel behavior remains unchanged, and physical seat selection remains a
-  candidate requiring a separate safety review rather than part of this package.
+- NetFunnel behavior remains unchanged. Typed physical seats remain excluded
+  unless a future task supplies a separately sanitized synthetic fixture and
+  concrete schema plan.
 
 ## Implemented Public Operations
 
@@ -36,13 +42,32 @@ Last updated: 2026-07-13 KST
 - Passenger selector popup read
 - Seat-option preference selector popup read
 - Train-group selector popup read
+- Physical seat-selection page read returning `SeatSelectionPage`
 
-The transport currently allows 19 exact app/NetFunnel routes. Reservation,
-`act_19`, payment, cancellation, refund, ATA/ARD flows, native bridges, and the
-external seat map are not callable.
+The transport currently allows 20 exact read-only app/NetFunnel routes.
+Reservation, `act_19`, payment, cancellation, refund, ATA/ARD flows, native
+bridges, callbacks, and external seat-map calls are not callable.
 
 ## Verification
 
+- Task 5 focused offline gate: `233 passed`.
+- Task 5 single bounded live result: `loggedIn=True`,
+  `seatPageLoaded=True`, `seatSelectionMarkerPresent=True`,
+  `externalSeatMapHandoffPresent=False`, and
+  `embeddedSeatInventoryCandidatePresent=False`.
+- The internal SRT page was loaded, but the bounded result alone does not prove
+  a stable embedded car/seat DOM contract. Individual physical seats remain
+  untyped pending a separately sanitized synthetic fixture.
+- The conservative structure probe did not find enough embedded seat-named
+  elements to justify a physical-seat model.
+- Retained live seat-page evidence is limited to the two false booleans in
+  `tests/fixtures/seat_page_live_evidence.json`; no original page body, text,
+  URL, identifier, value, DOM detail, or structural count is stored.
+- Task 5 final full offline suite: `272 passed, 1 skipped`; the only skip was
+  the explicitly opted-in live-service test.
+- Focused request tests verify a body with no query and exactly thirteen unique
+  allowlisted fields, fixed general class and one seat, zero I/O on incomplete
+  server row data, one seat-page POST, and no adjacent request.
 - Final whole-feature review fix: the focused offline command covering mutual
   verification, models, and redaction safety passed with `69 passed`.
 - Final controller verification after the secrecy fix: `243 passed, 1 skipped`;
@@ -70,8 +95,8 @@ external seat map are not callable.
   `timetableRowCount=7`, and `fareItemCount=9`.
 - NetFunnel remains the single unchanged `act_10` read-only route with its
   existing acquisition, parsing, and one-fresh-key retry behavior.
-- Physical seat selection continues to require its own separate safety review
-  before any implementation or live verification.
+- Physical seat models and selection continue to require separate sanitized
+  fixture evidence and a new concrete design before implementation.
 
 The local credential file remains ignored and is not tracked. No credential,
 cookie, session token, NetFunnel key, or raw personal response is stored.
@@ -80,19 +105,19 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
 
 - Documented endpoint-matrix entries: 38, including runtime, static, helper,
   excluded, and repeated failure scenarios
-- Runtime-success entries: 19
-- Currently implemented underlying routes: 19, including NetFunnel `act_10`
+- Runtime-success entries: 20
+- Currently implemented underlying routes: 20, including NetFunnel `act_10`
 - Therefore the complete documented endpoint matrix is not yet implemented
 
-The runtime-success seat-selection page remains outside the package. Static
-aliases, reservation execution, payment handoff, and native integrations also
-remain outside the current core package.
+Static aliases, reservation execution, payment handoff, native integrations,
+and typed physical-seat inventory remain outside the current core package.
 
 ## Next Candidate Phase
 
-Keep the physical seat-selection page as a candidate requiring a separate
-safety review because it is adjacent to reservation flow. Continue to exclude
-every mutation endpoint.
+Keep typed physical-seat layout and selection as a future candidate requiring
+a separately sanitized synthetic fixture and concrete schema plan. Continue
+to exclude every mutation endpoint, external seat-map call, callback, and
+native bridge.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.

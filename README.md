@@ -75,9 +75,26 @@ The live helper calls all six after booking-page hydration and reports only the
 bounded integer `selectorLoadedCount`; it never emits popup HTML or extracted
 popup text.
 
-These APIs select search-form preferences only. The physical seat-selection
-page, reservation, payment, refund, cancellation, `act_19`, ATA/ARD, native
-bridges, and external seat maps remain excluded.
+These APIs select search-form preferences only. Reservation, payment, refund,
+cancellation, `act_19`, ATA/ARD, native bridges, and external seat-map calls
+remain excluded.
+
+### Physical seat-selection page read
+
+`SrtClient.get_seat_page(train)` performs one authenticated read of the
+internal SRT seat-selection HTML page for a complete server-returned SRT row.
+The request is fixed to general class and one seat, carries exactly thirteen
+allowlisted form fields, and returns `SeatSelectionPage` after requiring the
+`좌석선택` marker.
+
+This method does not select or hold a seat. It does not call NetFunnel
+`act_19`, submit a reservation, follow the external Korail seat map, execute
+JavaScript/callbacks, retry, or scan fallback trains. The live helper reports
+only bounded booleans and never emits the page body.
+
+The internal SRT page was loaded, but the bounded result alone does not prove
+a stable embedded car/seat DOM contract. Individual physical seats remain
+untyped pending a separately sanitized synthetic fixture.
 
 ### Mutual verification
 
