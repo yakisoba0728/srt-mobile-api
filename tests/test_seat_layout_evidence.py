@@ -347,6 +347,58 @@ def test_report_is_safe_fails_closed_for_secrets_and_sensitive_shapes():
         assert not module.report_is_safe(unsafe, ())
 
 
+def test_write_atomic_without_force_publishes_without_replace_and_cleans_temp(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "evidence.json"
+    monkeypatch.setattr(
+        module.os,
+        "replace",
+        Mock(side_effect=AssertionError("no-force publish must not replace")),
+    )
+
+    assert module._write_atomic(output, "new-report", force=False) is True
+
+    assert output.read_text(encoding="utf-8") == "new-report"
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_write_atomic_without_force_preserves_destination_created_at_publish(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "evidence.json"
+    real_link = module.os.link
+
+    def create_destination_then_link(source, destination):
+        output.write_text("concurrent-report", encoding="utf-8")
+        real_link(source, destination)
+
+    monkeypatch.setattr(module.os, "link", create_destination_then_link)
+
+    assert module._write_atomic(output, "new-report", force=False) is False
+
+    assert output.read_text(encoding="utf-8") == "concurrent-report"
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_write_atomic_without_force_cleans_temp_when_link_errors(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "evidence.json"
+    monkeypatch.setattr(
+        module.os,
+        "link",
+        Mock(side_effect=OSError("publication failed")),
+    )
+
+    assert module._write_atomic(output, "new-report", force=False) is False
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_main_writes_sorted_utf8_json_via_atomic_sibling_and_closes_client(
     monkeypatch,
     tmp_path,
@@ -472,7 +524,7 @@ def test_main_closes_client_and_leaves_no_file_when_runner_raises(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_main_deletes_temporary_sibling_when_atomic_replace_fails(
+def test_main_deletes_temporary_sibling_when_force_replace_fails(
     monkeypatch,
     tmp_path,
 ):
@@ -484,7 +536,7 @@ def test_main_deletes_temporary_sibling_when_atomic_replace_fails(
         Mock(side_effect=OSError("exception-secret")),
     )
 
-    assert module.main(["--output", str(output)]) == 1
+    assert module.main(["--output", str(output), "--force"]) == 1
 
     fakes["client"].close.assert_called_once_with()
     assert list(tmp_path.iterdir()) == []

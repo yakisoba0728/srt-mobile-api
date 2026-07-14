@@ -284,10 +284,13 @@ def _write_atomic(output: Path, serialized: str, *, force: bool) -> bool:
             handle.write(serialized)
             handle.flush()
             os.fsync(handle.fileno())
-        if output.exists() and not force:
-            return False
-        os.replace(temporary, output)
-        temporary = None
+        if force:
+            os.replace(temporary, output)
+            temporary = None
+        else:
+            os.link(temporary, output)
+            temporary.unlink()
+            temporary = None
         return True
     except Exception:
         return False
