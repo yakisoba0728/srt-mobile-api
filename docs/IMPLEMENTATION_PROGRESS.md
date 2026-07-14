@@ -86,6 +86,14 @@ structure and availability vocabulary. A result categorized as
 `external_or_script_backed`, `no_inventory_candidate`, or `unavailable` leaves
 typed physical seats blocked and does not widen the origin or mutation boundary.
 
+The single authorized live evidence attempt on 2026-07-14 failed closed at the
+pre-client configuration gate with exit code 2. Network operation counts were
+`login=0`, `search=0`, and `seat_page=0`; no fixed report status was emitted and
+the sufficiency category is `unavailable`. No page booleans or structural counts
+exist for this attempt. Typed physical-seat layout evidence is therefore
+unavailable, and typed seats remain blocked. No raw evidence or temporary JSON
+artifact was persisted.
+
 ## Verification
 
 - Fresh internal release gate: the focused contract test reported `1 passed`;
