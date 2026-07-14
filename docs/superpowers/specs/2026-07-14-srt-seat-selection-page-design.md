@@ -1,7 +1,7 @@
 # SRT Seat Selection Page Read Design
 
 Date: 2026-07-14
-Status: Approved for implementation planning
+Status: Implemented and bounded-live-verified on 2026-07-14 (page read only; physical-seat schemas remain unimplemented)
 
 ## Context
 

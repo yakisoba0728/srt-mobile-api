@@ -606,16 +606,21 @@ External-app package visibility notes:
 
 ## 12. Source Documents
 
-The earlier temporary catalog, runtime report, static APK notes, deep-dive notes,
-handoff notes, and execution-plan record were merged into this file. The cleaned
-repository keeps only this spec, the root README, and the re-runnable smoke
-script.
+The earlier temporary catalog, runtime report, static APK notes, and deep-dive
+notes were merged into this file. The repository now retains the installable
+package source, offline tests and fixtures, implementation progress, approved
+specifications and execution plans, the root README, and bounded smoke tooling.
 
 | Retained file | Purpose |
 |---|---|
 | `docs/analysis/srt-app-api-library-spec-2026-07-09.md` | Final merged API/library specification. |
+| `src/srt_mobile_api/` | Installable read-only package source. |
+| `tests/` | Offline contract tests and sanitized synthetic fixtures. |
+| `docs/IMPLEMENTATION_PROGRESS.md` | Current implementation and verification evidence. |
+| `docs/superpowers/specs/` | Retained design decisions and completion status. |
+| `docs/superpowers/plans/` | Retained implementation and review plans. |
 | `scripts/srt_app_api_smoke.py` | Re-runnable smoke/negative test harness. |
-| `README.md` | Minimal repository entry point and safety notes. |
+| `README.md` | Package entry point, evidence map, and safety notes. |
 
 ## 13. Regenerating Static Evidence
 

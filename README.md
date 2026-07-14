@@ -1,6 +1,25 @@
 # srt-mobile-api
 
-SRT Android app WebView API analysis workspace.
+This repository provides an installable read-only Python package for the
+evidenced SRT Android app WebView API surface. The retained APK specification
+and smoke tooling remain the evidence context for that package.
+
+The reviewed safety boundary contains 20 routes. Its pre-release-readiness
+offline baseline is `285 passed, 1 skipped`; the skip is the explicitly
+opted-in live-service test.
+
+Internal editable installation and offline verification:
+
+```bash
+python -m pip install -e ".[test]"
+PYTHONPATH="$PWD/src" pytest -q
+```
+
+Release and handling documents:
+
+- [docs/RELEASE.md](docs/RELEASE.md)
+- [SECURITY.md](SECURITY.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 The final merged library-oriented specification is:
 
