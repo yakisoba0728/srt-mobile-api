@@ -1,6 +1,6 @@
 # SRT Python Package Implementation Progress
 
-Last updated: 2026-07-14 KST
+Last updated: 2026-07-15 KST
 
 ## Current State
 
@@ -15,6 +15,14 @@ Last updated: 2026-07-14 KST
   validation requires no query and exactly thirteen unique allowlisted form
   fields before the single POST is sent.
 - The manual mutual-verification method and repr-safe result are implemented.
+- Version `0.2.0` adds
+  `iter_train_search_pages(query, *, group=False, max_pages=10)` as a bounded,
+  lazy personal/group search-page iterator. Existing personal and group search
+  methods remain first-page-only and signature-compatible.
+- Pagination preserves the hydrated form, unknown inputs, passenger state,
+  `dptTm1`, and NetFunnel key. It advances only with the statically evidenced
+  `last_row.dptTm[:5] + "1"` cursor, rejects malformed or non-progress state,
+  and retries only one failed continuation cursor after one fresh hydration.
 - Final whole-feature review hardening keeps the successful result's server
   message, verification code, and raw response out of `repr()` while leaving
   each value caller-accessible. Wrapper and business `SrtAppError` rendering
@@ -25,13 +33,13 @@ Last updated: 2026-07-14 KST
 - The prior Task 4 verification gate remains recorded: its full offline suite,
   package build, isolated wheel import, exact static boundary, independent
   review, and bounded live gate all passed.
-- NetFunnel behavior remains unchanged. Typed physical seats remain excluded
-  unless a future task supplies a separately sanitized synthetic fixture and
-  concrete schema plan.
-- A separately invoked bounded seat-layout evidence gate is implemented without
-  changing the public package API or package version. Its exact operation budget
-  is one login, one personal search operation, and zero or one seat-page read for
-  the first complete SRT row.
+- The route and mutation boundary remains unchanged. Typed physical seats remain
+  excluded unless a future task supplies a separately sanitized synthetic
+  fixture and concrete schema plan.
+- The separately invoked bounded seat-layout evidence gate itself introduced no
+  public API or version change in `0.1.0`. Its exact operation budget remains one
+  login, one personal search operation, and zero or one seat-page read for the
+  first complete SRT row.
 
 ## Implemented Public Operations
 
@@ -41,6 +49,7 @@ Last updated: 2026-07-14 KST
 - Ticket-list page read
 - Personal train search
 - Group train search
+- Bounded lazy personal/group train-search page iteration
 - Manual mutual-verification read
 - Timetable read with structured rows
 - Fare read with structured items and six passenger slots
@@ -96,6 +105,19 @@ artifact was persisted.
 
 ## Verification
 
+- Pagination TDD gate: the expected RED was missing continuation/parser/public
+  symbols; after implementation the focused client, payload/parser, and public
+  contract suite reported `171 passed`.
+- Pagination pre-build full offline gate: `497 passed, 1 deselected`; the only
+  deselected test is the explicit live-service case. No credential or live
+  service was accessed.
+- Fresh `0.2.0` distribution gate: Python 3.14 built
+  `srt_mobile_api-0.2.0-py3-none-any.whl` and
+  `srt_mobile_api-0.2.0.tar.gz` in a temporary artifact directory. The archive
+  verifier accepted both artifacts. No live request or credential access was
+  performed.
+- Fresh post-build controller gate: `497 passed, 1 deselected`; `git diff
+  --check` was clean. The only deselected test remained the explicit live case.
 - Fresh internal release gate: the focused contract test reported `1 passed`;
   the complete offline suite reported `286 passed, 1 skipped in 0.22s`, with
   only the explicit live-service opt-in skipped.
@@ -167,7 +189,9 @@ artifact was persisted.
   `mutualVerificationLoaded=True`, `groupTrainCount=10`,
   `timetableRowCount=7`, and `fareItemCount=9`.
 - NetFunnel remains the single unchanged `act_10` read-only route with its
-  existing acquisition, parsing, and one-fresh-key retry behavior.
+  existing acquisition and parsing. Single-page search retains its full-flow
+  one-fresh-key retry; pagination additionally refreshes and retries only one
+  rejected continuation cursor.
 - Physical seat models and selection continue to require separate sanitized
   fixture evidence and a new concrete design before implementation.
 
@@ -190,7 +214,9 @@ and typed physical-seat inventory remain outside the current core package.
 Keep typed physical-seat layout and selection as a future candidate requiring
 a separately sanitized synthetic fixture and concrete schema plan. Continue
 to exclude every mutation endpoint, external seat-map call, callback, and
-native bridge.
+native bridge. A separately bounded read-only production run may verify the
+already implemented continuation contract; until then live continuation remains
+unverified.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.

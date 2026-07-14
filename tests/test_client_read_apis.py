@@ -375,6 +375,415 @@ def test_search_uses_act10_and_search_endpoint(load_json_fixture, load_text_fixt
         assert payload["dptRsStnCdNm1"] == ["수서"]
 
 
+def _paginated_search_response(
+    departure_times: list[str | None],
+    flag: object = "N",
+    *,
+    metadata_as_object: bool = False,
+    include_flag: bool = True,
+) -> dict:
+    metadata: dict[str, object] = {
+        "msgCd": "IRG000000",
+        "strResult": "SUCC",
+        "qryCnqeCnt": str(len(departure_times)),
+    }
+    if include_flag:
+        metadata["fllwPgExt"] = flag
+    rows = []
+    for index, departure_time in enumerate(departure_times, start=1):
+        row: dict[str, object] = {
+            "trnNo": str(300 + index),
+            "trnGpCd": "300",
+            "stlbTrnClsfCd": "17",
+        }
+        if departure_time is not None:
+            row["dptTm"] = departure_time
+        rows.append(row)
+    return {
+        "ErrorCode": "0",
+        "outDataSets": {
+            "dsOutput0": metadata if metadata_as_object else [metadata],
+            "dsOutput1": rows,
+        },
+    }
+
+
+def test_iter_train_search_pages_reuses_personal_hydration_key_and_cursor(load_text_fixture):
+    calls: list[httpx.Request] = []
+    responses = iter(
+        [
+            _paginated_search_response(["060000"], "Y"),
+            _paginated_search_response(["070000"], "N", metadata_as_object=True),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        return httpx.Response(200, json=next(responses))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    pages = list(
+        client.iter_train_search_pages(
+            TrainSearchQuery("0551", "0020", "20260710", departure_time="050000")
+        )
+    )
+
+    assert [[train.departure_time for train in page.trains] for page in pages] == [
+        ["060000"],
+        ["070000"],
+    ]
+    assert [request.url.path for request in calls] == [
+        "/ts.wseq",
+        "/ara/selectListAra10007_n.do",
+        "/ara/selectListAra10007_n.do",
+        "/ara/selectListAra10007_n.do",
+    ]
+    posts = [request for request in calls if request.method == "POST"]
+    first, second = [
+        dict(parse_qsl(request.content.decode(), keep_blank_values=True))
+        for request in posts
+    ]
+    assert first["dptTm"] == "050000"
+    assert second["dptTm"] == "060001"
+    assert first["dptTm1"] == second["dptTm1"] == "050000"
+    assert first["netfunnelKey"] == second["netfunnelKey"] == "NF"
+    assert first["unknownField"] == second["unknownField"] == "keep-me"
+    assert first["trnNo"] == second["trnNo"] == ""
+    assert "fllwPgExt" not in first
+    assert "fllwPgExt" not in second
+
+
+def test_iter_train_search_pages_stops_after_first_n_page(load_text_fixture):
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        return httpx.Response(200, json=_paginated_search_response(["060000"], "N"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    pages = list(client.iter_train_search_pages(TrainSearchQuery("0551", "0020", "20260710")))
+
+    assert len(pages) == 1
+    assert sum(request.method == "POST" for request in calls) == 1
+
+
+def test_iter_train_search_pages_yields_empty_continuation_once_then_stops(load_text_fixture):
+    calls: list[httpx.Request] = []
+    responses = iter(
+        [
+            _paginated_search_response(["060000"], "Y"),
+            _paginated_search_response([], "Y"),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        return httpx.Response(200, json=next(responses))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    pages = list(
+        client.iter_train_search_pages(
+            TrainSearchQuery("0551", "0020", "20260710", departure_time="050000")
+        )
+    )
+
+    assert [len(page.trains) for page in pages] == [1, 0]
+    assert sum(request.method == "POST" for request in calls) == 2
+
+
+def test_iter_group_train_search_pages_keeps_group_route_and_state(load_text_fixture):
+    calls: list[httpx.Request] = []
+    responses = iter(
+        [
+            _paginated_search_response(["060000"], "Y"),
+            _paginated_search_response(["070000"], "N"),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        return httpx.Response(200, json=next(responses))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    pages = list(
+        client.iter_train_search_pages(
+            TrainSearchQuery(
+                "0551",
+                "0020",
+                "20260710",
+                departure_time="050000",
+                passengers=PassengerCounts(adult=10),
+            ),
+            group=True,
+        )
+    )
+
+    assert len(pages) == 2
+    assert [
+        (request.method, request.url.path)
+        for request in calls
+        if request.url.host != "nf.letskorail.com"
+    ] == [
+        ("GET", "/ara/selectListAra10007_n.do"),
+        ("POST", "/ara/selectListAra10082_n.do"),
+        ("POST", "/ara/selectListAra10082_n.do"),
+    ]
+    payloads = [
+        dict(parse_qsl(request.content.decode(), keep_blank_values=True))
+        for request in calls
+        if request.method == "POST"
+    ]
+    assert [payload["grpDv"] for payload in payloads] == ["1", "1"]
+    assert [payload["psgNum"] for payload in payloads] == ["10", "10"]
+    assert [payload["psgInfoPerPrnb1"] for payload in payloads] == ["10", "10"]
+    assert [payload["unknownField"] for payload in payloads] == ["keep-me", "keep-me"]
+
+
+def test_iter_first_page_net000001_repeats_full_flow_once(
+    load_json_fixture,
+    load_text_fixture,
+):
+    calls: list[httpx.Request] = []
+    post_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal post_count
+        calls.append(request)
+        if request.url.host == "nf.letskorail.com":
+            key = "FIRST" if sum(call.url.path == "/ts.wseq" for call in calls) == 1 else "SECOND"
+            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:5101:key={key}';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        post_count += 1
+        if post_count == 1:
+            return httpx.Response(200, json=load_json_fixture("search_netfunnel_failure.json"))
+        return httpx.Response(200, json=_paginated_search_response(["060000"], "N"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    pages = list(client.iter_train_search_pages(TrainSearchQuery("0551", "0020", "20260710")))
+
+    assert len(pages) == 1
+    assert sum(call.url.path == "/ts.wseq" for call in calls) == 2
+    assert sum(call.method == "GET" and call.url.path != "/ts.wseq" for call in calls) == 2
+    payloads = [
+        dict(parse_qsl(request.content.decode(), keep_blank_values=True))
+        for request in calls
+        if request.method == "POST"
+    ]
+    assert [payload["netfunnelKey"] for payload in payloads] == ["FIRST", "SECOND"]
+
+
+def test_iter_continuation_net000001_refreshes_only_failing_cursor_once(
+    load_json_fixture,
+):
+    calls: list[httpx.Request] = []
+    post_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal post_count
+        calls.append(request)
+        if request.url.host == "nf.letskorail.com":
+            key = "FIRST" if sum(call.url.path == "/ts.wseq" for call in calls) == 1 else "SECOND"
+            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:5101:key={key}';")
+        if request.method == "GET":
+            key = "FIRST" if sum(call.method == "GET" and call.url.path != "/ts.wseq" for call in calls) == 1 else "SECOND"
+            return httpx.Response(
+                200,
+                text=(
+                    '<form><input name="serverNonce" value="nonce-'
+                    + key
+                    + '"><input name="unknownField" value="keep-me"></form>'
+                ),
+            )
+        post_count += 1
+        if post_count == 1:
+            return httpx.Response(200, json=_paginated_search_response(["060000"], "Y"))
+        if post_count == 2:
+            return httpx.Response(200, json=load_json_fixture("search_netfunnel_failure.json"))
+        return httpx.Response(200, json=_paginated_search_response(["070000"], "N"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    pages = list(
+        client.iter_train_search_pages(
+            TrainSearchQuery("0551", "0020", "20260710", departure_time="050000")
+        )
+    )
+
+    assert [page.trains[0].departure_time for page in pages] == ["060000", "070000"]
+    posts = [
+        dict(parse_qsl(request.content.decode(), keep_blank_values=True))
+        for request in calls
+        if request.method == "POST"
+    ]
+    assert [payload["dptTm"] for payload in posts] == ["050000", "060001", "060001"]
+    assert [payload["netfunnelKey"] for payload in posts] == ["FIRST", "FIRST", "SECOND"]
+    assert [payload["serverNonce"] for payload in posts] == [
+        "nonce-FIRST",
+        "nonce-FIRST",
+        "nonce-SECOND",
+    ]
+    assert sum(call.url.path == "/ts.wseq" for call in calls) == 2
+
+
+def test_iter_continuation_second_net000001_raises_without_replaying_first_page(
+    load_json_fixture,
+):
+    post_count = 0
+    post_cursors: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal post_count
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text='<form><input name="unknownField" value="keep-me"></form>')
+        post_count += 1
+        post_cursors.append(dict(parse_qsl(request.content.decode(), keep_blank_values=True))["dptTm"])
+        if post_count == 1:
+            return httpx.Response(200, json=_paginated_search_response(["060000"], "Y"))
+        return httpx.Response(200, json=load_json_fixture("search_netfunnel_failure.json"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    iterator = client.iter_train_search_pages(
+        TrainSearchQuery("0551", "0020", "20260710", departure_time="050000")
+    )
+
+    assert next(iterator).trains[0].departure_time == "060000"
+    with pytest.raises(SrtNetFunnelError) as exc_info:
+        next(iterator)
+    assert exc_info.value.code == "NET000001"
+    assert post_cursors == ["050000", "060001", "060001"]
+
+
+@pytest.mark.parametrize(
+    ("departure_time", "row_time", "error_match"),
+    [
+        ("050000", None, "last_departure_time"),
+        ("050000", "06000A", "last_departure_time"),
+        ("060001", "060000", "repeated"),
+        ("070000", "060000", "progress"),
+    ],
+)
+def test_iter_rejects_bad_or_nonprogress_cursor_without_another_post(
+    load_text_fixture,
+    departure_time,
+    row_time,
+    error_match,
+):
+    post_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal post_count
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        post_count += 1
+        return httpx.Response(200, json=_paginated_search_response([row_time], "Y"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    iterator = client.iter_train_search_pages(
+        TrainSearchQuery("0551", "0020", "20260710", departure_time=departure_time)
+    )
+
+    assert len(next(iterator).trains) == 1
+    with pytest.raises(SrtProtocolError, match=error_match):
+        next(iterator)
+    assert post_count == 1
+
+
+@pytest.mark.parametrize(
+    ("flag", "include_flag"),
+    [(None, False), ("", True), ("y", True), (True, True)],
+)
+def test_iter_rejects_missing_or_invalid_following_flag_without_another_post(
+    load_text_fixture,
+    flag,
+    include_flag,
+):
+    post_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal post_count
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        post_count += 1
+        return httpx.Response(
+            200,
+            json=_paginated_search_response(
+                ["060000"],
+                flag,
+                include_flag=include_flag,
+            ),
+        )
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    with pytest.raises(SrtProtocolError, match="fllwPgExt"):
+        list(client.iter_train_search_pages(TrainSearchQuery("0551", "0020", "20260710")))
+    assert post_count == 1
+
+
+def test_iter_max_pages_is_exact_and_stops_without_extra_post(load_text_fixture):
+    post_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal post_count
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        post_count += 1
+        departure_time = "060000" if post_count == 1 else "070000"
+        return httpx.Response(200, json=_paginated_search_response([departure_time], "Y"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    pages = list(
+        client.iter_train_search_pages(
+            TrainSearchQuery("0551", "0020", "20260710", departure_time="050000"),
+            max_pages=2,
+        )
+    )
+
+    assert len(pages) == 2
+    assert post_count == 2
+
+
+@pytest.mark.parametrize("max_pages", [0, -1, True, False, 1.0, "2", None])
+def test_iter_rejects_invalid_max_pages_before_transport(max_pages):
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("transport must not be called")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    with pytest.raises(ValueError, match="max_pages"):
+        client.iter_train_search_pages(
+            TrainSearchQuery("0551", "0020", "20260710"),
+            max_pages=max_pages,
+        )
+    assert calls == 0
+
+
 def test_net000001_repeats_full_flow_once_with_fresh_keys(load_json_fixture, load_text_fixture):
     calls: list[tuple[str, str]] = []
     posted_keys: list[str] = []

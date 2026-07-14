@@ -210,6 +210,7 @@ def search_ajax_payload(
         }
     )
     payload.update(_passenger_fields(query.passengers, hydrated_fields))
+    payload.pop("fllwPgExt", None)
     return payload
 
 
@@ -222,6 +223,22 @@ def group_search_ajax_payload(
     payload = search_ajax_payload(query, netfunnel_key, hydrated_fields=hydrated_fields)
     payload["grpDv"] = "1"
     payload["psgNum"] = str(max(query.passengers.total, 10))
+    return payload
+
+
+def search_continuation_payload(
+    hydrated_ajax_payload: dict[str, str],
+    last_departure_time: str | None,
+) -> dict[str, str]:
+    departure_time = _required_digits(
+        last_departure_time,
+        "last_departure_time",
+        length=6,
+    )
+    payload = dict(hydrated_ajax_payload)
+    payload.pop("fllwPgExt", None)
+    payload["dptTm"] = departure_time[:5] + "1"
+    payload["trnNo"] = ""
     return payload
 
 

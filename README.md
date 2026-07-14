@@ -4,9 +4,9 @@ This repository provides an installable read-only Python package for the
 evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
-The reviewed safety boundary contains 20 routes. Its pre-release-readiness
-offline baseline is `285 passed, 1 skipped`; the skip is the explicitly
-opted-in live-service test.
+The reviewed safety boundary contains 20 routes. The current offline suite is
+`497 passed, 1 deselected`; the deselected case is the explicitly opted-in
+live-service test.
 
 Internal editable installation and offline verification:
 
@@ -76,6 +76,32 @@ Default tests are offline:
 pip install -e ".[test]"
 pytest
 ```
+
+### Bounded train-search pagination
+
+`SrtClient.iter_train_search_pages(query, *, group=False, max_pages=10)`
+lazily yields `TrainSearchResult` pages for personal or group search. Existing
+`search_trains(query)` and `search_group_trains(query)` remain compatible
+single-page calls.
+
+The iterator obtains one `act_10` key, hydrates the search form, and preserves
+the resulting key, passenger fields, `dptTm1`, and unknown hidden inputs across
+continuation POSTs. Each continuation changes only `dptTm` to
+`last_row.dptTm[:5] + "1"` and clears `trnNo`; the response-only `fllwPgExt`
+field is never sent. Pages stay in server order and are neither accumulated nor
+deduplicated.
+
+Iteration stops at exact `fllwPgExt=N`, an empty page, a caller-supplied
+`max_pages` bound, or caller closure. Missing or malformed metadata and
+non-progressing/repeated cursors fail closed. If a continuation is rejected with
+`NET000001`, only that cursor obtains one fresh key and hydration and is retried
+once; earlier pages are neither replayed nor yielded again.
+
+This contract comes from static SRT Android app 2.0.41 evidence and synthetic
+offline request-sequence tests. Live continuation remains unverified. The
+iterator adds no route: the reviewed 20-route read-only boundary and all
+reservation, payment, cancellation, refund, native-bridge, and external-seatmap
+exclusions remain unchanged.
 
 ### Read-only selector popups
 

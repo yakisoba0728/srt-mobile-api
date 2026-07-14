@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "srt-mobile-api"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python client for documented SRT Android app read APIs"
 readme = "README.md"
 requires-python = ">=3.11"

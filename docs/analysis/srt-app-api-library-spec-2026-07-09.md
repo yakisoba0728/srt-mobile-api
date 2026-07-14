@@ -1,6 +1,7 @@
 # SRT App API Library Spec
 
-Date: 2026-07-09 KST  
+Date: 2026-07-09 KST
+Last updated: 2026-07-15 KST
 Scope: SRT Android app WebView APIs only  
 Primary host: `https://app.srail.or.kr`  
 Helper host: `https://nf.letskorail.com:443`
@@ -277,10 +278,11 @@ Search implementation notes:
 | Concern | Rule |
 |---|---|
 | GET vs POST same URL | `GET /ara/selectListAra10007_n.do` hydrates/result page; `POST` performs Ajax search. |
-| Pagination | App has a `fn_search(sPagingDptTm)` path that updates `dptTm` and appends rows. Implement later as an explicit method after runtime verification. |
+| Pagination | `iter_train_search_pages(query, *, group=False, max_pages=10)` implements the static app `fn_search(sPagingDptTm)` contract. Existing search methods remain first-page-only. A continuation preserves the hydrated form/key and changes only `dptTm=last_row.dptTm[:5] + "1"` with `trnNo=""`; live continuation remains unverified. |
 | Response shape | `dsOutput0` may be array or object; parser should normalize. |
 | Empty results | HTTP 200 plus empty `dsOutput1[]` is a valid no-train result, not transport failure. |
-| NetFunnel | Do not log the key. On `NET000001`, refresh and retry once. |
+| Pagination stops | Require exact `fllwPgExt=Y/N`; stop on `N`, an empty page, caller closure, or `max_pages`. Reject missing/invalid flags and repeated or non-progress cursors before another POST. |
+| NetFunnel | Do not log the key. First-page search retains its full-flow one-refresh retry. A continuation `NET000001` refreshes key/hydration once and retries only that cursor. |
 
 ### Timetable And Fare
 
@@ -428,7 +430,10 @@ Failure rules:
 3. Parse/preserve `seatSearchForm` hidden fields.
 4. `POST /ara/selectListAra10007_n.do` with `TrainSearchRequest`.
 5. Normalize `dsOutput0` and `dsOutput1`.
-6. Select a `TrainRow` only after checking availability labels/codes.
+6. For the opt-in iterator, yield the page without reordering or deduplication.
+7. If `fllwPgExt=Y`, derive the next cursor from the last row, preserve the
+   hydrated form and key, and POST the same route until a bounded stop condition.
+8. Select a `TrainRow` only after checking availability labels/codes.
 
 Observed selected runtime row:
 
@@ -447,8 +452,10 @@ Observed selected runtime row:
 
 1. Build search state with `grpDv=1` and group passenger count.
 2. Get fresh NetFunnel `act_10` key.
-3. `POST /ara/selectListAra10082_n.do`.
-4. Parse with the same response model as personal search.
+3. Hydrate through `GET /ara/selectListAra10007_n.do` and preserve form state.
+4. `POST /ara/selectListAra10082_n.do`.
+5. Parse with the same response model and optional bounded continuation rules as
+   personal search; group continuations stay on Ara10082 with `grpDv=1`.
 
 Group-specific rules:
 
@@ -567,7 +574,7 @@ External-app package visibility notes:
 | Group vs personal | Separate request builders; do not flip only the endpoint URL. |
 | HTML parsing | Prefer table/semantic selectors, then regex fallback; do not rely on byte sizes. |
 | Business success | Check app-level JSON codes, not just HTTP 200. |
-| Retry | Retry NetFunnel-gated calls once after `NET000001` with a fresh key. |
+| Retry | Retry first-page NetFunnel flow once after `NET000001`; for continuation, refresh key/hydration once and retry only the failing cursor. |
 | Redaction | Redact login id, password, cookies, PNR, card-like fields, NetFunnel key, raw response bodies. |
 | Tests | Default tests cover offline login/search/selectors/timetable/fare/ticket fixtures and never invoke mutation endpoints. |
 
@@ -587,6 +594,8 @@ External-app package visibility notes:
 | ARD page entry | Returned HTML with dummy state; not payment success. |
 | ATA detail | Dummy PNR returned HTTP 500 app error. |
 | Ticket list | Before/after negative reservation bodies matched. |
+| Pagination offline contract | Personal/group sequencing, exact cursor, hydration/key reuse, metadata, bounds, non-progress, and continuation-only retry passed synthetic `MockTransport` tests. |
+| Pagination live status | Static APK provenance only; live continuation remains unverified. |
 
 ## 11. Open Gaps Before Building A Full Library
 
@@ -599,7 +608,7 @@ reservation, payment, or other mutation behavior.
 | Valid reservation success response | Not captured by design; would create live inventory hold. |
 | Real ARD page internals after valid reservation | Not captured; dummy page evidence is not payment behavior. |
 | ATA detail valid-state behavior | Dummy PNR failed; no valid reservation context will be created. |
-| Search pagination runtime trigger | Static code suggests pagination, but active user trigger needs verification. |
+| Search pagination live verification | The bounded iterator implements the static app contract; a separately authorized read-only run is still needed to verify production continuation. |
 | External seatmap callback | Current live page can hand off to external Korail seatmap; keep out of core unless separately scoped. |
 | Native secure keyboard/FIDO parity | Not needed for basic HTTP login/search but may matter for app-identical UX. |
 

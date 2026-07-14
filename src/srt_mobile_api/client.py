@@ -8,7 +8,7 @@ from typing import Iterator
 import httpx
 
 from .config import SrtConfig
-from .errors import SrtNetFunnelError, SrtSessionExpiredError
+from .errors import SrtNetFunnelError, SrtProtocolError, SrtSessionExpiredError
 from .http import SrtHttpClient
 from .models import (
     FarePage,
@@ -29,6 +29,7 @@ from .parsers import (
     parse_html_page,
     parse_mutual_verification_response,
     parse_notice_list_response,
+    parse_search_has_following_page,
     parse_search_page_state,
     parse_seat_selection_page,
     parse_timetable_page,
@@ -40,6 +41,7 @@ from .payloads import (
     group_search_ajax_payload,
     passenger_selector_payload,
     search_ajax_payload,
+    search_continuation_payload,
     search_page_payload,
     seat_page_payload,
     seat_option_selector_payload,
@@ -221,7 +223,12 @@ class SrtClient:
         )
         return parse_search_page_state(html)
 
-    def _search_once(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
+    def _prepare_search(
+        self,
+        query: TrainSearchQuery,
+        *,
+        group: bool,
+    ) -> tuple[str, dict[str, str]]:
         referer = f"{self.config.base_url}/ara/ara0101v.do"
         key = self._get_act10_key(referer)
         state = self._hydrate_search(query, key)
@@ -231,6 +238,13 @@ class SrtClient:
             if group
             else search_ajax_payload(query, key, hydrated_fields=state.hidden_fields)
         )
+        return path, payload
+
+    def _post_search_page(
+        self,
+        path: str,
+        payload: dict[str, str],
+    ) -> TrainSearchResult:
         data = self.http.post_form(
             path,
             payload,
@@ -238,6 +252,10 @@ class SrtClient:
             referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
         )
         return parse_train_search_response(data)
+
+    def _search_once(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
+        path, payload = self._prepare_search(query, group=group)
+        return self._post_search_page(path, payload)
 
     def _search_with_retry(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
         for attempt in range(2):
@@ -255,6 +273,103 @@ class SrtClient:
     def search_group_trains(self, query: TrainSearchQuery) -> TrainSearchResult:
         with self._session_guard():
             return self._search_with_retry(query, group=True)
+
+    def _prepare_first_search_page(
+        self,
+        query: TrainSearchQuery,
+        *,
+        group: bool,
+    ) -> tuple[TrainSearchResult, str, dict[str, str]]:
+        for attempt in range(2):
+            path, payload = self._prepare_search(query, group=group)
+            try:
+                return self._post_search_page(path, payload), path, payload
+            except SrtNetFunnelError as exc:
+                if exc.code != "NET000001" or attempt == 1:
+                    raise
+        raise AssertionError("unreachable NetFunnel retry state")
+
+    def _iter_train_search_pages(
+        self,
+        query: TrainSearchQuery,
+        *,
+        group: bool,
+        max_pages: int,
+    ) -> Iterator[TrainSearchResult]:
+        with self._session_guard():
+            page, path, payload = self._prepare_first_search_page(query, group=group)
+            prior_cursor = payload["dptTm"]
+            seen_cursors = {prior_cursor}
+            yielded_pages = 0
+
+            while True:
+                has_following_page = parse_search_has_following_page(page.raw)
+                yield page
+                yielded_pages += 1
+                if (
+                    yielded_pages >= max_pages
+                    or not has_following_page
+                    or not page.trains
+                ):
+                    return
+
+                try:
+                    continuation_payload = search_continuation_payload(
+                        payload,
+                        page.trains[-1].departure_time,
+                    )
+                except ValueError as exc:
+                    raise SrtProtocolError(
+                        "SRT paginated search last_departure_time must be six ASCII digits"
+                    ) from exc
+                cursor = continuation_payload["dptTm"]
+                if cursor in seen_cursors:
+                    raise SrtProtocolError(
+                        "SRT paginated search produced a repeated cursor"
+                    )
+                if cursor <= prior_cursor:
+                    raise SrtProtocolError(
+                        "SRT paginated search cursor did not make forward progress"
+                    )
+
+                try:
+                    next_page = self._post_search_page(path, continuation_payload)
+                except SrtNetFunnelError as exc:
+                    if exc.code != "NET000001":
+                        raise
+                    refreshed_path, refreshed_payload = self._prepare_search(
+                        query,
+                        group=group,
+                    )
+                    continuation_payload = search_continuation_payload(
+                        refreshed_payload,
+                        page.trains[-1].departure_time,
+                    )
+                    next_page = self._post_search_page(
+                        refreshed_path,
+                        continuation_payload,
+                    )
+                    path = refreshed_path
+
+                seen_cursors.add(cursor)
+                prior_cursor = cursor
+                payload = continuation_payload
+                page = next_page
+
+    def iter_train_search_pages(
+        self,
+        query: TrainSearchQuery,
+        *,
+        group: bool = False,
+        max_pages: int = 10,
+    ) -> Iterator[TrainSearchResult]:
+        if type(max_pages) is not int or max_pages <= 0:
+            raise ValueError("max_pages must be a positive non-boolean integer")
+        return self._iter_train_search_pages(
+            query,
+            group=group,
+            max_pages=max_pages,
+        )
 
     def get_seat_page(self, train: TrainSummary) -> SeatSelectionPage:
         with self._session_guard():

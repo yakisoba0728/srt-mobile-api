@@ -8,6 +8,7 @@ from srt_mobile_api.models import HtmlPage, PassengerCounts, TrainSearchQuery, T
 from srt_mobile_api.netfunnel import build_act10_url, parse_netfunnel_response
 from srt_mobile_api.parsers import (
     parse_fare_page,
+    parse_search_has_following_page,
     parse_search_page_state,
     parse_timetable_page,
     parse_train_search_response,
@@ -18,6 +19,7 @@ from srt_mobile_api.payloads import (
     group_search_ajax_payload,
     passenger_selector_payload,
     search_ajax_payload,
+    search_continuation_payload,
     search_page_payload,
     seat_page_payload,
     seat_option_selector_payload,
@@ -149,6 +151,101 @@ def test_search_payloads_include_expected_keys():
     assert ajax_payload["serverNonce"] == "nonce-1"
     assert group_payload["psgNum"] == "10"
     assert group_payload["grpDv"] == "1"
+
+
+def test_search_continuation_payload_preserves_hydrated_state_and_changes_cursor_only():
+    base = {
+        "dptTm": "060000",
+        "dptTm1": "060000",
+        "trnNo": "00303",
+        "netfunnelKey": "NF",
+        "unknownField": "keep-me",
+        "grpDv": "1",
+        "psgTpCd1": "1",
+        "psgInfoPerPrnb1": "10",
+    }
+
+    continuation = search_continuation_payload(base, "061234")
+
+    assert continuation == {
+        **base,
+        "dptTm": "061231",
+        "trnNo": "",
+    }
+    assert base["dptTm"] == "060000"
+    assert continuation["dptTm1"] == "060000"
+    assert continuation["netfunnelKey"] == "NF"
+    assert continuation["unknownField"] == "keep-me"
+    assert continuation["grpDv"] == "1"
+    assert continuation["psgInfoPerPrnb1"] == "10"
+    assert "fllwPgExt" not in continuation
+
+
+def test_search_payloads_never_send_response_only_following_page_flag():
+    query = TrainSearchQuery("0551", "0020", "20260710")
+    payload = search_ajax_payload(
+        query,
+        "NF",
+        hydrated_fields={"fllwPgExt": "Y", "unknownField": "keep-me"},
+    )
+    continuation = search_continuation_payload(
+        {**payload, "fllwPgExt": "Y"},
+        "060000",
+    )
+
+    assert "fllwPgExt" not in payload
+    assert "fllwPgExt" not in continuation
+    assert continuation["unknownField"] == "keep-me"
+
+
+@pytest.mark.parametrize(
+    "last_departure_time",
+    [None, "", "06000", "0600000", "06:00:00", " 060000", "060000 ", "٠٦٠٠٠٠"],
+)
+def test_search_continuation_payload_requires_six_ascii_digits(last_departure_time):
+    with pytest.raises(ValueError, match="last_departure_time"):
+        search_continuation_payload({"dptTm": "060000", "trnNo": ""}, last_departure_time)
+
+
+@pytest.mark.parametrize("container", ["list", "object"])
+@pytest.mark.parametrize(("flag", "expected"), [("Y", True), ("N", False)])
+def test_search_following_page_metadata_accepts_exact_flags(container, flag, expected):
+    metadata = {"msgCd": "IRG000000", "strResult": "SUCC", "fllwPgExt": flag}
+    data = {
+        "ErrorCode": "0",
+        "outDataSets": {
+            "dsOutput0": [metadata] if container == "list" else metadata,
+            "dsOutput1": [],
+        },
+    }
+
+    assert parse_search_has_following_page(data) is expected
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {},
+        [],
+        ["not-an-object"],
+        {"fllwPgExt": ""},
+        {"fllwPgExt": "y"},
+        {"fllwPgExt": " Y"},
+        {"fllwPgExt": True},
+        {"fllwPgExt": 1},
+        {"fllwPgExt": []},
+        {"fllwPgExt": {}},
+        "not-metadata",
+    ],
+)
+def test_search_following_page_metadata_rejects_missing_or_invalid_flag(metadata):
+    data = {
+        "ErrorCode": "0",
+        "outDataSets": {"dsOutput0": metadata, "dsOutput1": []},
+    }
+
+    with pytest.raises(SrtProtocolError, match="fllwPgExt|dsOutput0"):
+        parse_search_has_following_page(data)
 
 
 def test_station_selector_payload_is_exact():

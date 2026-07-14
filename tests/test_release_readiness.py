@@ -290,7 +290,7 @@ def _mark_zip_encrypted(path: Path) -> None:
 
 def test_source_release_metadata_is_exact() -> None:
     assert PROJECT["name"] == PROJECT_NAME
-    assert PROJECT["version"] == "0.1.0"
+    assert PROJECT["version"] == "0.2.0"
     assert PROJECT["requires-python"] == ">=3.11"
     assert PROJECT["keywords"] == EXPECTED_KEYWORDS
     assert set(PROJECT["classifiers"]) == EXPECTED_CLASSIFIERS
@@ -821,7 +821,9 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     assert "installable read-only" in readme_lower
     assert "analysis workspace" not in readme_lower
     assert "20 routes" in readme
-    assert "285 passed" in readme and "1 skipped" in readme
+    assert "497 passed" in readme and "1 deselected" in readme
+    assert "iter_train_search_pages" in readme
+    assert "live continuation remains unverified" in readme.casefold()
     assert "docs/RELEASE.md" in readme
 
     specification = (ROOT / "docs/analysis/srt-app-api-library-spec-2026-07-09.md").read_text()

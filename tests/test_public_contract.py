@@ -30,6 +30,7 @@ def test_client_public_method_set_is_stable():
         "get_train_group_selector",
         "login",
         "logout",
+        "iter_train_search_pages",
         "search_group_trains",
         "search_trains",
     }
@@ -64,6 +65,15 @@ def test_existing_method_signatures_remain_compatible():
     ]
     assert list(inspect.signature(SrtClient.get_ticket_list).parameters) == ["self", "page_no"]
     assert list(inspect.signature(SrtClient.get_fare).parameters) == ["self", "train", "passengers"]
+
+    pagination_parameters = inspect.signature(
+        SrtClient.iter_train_search_pages
+    ).parameters
+    assert list(pagination_parameters) == ["self", "query", "group", "max_pages"]
+    assert pagination_parameters["group"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert pagination_parameters["group"].default is False
+    assert pagination_parameters["max_pages"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert pagination_parameters["max_pages"].default == 10
 
 
 def test_selector_method_signatures_are_stable():

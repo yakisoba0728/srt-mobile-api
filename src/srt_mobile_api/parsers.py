@@ -425,3 +425,30 @@ def parse_train_search_response(data: dict[str, Any]) -> TrainSearchResult:
     if any(not train.train_no for train in trains):
         raise SrtProtocolError("SRT search response contained a train without trnNo")
     return TrainSearchResult(trains=trains, result=result, raw=data)
+
+
+def parse_search_has_following_page(data: dict[str, Any]) -> bool:
+    if not isinstance(data, dict):
+        raise SrtProtocolError("SRT paginated search response must be a JSON object")
+    out = data.get("outDataSets")
+    if not isinstance(out, dict):
+        raise SrtProtocolError("SRT paginated search response missing outDataSets")
+    metadata = out.get("dsOutput0")
+    if isinstance(metadata, list):
+        if not metadata or not isinstance(metadata[0], dict):
+            raise SrtProtocolError(
+                "SRT paginated search response missing dsOutput0 object"
+            )
+        result = metadata[0]
+    elif isinstance(metadata, dict):
+        result = metadata
+    else:
+        raise SrtProtocolError(
+            "SRT paginated search response missing dsOutput0 object"
+        )
+    flag = result.get("fllwPgExt")
+    if not isinstance(flag, str) or flag not in {"Y", "N"}:
+        raise SrtProtocolError(
+            "SRT paginated search response fllwPgExt must be exactly Y or N"
+        )
+    return flag == "Y"
