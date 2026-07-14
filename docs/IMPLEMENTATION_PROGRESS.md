@@ -28,6 +28,10 @@ Last updated: 2026-07-14 KST
 - NetFunnel behavior remains unchanged. Typed physical seats remain excluded
   unless a future task supplies a separately sanitized synthetic fixture and
   concrete schema plan.
+- A separately invoked bounded seat-layout evidence gate is implemented without
+  changing the public package API or package version. Its exact operation budget
+  is one login, one personal search operation, and zero or one seat-page read for
+  the first complete SRT row.
 
 ## Implemented Public Operations
 
@@ -52,6 +56,35 @@ Last updated: 2026-07-14 KST
 The transport currently allows 20 exact read-only app/NetFunnel routes.
 Reservation, `act_19`, payment, cancellation, refund, ATA/ARD flows, native
 bridges, callbacks, and external seat-map calls are not callable.
+
+## Bounded Seat-Layout Evidence Gate
+
+Run `scripts/capture_seat_layout_evidence.py` only with explicit live opt-in,
+the existing live credential environment variables, `SRT_TEST_DATE`, and an
+explicit output path:
+
+```bash
+SRT_MOBILE_API_LIVE=1 PYTHONPATH="$PWD/src" \
+  python3 scripts/capture_seat_layout_evidence.py \
+  --output /tmp/srt-seat-layout-evidence.json --force
+```
+
+The command permits exactly one login call, one personal train-search operation
+with its already-reviewed internal hydration/NetFunnel behavior, and zero or one
+seat-page call for the first complete SRT row. It calls no broad smoke helper,
+adjacent read, external handoff, callback, or mutation route.
+
+The output is a bounded structural report only. Raw HTML, visible text,
+attribute values, element identifiers, URLs, credentials, cookies, tokens,
+dates, stations, train/car/seat numbers, and exception messages are forbidden.
+The serialized report is fail-closed scanned before a sorted UTF-8 temporary
+sibling is atomically replaced into the requested path.
+
+Typed cars and physical seats remain gated on a sanitized report plus a
+separately reviewed synthetic fixture that proves a stable iterable car/seat
+structure and availability vocabulary. A result categorized as
+`external_or_script_backed`, `no_inventory_candidate`, or `unavailable` leaves
+typed physical seats blocked and does not widen the origin or mutation boundary.
 
 ## Verification
 

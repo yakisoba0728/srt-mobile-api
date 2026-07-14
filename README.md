@@ -115,6 +115,36 @@ The internal SRT page was loaded, but the bounded result alone does not prove
 a stable embedded car/seat DOM contract. Individual physical seats remain
 untyped pending a separately sanitized synthetic fixture.
 
+### Bounded seat-layout evidence gate
+
+`scripts/capture_seat_layout_evidence.py` is a separately invoked internal
+evidence command. It requires `SRT_MOBILE_API_LIVE=1`, the existing live
+credential environment variables, and `SRT_TEST_DATE`. Its complete operation
+budget is exactly one `SrtClient.login` call, one `SrtClient.search_trains`
+operation, and zero or one `SrtClient.get_seat_page` call for the first complete
+SRT row. When no complete row exists, it makes no seat-page request.
+
+```bash
+export SRT_MOBILE_API_LIVE=1
+export SRT_LOGIN_ID="<login-id>"
+export SRT_LOGIN_PASSWORD="<password>"
+export SRT_TEST_DATE="<YYYYMMDD>"
+PYTHONPATH="$PWD/src" python3 scripts/capture_seat_layout_evidence.py \
+  --output /tmp/srt-seat-layout-evidence.json --force
+```
+
+The command writes one bounded, sorted JSON report through a temporary sibling
+and atomic replace. It never writes or prints raw HTML, visible text, attribute
+values, identifiers, URLs, credentials, cookies, tokens, or exception messages.
+It does not follow an external handoff, invoke a callback, call an adjacent read
+API, or issue a mutation.
+
+Typed cars and physical seats remain gated on both a sanitized report and a
+separately reviewed synthetic fixture proving a stable iterable car/seat
+structure and availability vocabulary. An external/script-backed, absent, or
+unavailable result does not authorize typed seats or any wider origin or route
+boundary.
+
 ### Mutual verification
 
 `get_mutual_verification()` manually performs the evidenced empty-form mutual
