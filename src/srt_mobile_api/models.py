@@ -90,6 +90,9 @@ class TrainSummary:
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
     departure_station_name: str | None = None
     arrival_station_name: str | None = None
+    departure_run_order: str | None = None
+    arrival_run_order: str | None = None
+    seat_attr_code: str | None = None
 
 
 @dataclass(frozen=True)

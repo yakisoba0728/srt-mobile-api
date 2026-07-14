@@ -225,6 +225,57 @@ def group_search_ajax_payload(
     return payload
 
 
+def _required_digits(
+    value: str | None,
+    name: str,
+    *,
+    length: int | None = None,
+    max_length: int | None = None,
+) -> str:
+    if not isinstance(value, str) or not value or not value.isdigit():
+        raise ValueError(f"{name} must contain only digits")
+    if length is not None and len(value) != length:
+        raise ValueError(f"{name} must contain exactly {length} digits")
+    if max_length is not None and len(value) > max_length:
+        raise ValueError(f"{name} must contain at most {max_length} digits")
+    return value
+
+
+def seat_page_payload(train: TrainSummary) -> dict[str, str]:
+    if train.train_group_code != "300":
+        raise ValueError("train_group_code must be 300 for an SRT seat page")
+    train_no = _required_digits(train.train_no, "train_no", max_length=5).zfill(5)
+    return {
+        "reqCode": "9",
+        "runDt": _required_digits(train.run_date, "run_date", length=8),
+        "dptDt": _required_digits(train.departure_date, "departure_date", length=8),
+        "trnNo": train_no,
+        "dptTm": _required_digits(train.departure_time, "departure_time", length=6),
+        "trnGpCd": "300",
+        "dptRsStnCd": _required_digits(
+            train.departure_station_code,
+            "departure_station_code",
+            length=4,
+        ),
+        "arvRsStnCd": _required_digits(
+            train.arrival_station_code,
+            "arrival_station_code",
+            length=4,
+        ),
+        "psrmClCd": "1",
+        "seatAttCd": _required_digits(train.seat_attr_code, "seat_attr_code", length=3),
+        "dptStnRunOrdr": _required_digits(
+            train.departure_run_order,
+            "departure_run_order",
+        ),
+        "arvStnRunOrdr": _required_digits(
+            train.arrival_run_order,
+            "arrival_run_order",
+        ),
+        "choiceSeatCount": "1",
+    }
+
+
 def _train_sort(train: TrainSummary) -> str:
     return "SRT" if train.service_class_code == "17" else str(train.service_class_code or "")
 

@@ -337,6 +337,9 @@ def parse_train_search_response(data: dict[str, Any]) -> TrainSearchResult:
             arrival_station_code=row.get("arvRsStnCd"),
             departure_station_name=row.get("dptRsStnNm"),
             arrival_station_name=row.get("arvRsStnNm"),
+            departure_run_order=row.get("dptStnRunOrdr"),
+            arrival_run_order=row.get("arvStnRunOrdr"),
+            seat_attr_code=row.get("seatAttCd"),
             raw=row,
         )
         for row in rows

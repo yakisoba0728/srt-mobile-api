@@ -1,3 +1,4 @@
+from dataclasses import replace
 import traceback
 
 import pytest
@@ -18,6 +19,7 @@ from srt_mobile_api.payloads import (
     passenger_selector_payload,
     search_ajax_payload,
     search_page_payload,
+    seat_page_payload,
     seat_option_selector_payload,
     station_map_selector_payload,
     station_selector_payload,
@@ -297,6 +299,72 @@ def test_parse_train_search_response_normalizes_list_and_object_result(load_json
     assert result.trains[0].arrival_station_name == "부산"
     assert group.trains[0].train_no == "301"
     assert empty.trains == []
+
+
+def _complete_seat_page_train() -> TrainSummary:
+    return TrainSummary(
+        train_no="303",
+        train_group_code="300",
+        service_class_code="17",
+        run_date="20260710",
+        departure_date="20260710",
+        departure_time="060000",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+        departure_run_order="000001",
+        arrival_run_order="000010",
+        seat_attr_code="015",
+    )
+
+
+def test_search_parser_preserves_seat_page_fields(load_json_fixture):
+    train = parse_train_search_response(
+        load_json_fixture("search_success.json")
+    ).trains[0]
+
+    assert train.departure_run_order == "000001"
+    assert train.arrival_run_order == "000010"
+    assert train.seat_attr_code == "015"
+
+
+def test_seat_page_payload_is_the_exact_fixed_contract():
+    assert seat_page_payload(_complete_seat_page_train()) == {
+        "reqCode": "9",
+        "runDt": "20260710",
+        "dptDt": "20260710",
+        "trnNo": "00303",
+        "dptTm": "060000",
+        "trnGpCd": "300",
+        "dptRsStnCd": "0551",
+        "arvRsStnCd": "0020",
+        "psrmClCd": "1",
+        "seatAttCd": "015",
+        "dptStnRunOrdr": "000001",
+        "arvStnRunOrdr": "000010",
+        "choiceSeatCount": "1",
+    }
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"train_no": ""}, "train_no"),
+        ({"train_no": "123456"}, "train_no"),
+        ({"train_no": "30A"}, "train_no"),
+        ({"train_group_code": "900"}, "train_group_code"),
+        ({"run_date": None}, "run_date"),
+        ({"departure_date": "2026-07-10"}, "departure_date"),
+        ({"departure_time": "0600"}, "departure_time"),
+        ({"departure_station_code": None}, "departure_station_code"),
+        ({"arrival_station_code": "20"}, "arrival_station_code"),
+        ({"departure_run_order": None}, "departure_run_order"),
+        ({"arrival_run_order": "A10"}, "arrival_run_order"),
+        ({"seat_attr_code": "15"}, "seat_attr_code"),
+    ],
+)
+def test_seat_page_payload_rejects_incomplete_or_malformed_train(changes, message):
+    with pytest.raises(ValueError, match=message):
+        seat_page_payload(replace(_complete_seat_page_train(), **changes))
 
 
 def test_parse_train_search_response_classifies_netfunnel_failure(load_json_fixture):
