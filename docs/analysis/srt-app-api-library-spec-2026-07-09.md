@@ -5,10 +5,10 @@ Scope: SRT Android app WebView APIs only
 Primary host: `https://app.srail.or.kr`  
 Helper host: `https://nf.letskorail.com:443`
 
-This document integrates the 20-way endpoint review into a library-oriented
-contract. It is intentionally written for implementing a future client library:
-what to call, what to send, what comes back, how to classify failures, and which
-native/hidden pieces should remain optional boundaries.
+This document integrates the 20-way endpoint review behind the current
+installable read-only library. Read-only sections describe usable contracts;
+mutation-related requests, responses, and flows are retained only as historical,
+non-implementable evidence and are not instructions for a future client.
 
 No user credentials, cookies, NetFunnel keys, raw response bodies, or payment
 tokens are stored here.
@@ -37,8 +37,8 @@ this final spec and should stay out of git.
 
 | Class | Include in core library? | Rule |
 |---|---:|---|
-| `app.srail.or.kr` `.do` app endpoints | Yes | Main WebView API surface used by the Android app. |
-| `nf.letskorail.com/ts.wseq` | Yes, helper only | Required gate for search/reservation; not an SRT business API. |
+| `app.srail.or.kr` `.do` app endpoints | Read-only subset only | Only the current package's read routes are library surface; other app endpoints are evidence. |
+| `nf.letskorail.com/ts.wseq` | Search helper only | The current library uses the `act_10` search gate; `act_19` remains non-implementable evidence. |
 | `app.srail.co.kr/neo/...` native ticket route | Optional route alias | Found in native foreground notification flow. |
 | `/srail-app/...` bundled/offline aliases | Optional/static | Present in assets; call only if a live route proves it is valid. |
 | External Korail seatmap URL | No | Boundary for native WebView seatmap handoff, outside app API scope. |
@@ -62,7 +62,7 @@ this final spec and should stay out of git.
 |---|---|
 | Base URL | `https://app.srail.or.kr` for core app endpoints. |
 | Method style | Mostly `POST` form-encoded for app Ajax/page transitions; some `GET` page loads. |
-| Body format | `application/x-www-form-urlencoded`; preserve unknown hidden fields when forwarding forms. |
+| Body format | `application/x-www-form-urlencoded`; current read-only calls send only their documented fields. Mutation forms are never constructed or forwarded. |
 | Response types | Mixed `text/html`, JSON, and NetFunnel JavaScript snippets. |
 | Session | Cookie-backed WebView session; keep one cookie jar per logged-in user/session. |
 | User agent | App-like Android WebView UA with `SRT-APP-Android V.2.0.41` suffix was accepted. |
@@ -89,24 +89,28 @@ but reviewed URL override logic does not prove a strict host allowlist for every
 later HTTP(S) navigation. Treat `srbridge` exposure as tied to runtime page
 trust, not only the initial base URL.
 
-Implementation rule: model page-entry endpoints and Ajax endpoints separately.
-Several `.do` URLs return HTML pages that then contain forms or scripts. Do not
-assume every successful HTTP 200 is a successful business operation.
+Evidence rule: page-entry endpoints and Ajax endpoints are distinct. Several
+`.do` URLs return HTML pages containing forms or scripts, so a historical HTTP
+200 observation does not establish a successful business operation or a library
+interface.
 
 ## 4. Library Module Map
 
 | Module | Responsibility |
 |---|---|
 | `SessionClient` | Cookie jar, base headers, login/logout/main/ticket page calls. |
-| `NetFunnelClient` | Fetch and parse `act_10` and `act_19` keys; retry once on stale/missing-key app errors. |
+| `NetFunnelClient` | Fetch and parse the read-only search `act_10` key; retry once on stale/missing-key app errors. `act_19` remains evidence-only. |
 | `SearchClient` | Search page hydration, personal search, group search, pagination-safe parsing. |
 | `SelectorClient` | Station/date/passenger/seat/train-group popup page contracts. |
 | `TimetableFareClient` | Timetable and fare HTML calls plus tolerant parsers. |
-| `SeatClient` | App-side seat-selection page request and seat callback state mapping. |
-| `ReservationClient` | Explicit opt-in reservation execution; never auto-create reservations. |
-| `PaymentEntryClient` | ARD reservation/payment-detail page entry only; no payment authorization. |
+| `SeatClient` | Read-only app-side seat-selection page parsing; no reservation-form construction. |
 | `TicketClient` | Ticket/reservation list and static/native ticket route aliases. |
 | `NativeBridge` | Optional interface for `srbridge`, push, biometric/FIDO, secure keyboard, external apps. |
+
+Reservation, payment, cancellation, issuance, and other mutation endpoint facts
+in this specification are historical, non-implementable evidence. No flag, no dry-run marker,
+and no confirmation token authorizes mutation. Any future mutation interface
+requires a separate safety design, new evidence, independent review, and explicit user authorization.
 
 ## 5. Recommended Core Models
 
@@ -300,7 +304,7 @@ Runtime fare examples from the selected train:
 
 | Evidence | Method | Endpoint | Request | Response and use |
 |---|---:|---|---|---|
-| Runtime success | POST | `/ara/selectListAra10130_n.do` | Runtime smoke sent empty form. | JSON `dsOutput0.msgCd=IRZ000008`, `strResult=SUCC`, `mutMrkVrfCd` present. Use as optional helper before certain KorailTalk-marked reservation paths. |
+| Runtime success | POST | `/ara/selectListAra10130_n.do` | Historical runtime smoke sent an empty form. | JSON `dsOutput0.msgCd=IRZ000008`, `strResult=SUCC`, `mutMrkVrfCd` present. The app used this value in some KorailTalk-marked paths; the library does not expose that mutation support. |
 
 Do not auto-call the commented legacy `ara/selectListAra10h01.do` mutual path.
 
@@ -322,19 +326,20 @@ Seat callback model:
 | `seatNo1` | Group ARD handoff field; different from `seatNo1_N`. |
 | `scarNo1`, `scarGridcnt1` | Car/grid fields when present. |
 
-### Reservation Execution
+### Reservation Endpoint Evidence (Non-Implementable)
 
-Reservation endpoints exist and are callable, but a valid call can create a real
-unpaid reservation and hold live inventory. A future library should require an
-explicit opt-in flag such as `allow_production_reservation=true`.
+The app contains reservation endpoints, and historical probes showed that a
+valid call could create an unpaid reservation and hold live inventory. The
+request and response details below are evidence only; they are not an
+implementable library contract.
 
 | Evidence | Method | Endpoint | Request | Response and success/failure rule |
 |---|---:|---|---|---|
-| Helper | GET | `https://nf.letskorail.com:443/ts.wseq` | `aid=act_19` for reservation. | Inject key into reservation form. |
+| Helper | GET | `https://nf.letskorail.com:443/ts.wseq` | `aid=act_19` for reservation. | The app injected the returned key into its reservation form. |
 | Runtime rejected | POST | `/arc/selectListArc05013_n.do` | Serialized `rsvForm`, personal flow `grpDv=0`, selected train fields, passenger fields, seat fields, `mutMrkVrfCd`, fresh `act_19` key. | Invalid payloads reached endpoint. Zero-passenger retry returned `msgCd=WRP011002`, `strResult=FAIL`, `msgTxt=승객수 오류`. |
 | Runtime rejected | POST | `/arc/selectListArc06014_n.do` | Group `rsvForm`, `grpDv=1`, group passenger count, selected train fields, fresh `act_19` key. | Invalid payloads reached endpoint. Zero-passenger retry returned `WRP011002`; malformed invalid train fields returned `ERROR_CODE=-1`. |
 
-Personal reservation core request fields:
+Observed personal reservation core request fields:
 
 | Group | Fields |
 |---|---|
@@ -354,12 +359,12 @@ Expected success response shape from app scripts:
 | `trainListMap[0]` | `seatNo`, `scarNo`. |
 | `commandMap[0]` | Echo/control fields used by follow-up pages. |
 
-Failure handling:
+Observed app failure handling:
 
 | Code/shape | Rule |
 |---|---|
 | `strResult=FAIL` | Surface `msgTxt` to caller. |
-| `msgCd=S111` | App stores pending reservation params and redirects to login; library should raise auth-required. |
+| `msgCd=S111` | App stored pending reservation parameters and redirected to login. |
 | `msgCd=WRP011002` | Passenger count error. |
 | `{}` | Malformed/insufficient payload; do not treat as success. |
 | `ERROR_CODE=-1` | App/server rejection; do not treat as success. |
@@ -375,9 +380,8 @@ approved.
 | Dummy page entry | POST | `/ard/selectListArd02017_n.do` | Personal reservation handoff: `pnrNo`, `jrnySqno=1`, `JRNYLIST_KEY`, `arvDt`, `arvRsStnCd`, `arvTm`, `dlayAcptFlg`, `dptDt`, `dptRsStnCd`, `dptTm`, `jrnyTpCd`, `lumpStlTgtNo`, `proyStlTgtFlg`, `stlbTrnClsfCd`, `totSeatNum`, `trnGpCd`, `trnNo`. | HTML page, runtime dummy size about 84 KB. Page entry only. |
 | Dummy page entry | POST | `/ard/selectListArd02018_n.do` | Group handoff: `pnrNo=-1`, `rcvdAmt`, `tmpJobSqno1`, `tmpJobSqno2=0`, `seatNo1`, `scarNo1`, plus common journey fields. | HTML page, runtime dummy size about 83 KB. Page entry only. |
 
-Library rule: do not implement real card approval in the core client. If a future
-payment module is added, it must be opt-in, separately reviewed, and never run
-against real credentials/cards by default.
+These page-entry observations are historical and non-implementable. The library
+does not construct their requests or implement card approval.
 
 ### Discount/Additional Detail
 
@@ -393,7 +397,7 @@ Runtime testing used `POST`.
 
 | Evidence | Endpoint | Classification | Notes |
 |---|---|---|---|
-| Commented/static | `ara/selectListAra10h01.do` | Legacy | Mutual verification/reservation detail handoff candidate; do not call automatically. |
+| Commented/static | `ara/selectListAra10h01.do` | Legacy | Historical mutual-verification/reservation-detail candidate; the library does not call it. |
 | Static/native | `https://devapp.srail.or.kr/main/main.do` | Excluded | Development host reference. |
 | Static/native | `https://devapp.srail.co.kr/neo/common/rest/JongURi/view.do` | Excluded | Development/legacy reference. |
 | Static/native | `https://app.srail.co.kr/neo/main/main.do` | Excluded/candidate | Older host family; core runtime used `app.srail.or.kr`. |
@@ -452,7 +456,7 @@ Group-specific rules:
 |---|---|
 | Passenger count | Group flow is for larger groups; runtime used 10 passengers. |
 | Seat selection | App disables or constrains some personal seat options in group flow. |
-| Reservation endpoint | Use `/arc/selectListArc06014_n.do`, not personal reservation endpoint. |
+| Historical reservation endpoint | App evidence mapped group state to `/arc/selectListArc06014_n.do`; this is not an implementation rule. |
 
 ### Timetable/Fare Flow
 
@@ -468,28 +472,20 @@ Group-specific rules:
 2. Call `/arc/selectListArc02012_n.do` with `reqCode=9`, class/car/seat fields.
 3. Treat returned HTML as a seat-selection page.
 4. If using the external live seatmap route, keep it outside core app API module.
-5. Map callback values into reservation form fields.
+5. Record callback-field mappings as historical evidence; do not construct a reservation form.
 
-### Reservation Flow
+### Reservation Evidence Boundary
 
-1. Require explicit production-reservation opt-in.
-2. Rehydrate/preserve the latest server form state.
-3. Get fresh NetFunnel `act_19` key.
-4. Submit personal or group `rsvForm`.
-5. Require `resultMap[0].strResult` success before constructing payment/detail handoff.
-6. On success, pass reservation maps into ARD page-entry model.
+The observed state sequence, form fields, NetFunnel key, and response maps are
+retained only so historical app behavior is not lost. The library does not
+rehydrate, construct, validate, or submit reservation forms, and tests do not
+invoke these endpoints with either valid or invalid payloads.
 
-Safety rule: default test/smoke methods must only run negative payloads or dry
-run validators. They must never create valid reservations unless the caller
-explicitly opts in at runtime.
+### Payment Detail Evidence Boundary
 
-### Payment Detail Flow
-
-1. Only start from a verified reservation success response.
-2. Build `PaymentDetailEntryRequest` from `reservListMap`, `trainListMap`, and `resultMap`.
-3. POST to `/ard/selectListArd02017_n.do` for personal or `/ard/selectListArd02018_n.do` for group.
-4. Treat HTTP 200 HTML as page-entry success only.
-5. Stop before any real payment authorization gateway.
+The ARD request fields and HTML results above document dummy historical probes.
+The library does not build these page-entry requests, follow a reservation
+success response into them, or contact a payment authorization gateway.
 
 ## 8. Hidden Native Libraries And Boundaries
 
@@ -573,7 +569,7 @@ External-app package visibility notes:
 | Business success | Check app-level JSON codes, not just HTTP 200. |
 | Retry | Retry NetFunnel-gated calls once after `NET000001` with a fresh key. |
 | Redaction | Redact login id, password, cookies, PNR, card-like fields, NetFunnel key, raw response bodies. |
-| Tests | Default tests should cover login/search/selectors/timetable/fare/ticket and negative reservation only. |
+| Tests | Default tests cover offline login/search/selectors/timetable/fare/ticket fixtures and never invoke mutation endpoints. |
 
 ## 10. Current Verification Summary
 
@@ -594,12 +590,15 @@ External-app package visibility notes:
 
 ## 11. Open Gaps Before Building A Full Library
 
+These gaps are documentary only and are not an implementation queue for
+reservation, payment, or other mutation behavior.
+
 | Gap | Why it matters |
 |---|---|
-| Full raw hidden form snapshots | Needed to build high-fidelity reservation request builders. |
+| Full raw hidden form snapshots | Not retained; no reservation request builder is planned. |
 | Valid reservation success response | Not captured by design; would create live inventory hold. |
-| Real ARD page internals after valid reservation | Dummy page entry is not enough for payment UI/discount behavior. |
-| ATA detail valid-state behavior | Dummy PNR failed; needs valid reservation context if ever in scope. |
+| Real ARD page internals after valid reservation | Not captured; dummy page evidence is not payment behavior. |
+| ATA detail valid-state behavior | Dummy PNR failed; no valid reservation context will be created. |
 | Search pagination runtime trigger | Static code suggests pagination, but active user trigger needs verification. |
 | External seatmap callback | Current live page can hand off to external Korail seatmap; keep out of core unless separately scoped. |
 | Native secure keyboard/FIDO parity | Not needed for basic HTTP login/search but may matter for app-identical UX. |
