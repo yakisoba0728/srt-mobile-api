@@ -77,7 +77,7 @@ _DYNAMIC_MARKER_RE = re.compile(
 )
 _LETTER_FIRST_COORDINATE_RE = re.compile(r"(?i)[A-Z]{1,4}\d{1,4}[A-Z]?\Z")
 _DIGIT_FIRST_COORDINATE_RE = re.compile(r"(?i)\d{1,4}[A-Z]{1,4}\Z")
-_STATIC_PATH_SUFFIXES = (".do", ".js")
+_STATIC_PATH_SUFFIXES = (".do", ".js", ".mjs")
 _METHOD_RE = re.compile(
     r"\b(?:method|type)\s*:\s*['\"](?P<method>GET|POST|PUT|PATCH|DELETE|HEAD)['\"]",
     re.IGNORECASE,
@@ -228,7 +228,9 @@ def _scan_javascript(code: str) -> tuple[str, list[str]]:
             continue
 
         quote = code[index]
-        if quote in {'"', "'", "`"}:
+        if quote in {"`", "/"}:
+            break
+        if quote in {'"', "'"}:
             end = index + 1
             while end < len(code):
                 if code[end] == "\\":

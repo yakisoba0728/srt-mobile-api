@@ -345,6 +345,70 @@ def test_inline_literals_and_comments_do_not_become_inventory_evidence():
     assert "scar7" not in serialized
 
 
+@pytest.mark.parametrize(
+    "script",
+    [
+        (
+            "const template = `outer ${`fetch('/arc/seatList.do')`} "
+            "response.seatCars response.seatRows seatA1 scarA1`;"
+        ),
+        "const pattern = /fetch(foo).*response.seatCars.*response.seatRows/;",
+    ],
+)
+def test_ambiguous_template_and_regex_tails_are_not_structural_evidence(script):
+    evidence = module.collect_page_evidence(f"<script>{script}</script>")
+
+    item = evidence["scripts"]["items"][0]
+    assert item["ajax_primitives"] == []
+    assert item["route_paths"] == []
+    assert item["payload_keys"] == []
+    assert item["response_paths"] == []
+    assert item["inventory_names"] == []
+    assert evidence["source_categories"] == ["generic_script"]
+    serialized = json.dumps(evidence)
+    for forbidden in ("seatA1", "scarA1", "seatCars", "seatRows"):
+        assert forbidden not in serialized
+
+
+def test_module_mjs_static_reference_is_retained_as_inventory_reference():
+    evidence = module.collect_page_evidence(
+        '<script type="module" '
+        'src="/assets/seat-map.mjs?query=secret"></script>'
+    )
+
+    assert evidence["scripts"]["same_origin_count"] == 1
+    assert evidence["scripts"]["cross_origin_count"] == 0
+    assert evidence["scripts"]["items"] == [
+        {
+            "kind": "same_origin_external",
+            "type": "module",
+            "async": False,
+            "defer": False,
+            "path": "/assets/seat-map.mjs",
+            "length": 0,
+            "truncated": False,
+            "sha256": None,
+            "ajax_primitives": [],
+            "http_methods": [],
+            "route_paths": [],
+            "cross_origin_route_count": 0,
+            "payload_keys": [],
+            "response_paths": [],
+            "inventory_names": [],
+        }
+    ]
+    assert evidence["source_categories"] == [
+        "same_origin_script_inventory_reference",
+        "same_origin_script_reference",
+    ]
+    assert module._result(
+        "success",
+        {"login": 1, "search": 1, "seat_page": 1},
+        evidence,
+    )["sufficiency"] == "inventory_source_reference"
+    assert "query=secret" not in json.dumps(evidence)
+
+
 def test_application_json_is_summarized_without_values_and_malformed_json_is_fixed():
     evidence = module.collect_page_evidence(
         '<script type="application/json">'

@@ -14,7 +14,7 @@
 - Bump the report to `schema_version: 2`; old report files remain historical evidence.
 - A generic `<script>` tag alone must never imply a seat inventory source.
 - Recognize camelCase and numeric-suffix seat/scar structural markers, but emit only counts and safe names—not identifier values.
-- External script and form/iframe targets may be emitted only as same-origin, query/fragment-stripped static `.do`/`.js` paths without dynamic seat/car segments. Cross-origin targets are represented only by category/count.
+- External script and form/iframe targets may be emitted only as same-origin, query/fragment-stripped static `.do`/`.js`/`.mjs` paths without dynamic seat/car segments. Cross-origin targets are represented only by category/count.
 - All collections, string lengths, element counts, script sizes, JSON depth, and JSON array cardinalities must be bounded.
 - Synthetic tests must contain credentials, tokens, card-like data, e-mail addresses, URLs, seat/car identifiers, and query secrets and prove none can appear in serialized evidence.
 - Do not claim a typed physical-seat contract or live success from static evidence.
