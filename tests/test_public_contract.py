@@ -21,6 +21,7 @@ def test_client_public_method_set_is_stable():
         "get_mutual_verification",
         "get_notice_list",
         "get_passenger_selector",
+        "get_seat_page",
         "get_seat_option_selector",
         "get_station_map_selector",
         "get_station_selector",
@@ -112,3 +113,14 @@ def test_mutual_method_signature_type_and_export_are_stable():
         is MutualVerificationResult
     )
     assert srt_mobile_api.MutualVerificationResult is MutualVerificationResult
+
+
+def test_seat_page_method_type_and_export_are_stable():
+    from typing import get_type_hints
+
+    from srt_mobile_api import SeatSelectionPage
+
+    signature = inspect.signature(SrtClient.get_seat_page)
+    assert list(signature.parameters) == ["self", "train"]
+    assert get_type_hints(SrtClient.get_seat_page)["return"] is SeatSelectionPage
+    assert srt_mobile_api.SeatSelectionPage is SeatSelectionPage

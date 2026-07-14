@@ -18,6 +18,7 @@ from srt_mobile_api.models import (
     MutualVerificationResult,
     NetFunnelToken,
     PassengerCounts,
+    SeatSelectionPage,
     SrtSession,
     TimetablePage,
     TimetableRow,
@@ -248,6 +249,8 @@ def test_sensitive_and_raw_model_fields_are_hidden_from_repr():
     train = TrainSummary("303", raw={"secret": "train-raw"})
     result = TrainSearchResult([train], raw={"secret": "search-raw"})
     page = HtmlPage(text="parsed", raw="html-raw")
+    seat_page = SeatSelectionPage(text="좌석선택", raw="seat-page-secret")
+    assert "seat-page-secret" not in repr(seat_page)
     for value, secret in (
         (session, "login-secret"),
         (token, "key-secret"),

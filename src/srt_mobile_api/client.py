@@ -16,6 +16,7 @@ from .models import (
     MutualVerificationResult,
     PassengerCounts,
     SearchPageState,
+    SeatSelectionPage,
     SrtSession,
     TimetablePage,
     TrainSearchQuery,
@@ -29,6 +30,7 @@ from .parsers import (
     parse_mutual_verification_response,
     parse_notice_list_response,
     parse_search_page_state,
+    parse_seat_selection_page,
     parse_timetable_page,
     parse_train_search_response,
 )
@@ -39,6 +41,7 @@ from .payloads import (
     passenger_selector_payload,
     search_ajax_payload,
     search_page_payload,
+    seat_page_payload,
     seat_option_selector_payload,
     station_map_selector_payload,
     station_selector_payload,
@@ -252,6 +255,15 @@ class SrtClient:
     def search_group_trains(self, query: TrainSearchQuery) -> TrainSearchResult:
         with self._session_guard():
             return self._search_with_retry(query, group=True)
+
+    def get_seat_page(self, train: TrainSummary) -> SeatSelectionPage:
+        with self._session_guard():
+            raw = self.http.post_html_form(
+                "/arc/selectListArc02012_n.do",
+                seat_page_payload(train),
+                referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
+            )
+            return parse_seat_selection_page(raw)
 
     def get_timetable(self, train: TrainSummary) -> TimetablePage:
         with self._session_guard():

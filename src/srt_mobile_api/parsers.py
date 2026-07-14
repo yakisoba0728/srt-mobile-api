@@ -13,6 +13,7 @@ from .models import (
     HtmlPage,
     MutualVerificationResult,
     SearchPageState,
+    SeatSelectionPage,
     TimetablePage,
     TimetableRow,
     TrainSearchResult,
@@ -99,6 +100,19 @@ def parse_html_page(
     if require_authenticated and is_login_form(html):
         raise SrtSessionExpiredError(f"SRT {context} returned the login form", raw=html)
     return HtmlPage(text=extract_text(html), raw=html)
+
+
+def parse_seat_selection_page(html: str) -> SeatSelectionPage:
+    page = parse_html_page(
+        html,
+        context="seat selection page",
+        require_authenticated=True,
+    )
+    if "좌석선택" not in page.text:
+        raise SrtProtocolError(
+            "SRT seat selection page did not contain the required marker"
+        )
+    return SeatSelectionPage(text=page.text, raw=page.raw)
 
 
 def parse_notice_list_response(data: dict[str, Any]) -> dict[str, Any]:

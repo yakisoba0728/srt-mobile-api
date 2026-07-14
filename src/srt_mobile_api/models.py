@@ -118,6 +118,11 @@ class HtmlPage:
 
 
 @dataclass(frozen=True)
+class SeatSelectionPage(HtmlPage):
+    pass
+
+
+@dataclass(frozen=True)
 class TimetableRow:
     station_name: str
     times: tuple[str, ...]

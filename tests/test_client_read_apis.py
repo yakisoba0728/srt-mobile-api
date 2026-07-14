@@ -5,8 +5,20 @@ import pytest
 
 from srt_mobile_api import SrtClient, SrtConfig
 from srt_mobile_api.errors import SrtAppError, SrtNetFunnelError, SrtProtocolError, SrtSessionExpiredError
-from srt_mobile_api.models import FarePage, PassengerCounts, SrtSession, TimetablePage, TrainSearchQuery, TrainSummary
-from srt_mobile_api.parsers import parse_html_page, parse_notice_list_response
+from srt_mobile_api.models import (
+    FarePage,
+    PassengerCounts,
+    SeatSelectionPage,
+    SrtSession,
+    TimetablePage,
+    TrainSearchQuery,
+    TrainSummary,
+)
+from srt_mobile_api.parsers import (
+    parse_html_page,
+    parse_notice_list_response,
+    parse_seat_selection_page,
+)
 
 
 def test_html_page_rejects_empty_and_login_form_for_authenticated_context():
@@ -435,6 +447,62 @@ def test_ordinary_app_failure_is_not_retried(load_text_fixture):
     with pytest.raises(SrtAppError):
         client.search_trains(TrainSearchQuery("0551", "0020", "20260710"))
     assert post_count == 1
+
+
+def _complete_seat_train() -> TrainSummary:
+    return TrainSummary(
+        train_no="303",
+        train_group_code="300",
+        service_class_code="17",
+        run_date="20260710",
+        departure_date="20260710",
+        departure_time="060000",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+        departure_run_order="000001",
+        arrival_run_order="000010",
+        seat_attr_code="015",
+    )
+
+
+def test_seat_selection_parser_requires_authenticated_marker(load_text_fixture):
+    page = parse_seat_selection_page(load_text_fixture("seat_selection_page.html"))
+    assert isinstance(page, SeatSelectionPage)
+    assert "좌석선택" in page.text
+    assert "합성 테스트 페이지" in page.raw
+
+    with pytest.raises(SrtProtocolError, match="seat selection"):
+        parse_seat_selection_page("<html><body>unexpected page</body></html>")
+    with pytest.raises(SrtSessionExpiredError):
+        parse_seat_selection_page(
+            '<form action="/apb/selectListApb01080_n.do">'
+            '<input name="hmpgPwdCphd"></form>'
+        )
+
+
+def test_get_seat_page_posts_once_and_returns_inert_page(load_text_fixture):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            text=load_text_fixture("seat_selection_page.html"),
+            headers={"Content-Type": "text/html; charset=UTF-8"},
+        )
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    page = client.get_seat_page(_complete_seat_train())
+
+    assert isinstance(page, SeatSelectionPage)
+    assert "좌석선택" in page.text
+    assert len(requests) == 1
+    assert requests[0].method == "POST"
+    assert requests[0].url.path == "/arc/selectListArc02012_n.do"
+    assert not requests[0].url.query
+    assert dict(parse_qsl(requests[0].content.decode(), keep_blank_values=True))[
+        "choiceSeatCount"
+    ] == "1"
 
 
 def test_timetable_and_fare(load_text_fixture):
