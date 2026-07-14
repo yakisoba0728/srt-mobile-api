@@ -41,15 +41,15 @@ SEAT_PAGE_FIXED_VALUES = {
     "choiceSeatCount": "1",
 }
 SEAT_PAGE_VALUE_PATTERNS = {
-    "runDt": r"\d{8}",
-    "dptDt": r"\d{8}",
-    "trnNo": r"\d{5}",
-    "dptTm": r"\d{6}",
-    "dptRsStnCd": r"\d{4}",
-    "arvRsStnCd": r"\d{4}",
-    "seatAttCd": r"\d{3}",
-    "dptStnRunOrdr": r"\d+",
-    "arvStnRunOrdr": r"\d+",
+    "runDt": r"[0-9]{8}",
+    "dptDt": r"[0-9]{8}",
+    "trnNo": r"[0-9]{5}",
+    "dptTm": r"[0-9]{6}",
+    "dptRsStnCd": r"[0-9]{4}",
+    "arvRsStnCd": r"[0-9]{4}",
+    "seatAttCd": r"[0-9]{3}",
+    "dptStnRunOrdr": r"[0-9]+",
+    "arvStnRunOrdr": r"[0-9]+",
 }
 
 
@@ -92,7 +92,7 @@ def _same_origin(left: httpx.URL, right: httpx.URL) -> bool:
 
 
 def _assert_seat_page_request(request: httpx.Request) -> None:
-    if request.url.query:
+    if b"?" in request.url.raw_path:
         raise SrtProtocolError("SRT seat page request must not use URL query parameters")
     content_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
     if content_type != "application/x-www-form-urlencoded":

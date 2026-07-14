@@ -32,6 +32,65 @@ class _TextExtractor(HTMLParser):
             self.parts.append(stripped)
 
 
+class _SeatPageMarkerParser(HTMLParser):
+    _HIDDEN_TAGS = {"script", "style"}
+    _VOID_TAGS = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.has_element = False
+        self.found_marker = False
+        self._hidden_depth = 0
+        self._visible_elements: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        normalized_tag = tag.casefold()
+        if normalized_tag in self._HIDDEN_TAGS:
+            self._hidden_depth += 1
+            return
+        if self._hidden_depth:
+            return
+        self.has_element = True
+        if normalized_tag not in self._VOID_TAGS:
+            self._visible_elements.append(normalized_tag)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if not self._hidden_depth and tag.casefold() not in self._HIDDEN_TAGS:
+            self.has_element = True
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden_depth and self._visible_elements and "좌석선택" in data:
+            self.found_marker = True
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized_tag = tag.casefold()
+        if normalized_tag in self._HIDDEN_TAGS:
+            if self._hidden_depth:
+                self._hidden_depth -= 1
+            return
+        if self._hidden_depth or normalized_tag not in self._visible_elements:
+            return
+        matching_index = len(self._visible_elements) - 1 - self._visible_elements[::-1].index(
+            normalized_tag
+        )
+        del self._visible_elements[matching_index:]
+
+
 LOGIN_FORM_ACTION_PATH = "/apb/selectListApb01080_n.do"
 
 
@@ -108,7 +167,9 @@ def parse_seat_selection_page(html: str) -> SeatSelectionPage:
         context="seat selection page",
         require_authenticated=True,
     )
-    if "좌석선택" not in page.text:
+    marker_parser = _SeatPageMarkerParser()
+    marker_parser.feed(html)
+    if not marker_parser.has_element or not marker_parser.found_marker:
         raise SrtProtocolError(
             "SRT seat selection page did not contain the required marker"
         )

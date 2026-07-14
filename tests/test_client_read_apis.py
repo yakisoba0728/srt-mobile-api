@@ -480,6 +480,19 @@ def test_seat_selection_parser_requires_authenticated_marker(load_text_fixture):
         )
 
 
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<script>const label = "좌석선택";</script>',
+        '<style>.x::after { content: "좌석선택"; }</style>',
+        '{"ErrorMsg":"좌석선택"}',
+    ],
+)
+def test_seat_selection_parser_requires_marker_in_visible_element_data(html):
+    with pytest.raises(SrtProtocolError, match="seat selection"):
+        parse_seat_selection_page(html)
+
+
 def test_get_seat_page_posts_once_and_returns_inert_page(load_text_fixture):
     requests: list[httpx.Request] = []
 
@@ -503,6 +516,23 @@ def test_get_seat_page_posts_once_and_returns_inert_page(load_text_fixture):
     assert dict(parse_qsl(requests[0].content.decode(), keep_blank_values=True))[
         "choiceSeatCount"
     ] == "1"
+
+
+def test_get_seat_page_rejects_incomplete_train_before_transport():
+    called = False
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        raise AssertionError("transport must not be entered for incomplete seat data")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(ValueError, match="run_date"):
+            client.get_seat_page(TrainSummary(train_no="303", train_group_code="300"))
+        assert called is False
+    finally:
+        client.close()
 
 
 def test_timetable_and_fare(load_text_fixture):

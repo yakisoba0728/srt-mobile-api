@@ -232,7 +232,11 @@ def _required_digits(
     length: int | None = None,
     max_length: int | None = None,
 ) -> str:
-    if not isinstance(value, str) or not value or not value.isdigit():
+    if (
+        not isinstance(value, str)
+        or not value
+        or any(character < "0" or character > "9" for character in value)
+    ):
         raise ValueError(f"{name} must contain only digits")
     if length is not None and len(value) != length:
         raise ValueError(f"{name} must contain exactly {length} digits")

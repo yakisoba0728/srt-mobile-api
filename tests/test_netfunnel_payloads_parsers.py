@@ -367,6 +367,18 @@ def test_seat_page_payload_rejects_incomplete_or_malformed_train(changes, messag
         seat_page_payload(replace(_complete_seat_page_train(), **changes))
 
 
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"train_no": "٣٠٣"}, "train_no"),
+        ({"departure_station_code": "٠٥٥١"}, "departure_station_code"),
+    ],
+)
+def test_seat_page_payload_rejects_non_ascii_digits(changes, message):
+    with pytest.raises(ValueError, match=message):
+        seat_page_payload(replace(_complete_seat_page_train(), **changes))
+
+
 def test_parse_train_search_response_classifies_netfunnel_failure(load_json_fixture):
     with pytest.raises(SrtNetFunnelError) as exc_info:
         parse_train_search_response(load_json_fixture("search_netfunnel_failure.json"))

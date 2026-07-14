@@ -114,6 +114,23 @@ def test_off_host_mutation_and_wrong_method_routes_are_rejected(method, url):
 
 
 @pytest.mark.parametrize(
+    ("method", "url"),
+    [
+        ("POST", "https://app.srail.or.kr/arc/selectListArc06014_n.do"),
+        ("POST", "https://app.srail.or.kr/arc/selectListArc10013_n.do"),
+        ("POST", "https://app.srail.or.kr/ata/selectListAta01032_n.do"),
+        (
+            "GET",
+            "https://www.korail.com/ticket/search/list?srtJob=seatmap",
+        ),
+    ],
+)
+def test_named_adjacent_and_external_seat_routes_are_rejected(method, url):
+    with pytest.raises(SrtProtocolError):
+        assert_read_only_request(_request(method, url), SrtConfig())
+
+
+@pytest.mark.parametrize(
     ("method", "path"),
     [
         ("GET", "/common/ARA/ARA0501P/view.do"),
@@ -169,6 +186,11 @@ def test_exact_seat_page_form_is_allowed():
     assert_read_only_request(_seat_request(), SrtConfig())
 
 
+def test_seat_page_rejects_bare_query_delimiter():
+    with pytest.raises(SrtProtocolError):
+        assert_read_only_request(_seat_request(query="?"), SrtConfig())
+
+
 @pytest.mark.parametrize(
     "seat_request",
     [
@@ -198,6 +220,20 @@ def test_exact_seat_page_form_is_allowed():
 def test_seat_page_rejects_query_duplicates_unknown_fields_and_wrong_values(seat_request):
     with pytest.raises(SrtProtocolError):
         assert_read_only_request(seat_request, SrtConfig())
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("trnNo", "٠٠٣٠٣"),
+        ("dptRsStnCd", "٠٥٥١"),
+    ],
+)
+def test_seat_page_rejects_non_ascii_digits_in_prepared_form(field, value):
+    body = urlencode({**_seat_form(), field: value})
+
+    with pytest.raises(SrtProtocolError):
+        assert_read_only_request(_seat_request(body=body), SrtConfig())
 
 
 def test_seat_page_rejects_percent_encoded_route_spelling():
