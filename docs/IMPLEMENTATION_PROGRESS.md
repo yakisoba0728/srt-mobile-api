@@ -74,6 +74,13 @@ bridges, callbacks, and external seat-map calls are not callable.
   skip was the explicitly opted-in live-service test. The exact boundary
   remained `routes=20`, the excluded-route scan and diff check were clean, and
   the production live call was not repeated.
+- Final release-prep package gate: `srt_mobile_api-0.1.0-py3-none-any.whl` and
+  `srt_mobile_api-0.1.0.tar.gz` built successfully in an isolated build
+  environment. A fresh Python 3.14 virtual environment installed the wheel
+  with its dependencies and imported `SeatSelectionPage` and `SrtClient`
+  directly from `site-packages`; `SrtClient.get_seat_page` retained the public
+  `(self, train: TrainSummary) -> SeatSelectionPage` contract. No live service
+  request was made during this package gate.
 - Focused request tests verify a body with no query and exactly thirteen unique
   allowlisted fields, fixed general class and one seat, zero I/O on incomplete
   server row data, one seat-page POST, and no adjacent request.
