@@ -464,6 +464,55 @@ def test_dynamic_seat_paths_are_not_retained_but_static_routes_are():
     assert "query=secret" not in serialized
 
 
+def test_alphanumeric_seat_identifiers_are_rejected_across_all_sources():
+    for identifier in ("seatA1", "scarA1", "coachB2", "7A", "12BC", "ABCD123"):
+        assert module._dynamic_value_name(identifier) is True
+    for structural_name in ("seatNo", "carNo", "cars", "seats"):
+        assert module._dynamic_value_name(structural_name) is False
+
+    evidence = module.collect_page_evidence(
+        '<script type="application/json">'
+        '{"seatA1":[],"scarA1":{},"coachB2":[],"7A":{},"12BC":[]}'
+        "</script>"
+        '<script src="/assets/seatA1.js"></script>'
+        '<script src="/assets/app.js"></script>'
+        '<form action="/arc/seat/7A.do"></form>'
+        '<iframe src="/arc/seat/12BC.do"></iframe>'
+        "<script>"
+        '$.ajax({url: "/arc/selectListArc02012_n.do", '
+        'data: {seatA1: "x", scarA1: "y", coachB2: "z"}});'
+        "const a = response.seatA1; const b = response.scarA1; "
+        "const c = response.coachB2;"
+        "</script>"
+    )
+
+    json_item = evidence["embedded_json"]["items"][0]
+    assert json_item["key_types"] == []
+    assert json_item["inventory_names"] == []
+    inline = next(
+        item
+        for item in evidence["scripts"]["items"]
+        if item["kind"] == "inline" and item["type"] == "classic"
+    )
+    assert inline["route_paths"] == ["/arc/selectListArc02012_n.do"]
+    assert inline["payload_keys"] == []
+    assert inline["response_paths"] == []
+    assert inline["inventory_names"] == []
+    assert [
+        item["path"]
+        for item in evidence["scripts"]["items"]
+        if item["kind"] == "same_origin_external"
+    ] == ["/assets/app.js"]
+    assert all(item["path"] is None for item in evidence["forms"]["items"])
+    assert evidence["iframes"]["same_origin_paths"] == []
+    assert "embedded_json_inventory_candidate" not in evidence["source_categories"]
+    assert "inline_ajax_inventory_contract" not in evidence["source_categories"]
+    assert "inline_script_inventory_candidate" not in evidence["source_categories"]
+    serialized = json.dumps(evidence)
+    for forbidden in ("seatA1", "scarA1", "coachB2", "7A", "12BC"):
+        assert forbidden not in serialized
+
+
 def test_explicit_zero_port_is_cross_origin_for_every_target_kind():
     evidence = module.collect_page_evidence(
         '<script src="https://app.srail.or.kr:0/assets/app.js"></script>'

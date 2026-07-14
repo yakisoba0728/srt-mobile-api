@@ -133,7 +133,11 @@ recorded production evidence result.
   JavaScript string/comment false positives, dynamic JSON keys and paths,
   explicit port zero, and oversized-script tail hashing.
 - Final evidence-redaction focused GREEN: `26 passed`.
-- Current full offline gate: `505 passed, 1 deselected`; the deselected case is
+- Evidence-redaction full offline gate: `505 passed, 1 deselected`.
+- Final alphanumeric-seat review RED: the focused regression failed once on
+  `seatA1`; after widening the value-shape filter the focused suite reported
+  `27 passed`.
+- Current full offline gate: `506 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
 - Pagination TDD gate: the expected RED was missing continuation/parser/public
   symbols; after implementation the focused client, payload/parser, and public

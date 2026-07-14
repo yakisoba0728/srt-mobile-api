@@ -72,8 +72,11 @@ _OBJECT_KEY_RE = re.compile(
 _RESPONSE_PATH_RE = re.compile(
     r"\b(?:data|response|result)(?:\s*\?*\.\s*[A-Za-z][A-Za-z0-9_-]{0,31}){1,4}"
 )
-_DYNAMIC_MARKER_RE = re.compile(r"(?i)(?:seat|scar|car|coach)[_-]?\d")
-_SEAT_COORDINATE_RE = re.compile(r"(?i)[A-Z]{1,2}\d{1,3}[A-Z]?\Z")
+_DYNAMIC_MARKER_RE = re.compile(
+    r"(?i)(?:seat|scar|car|coach)[_-]?(?:\d|[A-Z]{1,4}\d)"
+)
+_LETTER_FIRST_COORDINATE_RE = re.compile(r"(?i)[A-Z]{1,4}\d{1,4}[A-Z]?\Z")
+_DIGIT_FIRST_COORDINATE_RE = re.compile(r"(?i)\d{1,4}[A-Z]{1,4}\Z")
 _STATIC_PATH_SUFFIXES = (".do", ".js")
 _METHOD_RE = re.compile(
     r"\b(?:method|type)\s*:\s*['\"](?P<method>GET|POST|PUT|PATCH|DELETE|HEAD)['\"]",
@@ -124,7 +127,8 @@ def _dynamic_value_name(value: str) -> bool:
     return (
         value.isdigit()
         or _DYNAMIC_MARKER_RE.search(value) is not None
-        or _SEAT_COORDINATE_RE.fullmatch(value) is not None
+        or _LETTER_FIRST_COORDINATE_RE.fullmatch(value) is not None
+        or _DIGIT_FIRST_COORDINATE_RE.fullmatch(value) is not None
     )
 
 
