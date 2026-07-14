@@ -90,10 +90,12 @@ adjacent read, external handoff, callback, or mutation route.
 The output is a deterministic bounded `schema_version: 2` structural report.
 It records explicit `source_categories`, structural-name/count summaries,
 same-origin query/fragment-free paths, cross-origin counts, script type/flag and
-static Ajax metadata, bounded inline-script lengths and SHA-256 digests, form
-and iframe metadata, and bounded `application/json` key/type/cardinality
-summaries. Generic scripts alone remain `no_inventory_source`; only concrete
-inventory candidates or references can promote sufficiency.
+static Ajax metadata, bounded inline-script lengths and captured-prefix SHA-256
+digests, form and iframe metadata, and bounded
+`application/json` key/type/cardinality summaries. JavaScript strings/comments,
+dynamic JSON seat keys, and dynamic seat/car path segments are discarded.
+Generic scripts alone remain `no_inventory_source`; only concrete inventory
+candidates or references can promote sufficiency.
 
 The parser executes no JavaScript and follows no script, form, iframe, Ajax
 route, callback, or external handoff. Raw HTML, visible text, attribute/input
@@ -127,6 +129,12 @@ recorded production evidence result.
 - Seat-layout evidence v2 full offline gate: `501 passed, 1 deselected`; the
   deselected case was the explicit live-service test. `git diff --check` was
   clean, and no live request or credential access occurred.
+- Final evidence-redaction review RED: `5 failed, 21 passed`, covering
+  JavaScript string/comment false positives, dynamic JSON keys and paths,
+  explicit port zero, and oversized-script tail hashing.
+- Final evidence-redaction focused GREEN: `26 passed`.
+- Current full offline gate: `505 passed, 1 deselected`; the deselected case is
+  the explicit live-service test. No live request or credential access occurred.
 - Pagination TDD gate: the expected RED was missing continuation/parser/public
   symbols; after implementation the focused client, payload/parser, and public
   contract suite reported `171 passed`.
@@ -138,8 +146,9 @@ recorded production evidence result.
   `srt_mobile_api-0.2.0.tar.gz` in a temporary artifact directory. The archive
   verifier accepted both artifacts. No live request or credential access was
   performed.
-- Fresh post-review controller gate: `498 passed, 1 deselected`; `git diff
-  --check` was clean. The only deselected test remained the explicit live case.
+- Historical post-pagination controller gate at that commit: `498 passed, 1
+  deselected`; `git diff --check` was clean. The only deselected test remained
+  the explicit live case.
 - Final review hardening snapshots each page's empty state and last departure
   time before yielding it. Caller mutation of the compatible public
   `TrainSearchResult.trains` list therefore cannot alter continuation control or

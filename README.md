@@ -5,7 +5,7 @@ evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The current offline suite is
-`498 passed, 1 deselected`; the deselected case is the explicitly opted-in
+`505 passed, 1 deselected`; the deselected case is the explicitly opted-in
 live-service test.
 
 Internal editable installation and offline verification:
@@ -170,10 +170,13 @@ seat inventory source.
 The parser analyzes only the already-returned HTML. It does not execute
 JavaScript or follow a script, form, iframe, Ajax route, external handoff, or
 callback. Same-origin targets and inline route literals are retained only as
-query/fragment-free bounded paths; cross-origin targets are counts/categories
-only. Inline scripts retain bounded lengths, truncation flags, and SHA-256
-digests—not source text. `application/json` blocks retain only bounded key/type,
-array-cardinality, depth, and inventory-name summaries.
+query/fragment-free static `.do`/`.js` paths without dynamic seat/car segments;
+cross-origin targets are counts/categories only. Inline scripts retain bounded
+lengths, truncation flags, and SHA-256 digests of the captured prefix—not source
+text or the truncated tail. JavaScript strings/comments cannot create structural
+inventory evidence. `application/json` blocks retain only bounded key/type,
+array-cardinality, depth, and inventory-name summaries after dynamic seat keys
+are discarded.
 
 Raw HTML, visible text, attribute/input values, element IDs, query strings,
 arbitrary URLs, train/car/seat values, credentials, cookies, tokens, and

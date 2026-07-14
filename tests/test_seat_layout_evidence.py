@@ -315,6 +315,36 @@ def test_generic_scripts_do_not_imply_an_inventory_source():
     assert "https://www.korail.com/info" not in json.dumps(evidence)
 
 
+def test_inline_literals_and_comments_do_not_become_inventory_evidence():
+    evidence = module.collect_page_evidence(
+        "<script>"
+        'const x = "seat42"; const y = "scar7";'
+        '// fetch("/arc/seatInventory.do", {method: "POST", '
+        'data: {seatNo: "A1"}}); response.seatCars;\n'
+        '/* $.ajax({url: "https://example.invalid/seatmap"}); '
+        "new XMLHttpRequest(); result.scarRows; */"
+        "</script>"
+    )
+
+    item = evidence["scripts"]["items"][0]
+    assert item["ajax_primitives"] == []
+    assert item["http_methods"] == []
+    assert item["route_paths"] == []
+    assert item["payload_keys"] == []
+    assert item["response_paths"] == []
+    assert item["inventory_names"] == []
+    assert evidence["external_handoff_candidate"] is False
+    assert evidence["source_categories"] == ["generic_script"]
+    assert module._result(
+        "success",
+        {"login": 1, "search": 1, "seat_page": 1},
+        evidence,
+    )["sufficiency"] == "no_inventory_source"
+    serialized = json.dumps(evidence)
+    assert "seat42" not in serialized
+    assert "scar7" not in serialized
+
+
 def test_application_json_is_summarized_without_values_and_malformed_json_is_fixed():
     evidence = module.collect_page_evidence(
         '<script type="application/json">'
@@ -344,6 +374,40 @@ def test_application_json_is_summarized_without_values_and_malformed_json_is_fix
     assert "opaque-secret" not in json.dumps(evidence)
 
 
+def test_application_json_dynamic_seat_keys_are_treated_as_values():
+    evidence = module.collect_page_evidence(
+        '<script type="application/json">'
+        '{"cars":[{"seats":[{"seatNo":"A1","carNo":"7",'
+        '"available":true}]}],"seat42":{"A1":true},"scar7":[]}'
+        "</script>"
+    )
+
+    item = evidence["embedded_json"]["items"][0]
+    assert item["key_types"] == [
+        "cars:array",
+        "cars[].seats:array",
+        "cars[].seats[].available:boolean",
+        "cars[].seats[].carNo:string",
+        "cars[].seats[].seatNo:string",
+    ]
+    assert item["inventory_names"] == ["carNo", "cars", "seatNo", "seats"]
+    serialized = json.dumps(evidence)
+    assert "seat42" not in serialized
+    assert "scar7" not in serialized
+    assert "A1" not in serialized
+
+    dynamic_only = module.collect_page_evidence(
+        '<script type="application/json">'
+        '{"seat42":{"A1":true},"scar7":[]}'
+        "</script>"
+    )
+    assert dynamic_only["embedded_json"]["items"][0]["key_types"] == []
+    assert dynamic_only["embedded_json"]["items"][0]["inventory_names"] == []
+    assert "embedded_json_inventory_candidate" not in dynamic_only[
+        "source_categories"
+    ]
+
+
 def test_camel_case_numeric_markers_and_malformed_markup_are_counted_not_emitted():
     evidence = module.collect_page_evidence(
         '<div id="scarSeat1"><span class="seatCell2">x'
@@ -358,6 +422,64 @@ def test_camel_case_numeric_markers_and_malformed_markup_are_counted_not_emitted
     assert "seatCell2" not in serialized
     assert "car-7" not in serialized
     assert evidence["embedded_json"]["invalid_count"] == 1
+
+
+def test_dynamic_seat_paths_are_not_retained_but_static_routes_are():
+    evidence = module.collect_page_evidence(
+        '<script src="/arc/seat/A1.js"></script>'
+        '<script src="/assets/seat42.js"></script>'
+        '<script src="/assets/app.js?query=secret"></script>'
+        '<form action="/arc/car/7.do"></form>'
+        '<form action="/arc/normal.do?query=secret"></form>'
+        '<iframe src="/arc/seat/A1.do"></iframe>'
+        '<iframe src="/arc/seat-frame.do?query=secret"></iframe>'
+        "<script>"
+        'fetch("/arc/seat/A1"); fetch("/arc/seat/A1.do"); '
+        'fetch("/arc/car/7"); fetch("/arc/car/7.js"); '
+        'fetch("/arc/seat42.do"); '
+        'fetch("/arc/selectListArc02012_n.do?query=secret");'
+        "</script>"
+    )
+
+    external_paths = [
+        item["path"]
+        for item in evidence["scripts"]["items"]
+        if item["kind"] == "same_origin_external"
+    ]
+    assert external_paths == ["/assets/app.js"]
+    assert [
+        item["path"] for item in evidence["forms"]["items"] if item["path"]
+    ] == ["/arc/normal.do"]
+    assert evidence["iframes"]["same_origin_paths"] == ["/arc/seat-frame.do"]
+    inline = next(
+        item
+        for item in evidence["scripts"]["items"]
+        if item["kind"] == "inline"
+    )
+    assert inline["route_paths"] == ["/arc/selectListArc02012_n.do"]
+    serialized = json.dumps(evidence)
+    assert "/arc/seat/A1" not in serialized
+    assert "/arc/car/7" not in serialized
+    assert "/assets/seat42.js" not in serialized
+    assert "query=secret" not in serialized
+
+
+def test_explicit_zero_port_is_cross_origin_for_every_target_kind():
+    evidence = module.collect_page_evidence(
+        '<script src="https://app.srail.or.kr:0/assets/app.js"></script>'
+        '<form action="https://app.srail.or.kr:0/arc/normal.do"></form>'
+        '<iframe src="https://app.srail.or.kr:0/arc/frame.do"></iframe>'
+    )
+
+    assert evidence["scripts"]["same_origin_count"] == 0
+    assert evidence["scripts"]["cross_origin_count"] == 1
+    assert evidence["forms"]["same_origin_count"] == 0
+    assert evidence["forms"]["cross_origin_count"] == 1
+    assert evidence["iframes"]["same_origin_count"] == 0
+    assert evidence["iframes"]["cross_origin_count"] == 1
+    assert evidence["scripts"]["items"] == []
+    assert evidence["forms"]["items"] == []
+    assert evidence["iframes"]["same_origin_paths"] == []
 
 
 def test_script_items_lengths_and_json_cardinalities_are_bounded():
@@ -380,7 +502,7 @@ def test_script_items_lengths_and_json_cardinalities_are_bounded():
     assert evidence["scripts"]["items"][0]["length"] == module.MAX_SCRIPT_CHARS
     assert evidence["scripts"]["items"][0]["truncated"] is True
     assert evidence["scripts"]["items"][0]["sha256"] == hashlib.sha256(
-        oversized_script.encode("utf-8")
+        oversized_script[: module.MAX_SCRIPT_CHARS].encode("utf-8")
     ).hexdigest()
     assert evidence["embedded_json"]["items"][0]["array_cardinalities"] == [
         {"path": "scarRows", "count": 0, "truncated": False},

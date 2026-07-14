@@ -65,9 +65,6 @@ _SAFE_LONG_LITERALS = frozenset(
         "same_origin_script_inventory_reference",
     }
 )
-_STRING_LITERAL_RE = re.compile(
-    r"(?P<quote>['\"])(?P<value>[^'\"\r\n]{1,512})(?P=quote)"
-)
 _PAYLOAD_RE = re.compile(r"\b(?:body|data)\s*:\s*\{(?P<body>[^{}]{0,4096})\}")
 _OBJECT_KEY_RE = re.compile(
     r"(?:^|[,\s])(?:['\"])?(?P<name>[A-Za-z][A-Za-z0-9_-]{0,63})(?:['\"])?\s*:"
@@ -75,7 +72,9 @@ _OBJECT_KEY_RE = re.compile(
 _RESPONSE_PATH_RE = re.compile(
     r"\b(?:data|response|result)(?:\s*\?*\.\s*[A-Za-z][A-Za-z0-9_-]{0,31}){1,4}"
 )
-_IDENTIFIER_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9_-]{1,63}\b")
+_DYNAMIC_MARKER_RE = re.compile(r"(?i)(?:seat|scar|car|coach)[_-]?\d")
+_SEAT_COORDINATE_RE = re.compile(r"(?i)[A-Z]{1,2}\d{1,3}[A-Z]?\Z")
+_STATIC_PATH_SUFFIXES = (".do", ".js")
 _METHOD_RE = re.compile(
     r"\b(?:method|type)\s*:\s*['\"](?P<method>GET|POST|PUT|PATCH|DELETE|HEAD)['\"]",
     re.IGNORECASE,
@@ -121,6 +120,14 @@ def _inventory_name(value: str) -> bool:
     ) is not None
 
 
+def _dynamic_value_name(value: str) -> bool:
+    return (
+        value.isdigit()
+        or _DYNAMIC_MARKER_RE.search(value) is not None
+        or _SEAT_COORDINATE_RE.fullmatch(value) is not None
+    )
+
+
 def _safe_same_origin_path(path: str) -> str | None:
     if not path:
         path = "/"
@@ -131,7 +138,10 @@ def _safe_same_origin_path(path: str) -> str | None:
         or re.fullmatch(r"/[A-Za-z0-9._~/-]*", path) is None
     ):
         return None
+    if not path.casefold().endswith(_STATIC_PATH_SUFFIXES):
+        return None
     segments = [segment for segment in path.split("/") if segment]
+    stems = [*segments[:-1], segments[-1].rsplit(".", 1)[0]]
     if any(
         segment in {".", ".."}
         or len(segment) > 31
@@ -139,7 +149,7 @@ def _safe_same_origin_path(path: str) -> str | None:
         or SENSITIVE_STRUCTURAL_RE.search(segment)
         or LONG_STRUCTURAL_TOKEN_RE.search(segment)
         for segment in segments
-    ):
+    ) or any(_dynamic_value_name(stem) for stem in stems):
         return None
     return path
 
@@ -162,7 +172,7 @@ def _classify_target(value: str | None) -> tuple[str, str | None]:
     same_origin = (
         parsed.scheme.casefold() == _APP_ORIGIN_PARTS.scheme.casefold()
         and parsed.hostname.casefold() == _APP_ORIGIN_PARTS.hostname.casefold()
-        and (port or 443) == _APP_ORIGIN_PORT
+        and (port if port is not None else _APP_ORIGIN_PORT) == _APP_ORIGIN_PORT
         and parsed.username is None
         and parsed.password is None
     )
@@ -188,6 +198,62 @@ def _external_handoff_value(value: str) -> bool:
         "://" in folded
         and any(marker in folded for marker in ("seatmap", "seat-map"))
     )
+
+
+def _scan_javascript(code: str) -> tuple[str, list[str]]:
+    masked = ["\n" if char == "\n" else " " for char in code]
+    literals: list[str] = []
+    methods = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
+    index = 0
+    while index < len(code):
+        if code.startswith("//", index):
+            newline = code.find("\n", index + 2)
+            if newline < 0:
+                break
+            masked[newline] = "\n"
+            index = newline + 1
+            continue
+        if code.startswith("/*", index):
+            end = code.find("*/", index + 2)
+            if end < 0:
+                break
+            for offset in range(index, end + 2):
+                if code[offset] == "\n":
+                    masked[offset] = "\n"
+            index = end + 2
+            continue
+
+        quote = code[index]
+        if quote in {'"', "'", "`"}:
+            end = index + 1
+            while end < len(code):
+                if code[end] == "\\":
+                    end += 2
+                    continue
+                if code[end] == quote:
+                    break
+                end += 1
+            if end >= len(code):
+                break
+            value = code[index + 1 : end]
+            if len(value) <= 512 and len(literals) < MAX_ITEMS:
+                literals.append(value)
+            following = end + 1
+            while following < len(code) and code[following].isspace():
+                following += 1
+            preserve = (
+                following < len(code) and code[following] == ":"
+            ) or value.upper() in methods
+            masked[index] = quote
+            masked[end] = quote
+            if preserve:
+                masked[index + 1 : end] = code[index + 1 : end]
+            index = end + 1
+            continue
+
+        masked[index] = code[index]
+        index += 1
+    return "".join(masked), literals
 
 
 class _SeatLayoutEvidenceCollector(HTMLParser):
@@ -321,15 +387,12 @@ class _SeatLayoutEvidenceCollector(HTMLParser):
             "defer": defer_present,
             "buffer": "",
             "length": 0,
-            "hasher": hashlib.sha256(),
         }
 
     def _append_script_data(self, data: str) -> None:
         state = self._current_script
         if state is None:
             return
-        if not bool(state["external"]):
-            state["hasher"].update(data.encode("utf-8"))
         state["length"] = min(
             int(state["length"]) + len(data),
             MAX_SCRIPT_CHARS + 1,
@@ -348,6 +411,7 @@ class _SeatLayoutEvidenceCollector(HTMLParser):
         length: int,
         sha256: str,
     ) -> None:
+        structural_code, literals = _scan_javascript(code)
         ajax_primitives: set[str] = set()
         for name, pattern in (
             ("fetch", r"\bfetch\s*\("),
@@ -356,18 +420,19 @@ class _SeatLayoutEvidenceCollector(HTMLParser):
             ("jquery_post", r"\$\.post\s*\("),
             ("xml_http_request", r"\bXMLHttpRequest\b"),
         ):
-            if re.search(pattern, code):
+            if re.search(pattern, structural_code):
                 ajax_primitives.add(name)
 
         methods = {
             match.group("method").upper()
             for pattern in (_METHOD_RE, _XHR_METHOD_RE)
-            for match in pattern.finditer(code)
+            for match in pattern.finditer(structural_code)
         }
         route_paths: set[str] = set()
         cross_origin_route_count = 0
-        for match in _STRING_LITERAL_RE.finditer(code):
-            value = match.group("value")
+        for value in literals:
+            if _external_handoff_value(value):
+                self.external_handoff_candidate = True
             if not (
                 value.startswith(("/", "./", "../", "http://", "https://", "//"))
                 or ".do" in value.casefold()
@@ -384,32 +449,29 @@ class _SeatLayoutEvidenceCollector(HTMLParser):
                 )
 
         payload_keys: set[str] = set()
-        for payload in _PAYLOAD_RE.finditer(code):
+        for payload in _PAYLOAD_RE.finditer(structural_code):
             for match in _OBJECT_KEY_RE.finditer(payload.group("body")):
                 name = match.group("name")
-                if _safe_structural_name(name) and len(payload_keys) < MAX_ITEMS:
+                if (
+                    _safe_structural_name(name)
+                    and not _dynamic_value_name(name)
+                    and len(payload_keys) < MAX_ITEMS
+                ):
                     payload_keys.add(name)
 
         response_paths: set[str] = set()
-        for match in _RESPONSE_PATH_RE.finditer(code):
+        for match in _RESPONSE_PATH_RE.finditer(structural_code):
             path = re.sub(r"\s*\?*\.\s*", ".", match.group(0))
             segments = path.split(".")
             if (
                 len(path) <= MAX_STRING
                 and all(_safe_structural_name(segment) for segment in segments)
+                and all(not _dynamic_value_name(segment) for segment in segments)
                 and len(response_paths) < MAX_ITEMS
             ):
                 response_paths.add(path)
 
         inventory_names: set[str] = set()
-        for match in _IDENTIFIER_RE.finditer(code):
-            name = match.group(0)
-            if (
-                _inventory_name(name)
-                and _safe_structural_name(name)
-                and len(inventory_names) < MAX_ITEMS
-            ):
-                inventory_names.add(name)
         for name in payload_keys:
             if _inventory_name(name):
                 inventory_names.add(name)
@@ -496,8 +558,10 @@ class _SeatLayoutEvidenceCollector(HTMLParser):
                 for index, (raw_key, child) in enumerate(current.items()):
                     if index >= MAX_ITEMS:
                         break
-                    if not isinstance(raw_key, str) or not _safe_structural_name(
-                        raw_key
+                    if (
+                        not isinstance(raw_key, str)
+                        or not _safe_structural_name(raw_key)
+                        or _dynamic_value_name(raw_key)
                     ):
                         continue
                     child_path = f"{path}.{raw_key}" if path else raw_key
@@ -545,7 +609,7 @@ class _SeatLayoutEvidenceCollector(HTMLParser):
         code = str(state["buffer"])
         script_type = str(state["type"])
         length = int(state["length"])
-        sha256 = state["hasher"].hexdigest()
+        sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
         if script_type == "application_json":
             item = self._empty_script_item(
                 kind="inline",
@@ -727,12 +791,13 @@ class _SeatLayoutEvidenceCollector(HTMLParser):
                 self._form_stack.pop()
 
     def handle_data(self, data: str) -> None:
-        if _external_handoff_value(data):
-            self.external_handoff_candidate = True
         if self._current_script is not None:
             self._append_script_data(data)
-        elif not self._style_depth and "좌석선택" in data:
-            self.marker_present = True
+        else:
+            if _external_handoff_value(data):
+                self.external_handoff_candidate = True
+            if not self._style_depth and "좌석선택" in data:
+                self.marker_present = True
 
     def evidence(self) -> dict[str, object]:
         self._finish_script()

@@ -4,7 +4,7 @@
 
 **Goal:** Replace the coarse SRT seat-page evidence classification with a bounded, value-free schema that distinguishes generic scripts from actual embedded seat data, same-origin script references, Ajax contracts, forms, iframes, and external handoffs.
 
-**Architecture:** Parse the already-authorized single seat-page HTML without executing JavaScript or making additional requests. Emit only bounded structural names, counts, same-origin query/fragment-free paths, script metadata, inline SHA-256 digests and lengths, route literals, HTTP primitive/method indicators, payload-key names, response-property paths, and JSON key/type/cardinality summaries. Never retain input values, element identifiers, query strings, raw script text, seat/car numbers, credentials, cookies, tokens, or arbitrary URLs.
+**Architecture:** Parse the already-authorized single seat-page HTML without executing JavaScript or making additional requests. Emit only bounded structural names, counts, same-origin query/fragment-free paths, script metadata, captured-prefix inline SHA-256 digests and lengths, route literals, HTTP primitive/method indicators, payload-key names, response-property paths, and JSON key/type/cardinality summaries. Never retain input values, element identifiers, query strings, raw script text or truncated tails, seat/car numbers, credentials, cookies, tokens, or arbitrary URLs.
 
 **Tech Stack:** Python 3.11+, standard-library `html.parser`, `hashlib`, `json`, `urllib.parse`, pytest, existing SRT live safety helpers.
 
@@ -14,7 +14,7 @@
 - Bump the report to `schema_version: 2`; old report files remain historical evidence.
 - A generic `<script>` tag alone must never imply a seat inventory source.
 - Recognize camelCase and numeric-suffix seat/scar structural markers, but emit only counts and safe names—not identifier values.
-- External script and form/iframe targets may be emitted only as same-origin, query/fragment-stripped paths. Cross-origin targets are represented only by category/count.
+- External script and form/iframe targets may be emitted only as same-origin, query/fragment-stripped static `.do`/`.js` paths without dynamic seat/car segments. Cross-origin targets are represented only by category/count.
 - All collections, string lengths, element counts, script sizes, JSON depth, and JSON array cardinalities must be bounded.
 - Synthetic tests must contain credentials, tokens, card-like data, e-mail addresses, URLs, seat/car identifiers, and query secrets and prove none can appear in serialized evidence.
 - Do not claim a typed physical-seat contract or live success from static evidence.
