@@ -195,15 +195,15 @@ existing fail-closed safety scan. The fixture stores only bounded structural
 metadata: no raw body, visible value, dynamic identifier, credential, cookie,
 or session scalar.
 
-That evidence proves one static same-origin `POST` handoff to
-`/arc/selectListArc02011_n.do`. The page serializes the 11 hidden controls in
-`#trnScarSeatFrm`: `trnGpCd`, `runDt`, `trnNo`, `scarNo`, `psrmClCd`,
+That evidence proves one static same-origin `POST` reference to
+`/arc/selectListArc02011_n.do` and a separate self-target form summary with
+these 11 input names: `trnGpCd`, `runDt`, `trnNo`, `scarNo`, `psrmClCd`,
 `dptRsStnCd`, `arvRsStnCd`, `seatAttCd`, `dptStnRunOrdr`, `arvStnRunOrdr`, and
-`choiceSeatCount`. Static success logic expects HTML, handles a separate
-sentinel-delimited error form, and injects successful content into
-`#trnScarSeatInfo`; it does not expose an iterable JSON schema. Arc02011 is not
-allowlisted, there is no closed response parser, and the client neither calls
-nor implements it.
+`choiceSeatCount`. The retained fixture does not prove that the script
+serializes that form, the controls' input types, the response grammar, or the
+DOM sink. It exposes no iterable response schema. Arc02011 is not allowlisted,
+there is no closed response parser, and the client neither calls nor implements
+it.
 
 The same bounded 2026-07-15 session loaded one seat page from the first
 complete personal-search row. The fixed live summary reported the visible

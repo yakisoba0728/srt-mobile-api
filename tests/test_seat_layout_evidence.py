@@ -24,6 +24,9 @@ CAPTURED_SCHEMA_V2_PATH = Path(
 CAPTURED_SCHEMA_V2_CANONICAL_SHA256 = (
     "2ceba03c2b045f555b1b29dc978ea537d9841b6696e96174a4cd38b5d4a60e17"
 )
+CAPTURED_SCHEMA_V2_FILE_SHA256 = (
+    "6da69ddd2912466d87b1eeea8d3a526818f881da8c749382d3962ef71f6834f0"
+)
 PAGE_KEYS = {
     "marker_present",
     "element_count",
@@ -106,9 +109,22 @@ def _load_module():
 module = _load_module()
 
 
+def _reject_duplicate_object_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
 def test_retained_schema_v2_fixture_has_exact_safe_report_contract():
-    serialized = CAPTURED_SCHEMA_V2_PATH.read_text()
-    report = json.loads(serialized)
+    serialized_bytes = CAPTURED_SCHEMA_V2_PATH.read_bytes()
+    assert hashlib.sha256(serialized_bytes).hexdigest() == (
+        CAPTURED_SCHEMA_V2_FILE_SHA256
+    )
+    serialized = serialized_bytes.decode("utf-8")
+    report = json.loads(serialized, object_pairs_hook=_reject_duplicate_object_keys)
 
     assert set(report) == REPORT_KEYS
     assert report["schema_version"] == 2
@@ -152,6 +168,14 @@ def test_retained_schema_v2_fixture_has_exact_safe_report_contract():
         CAPTURED_SCHEMA_V2_CANONICAL_SHA256
     )
     assert module.report_is_safe(serialized, ())
+
+
+def test_retained_schema_loader_rejects_duplicate_keys():
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        json.loads(
+            '{"page":{"status":"forbidden","status":"success"}}',
+            object_pairs_hook=_reject_duplicate_object_keys,
+        )
 
 
 def _complete_train(train_no: str = "00303") -> TrainSummary:

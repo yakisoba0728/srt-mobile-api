@@ -48,10 +48,11 @@ Last updated: 2026-07-15 KST
   `tests/fixtures/seat_page_schema_v2_evidence.json`. Tests lock its full nested
   schema, canonical digest, zero offline call counts, and fail-closed safety
   scan; no raw body, visible value, or dynamic identifier is tracked.
-- The fixture proves one static `POST /arc/selectListArc02011_n.do` handoff from
-  an 11-field serialized form, plus HTML-fragment response clues. Arc02011 is
-  not allowlisted, there is no closed response parser, and no client route was
-  added or called.
+- The fixture proves one static `POST /arc/selectListArc02011_n.do` reference
+  and a separate self-target form summary with 11 input names. It does not
+  preserve the form/script association, input types, response grammar, or DOM
+  sink. Arc02011 is not allowlisted, there is no closed response parser, and no
+  client route was added or called.
 
 ## Implemented Public Operations
 
@@ -117,15 +118,15 @@ response evidence identifies a stable iterable car/seat source and availability
 vocabulary. No schema-v2 category widens the origin, route, or mutation
 boundary.
 
-The retained sanitized fixture proves the exact schema-v2 report shape and one
-static same-origin Ajax signal: `POST /arc/selectListArc02011_n.do`. Its request
-data is the serialized `#trnScarSeatFrm` containing exactly `trnGpCd`, `runDt`,
+The retained sanitized fixture proves the exact schema-v2 report shape, one
+static same-origin Ajax signal (`POST /arc/selectListArc02011_n.do`), and a
+separate self-target form summary containing exactly `trnGpCd`, `runDt`,
 `trnNo`, `scarNo`, `psrmClCd`, `dptRsStnCd`, `arvRsStnCd`, `seatAttCd`,
-`dptStnRunOrdr`, `arvStnRunOrdr`, and `choiceSeatCount`. Static callback logic
-expects an HTML fragment, recognizes a separate sentinel-delimited error form,
-and injects success into `#trnScarSeatInfo`; no iterable JSON or availability
-schema is evidenced. Arc02011 is not allowlisted, there is no closed response
-parser, and the current client does not call it.
+`dptStnRunOrdr`, `arvStnRunOrdr`, and `choiceSeatCount`. It does not retain the
+form/script association, input types, response grammar, callback behavior, or
+DOM sink, and no iterable JSON or availability schema is evidenced. Arc02011
+is not allowlisted, there is no closed response parser, and the current client
+does not call it.
 
 The single authorized live evidence attempt on 2026-07-14 failed closed at the
 pre-client configuration gate with exit code 2. Network operation counts were
