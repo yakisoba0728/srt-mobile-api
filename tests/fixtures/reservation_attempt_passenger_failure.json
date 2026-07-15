@@ -1,0 +1,9 @@
+{
+  "resultMap": [
+    {
+      "strResult": "FAIL",
+      "msgCd": "WRP011002",
+      "msgTxt": "synthetic passenger count error"
+    }
+  ]
+}

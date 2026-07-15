@@ -379,6 +379,21 @@ Expected success response shape from app scripts:
 | `trainListMap[0]` | `seatNo`, `scarNo`. |
 | `commandMap[0]` | Echo/control fields used by follow-up pages. |
 
+The library exposes only a pure, offline parser for this documented response
+shape. It accepts caller-supplied JSON, returns a typed result for a complete
+success shape, and raises the existing protocol/app error types for malformed
+or rejected shapes. It does not add a reservation route, request builder,
+NetFunnel `act_19` flow, client method, or live call.
+
+A separate authorized one-shot check on 2026-07-15 sent one personal request
+with a complete current train shape, zero total passengers, zero passenger
+counts, no selected seats, and no PNR field. The server rejected it with
+`msgCd=WRR000100`; the parser surfaced that code as `SrtAppError`, and the
+authenticated ticket page was byte-identical before and after the request.
+No reservation was created, and no raw body, credential, token, or identifier
+was printed or persisted. This observation does not make the mutation route
+implementable or change the parser-only package boundary.
+
 Observed app failure handling:
 
 | Code/shape | Rule |
@@ -386,6 +401,7 @@ Observed app failure handling:
 | `strResult=FAIL` | Surface `msgTxt` to caller. |
 | `msgCd=S111` | App stored pending reservation parameters and redirected to login. |
 | `msgCd=WRP011002` | Passenger count error. |
+| `msgCd=WRR000100` | Input validation rejection observed for the bounded zero-passenger request. |
 | `{}` | Malformed/insufficient payload; do not treat as success. |
 | `ERROR_CODE=-1` | App/server rejection; do not treat as success. |
 

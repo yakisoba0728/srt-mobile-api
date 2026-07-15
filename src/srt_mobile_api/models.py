@@ -137,6 +137,46 @@ class MutualVerificationResult:
 
 
 @dataclass(frozen=True)
+class ReservationRecord:
+    pnr_number: str = field(repr=False)
+    journey_list_key: str = field(repr=False)
+    arrival_date: str
+    arrival_station_code: str
+    arrival_time: str
+    delay_acceptance_flag: str
+    departure_date: str
+    departure_station_code: str
+    departure_time: str
+    lump_settlement_target_number: str = field(repr=False)
+    provisional_settlement_target_flag: str
+    service_class_code: str
+    total_seat_count: str
+    train_group_code: str
+    train_number: str
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class ReservationTrain:
+    seat_number: str = field(repr=False)
+    car_number: str = field(repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class ReservationAttemptResult:
+    message_code: str
+    status: str
+    total_received_amount: str
+    reservation: ReservationRecord
+    train: ReservationTrain
+    message: str = field(repr=False)
+    temporary_job_sequence: str = field(repr=False)
+    command: dict[str, Any] = field(repr=False)
+    raw: dict[str, Any] = field(repr=False)
+
+
+@dataclass(frozen=True)
 class HtmlPage:
     text: str = field(repr=False)
     raw: str = field(repr=False)

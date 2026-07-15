@@ -1,0 +1,41 @@
+{
+  "resultMap": [
+    {
+      "strResult": "SUCC",
+      "msgCd": "SYNTHETIC-SUCCESS",
+      "msgTxt": "synthetic success",
+      "totRcvdAmt": "12000",
+      "tmpJobSqno1": "SYNTHETIC-JOB"
+    }
+  ],
+  "reservListMap": [
+    {
+      "pnrNo": "NOT-A-REAL-PNR",
+      "JRNYLIST_KEY": "SYNTHETIC-JOURNEY-KEY",
+      "arvDt": "20990102",
+      "arvRsStnCd": "SYNTHETIC-ARRIVAL",
+      "arvTm": "090000",
+      "dlayAcptFlg": "N",
+      "dptDt": "20990102",
+      "dptRsStnCd": "SYNTHETIC-DEPARTURE",
+      "dptTm": "070000",
+      "lumpStlTgtNo": "SYNTHETIC-LUMP",
+      "proyStlTgtFlg": "N",
+      "stlbTrnClsfCd": "SYNTHETIC-CLASS",
+      "totSeatNum": "1",
+      "trnGpCd": "SYNTHETIC-GROUP",
+      "trnNo": "SYNTHETIC-TRAIN"
+    }
+  ],
+  "trainListMap": [
+    {
+      "seatNo": "SYNTHETIC-SEAT",
+      "scarNo": "SYNTHETIC-CAR"
+    }
+  ],
+  "commandMap": [
+    {
+      "syntheticControl": "SYNTHETIC-CONTROL"
+    }
+  ]
+}

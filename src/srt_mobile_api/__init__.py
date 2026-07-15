@@ -17,6 +17,9 @@ from .models import (
     Notice,
     NoticeListResult,
     PassengerCounts,
+    ReservationAttemptResult,
+    ReservationRecord,
+    ReservationTrain,
     SeatSelectionPage,
     SrtSession,
     TimetablePage,
@@ -26,6 +29,7 @@ from .models import (
     TrainSearchResult,
     TrainSummary,
 )
+from .parsers import parse_reservation_attempt_response
 
 __all__ = [
     "SrtClient",
@@ -44,6 +48,10 @@ __all__ = [
     "Notice",
     "NoticeListResult",
     "PassengerCounts",
+    "parse_reservation_attempt_response",
+    "ReservationAttemptResult",
+    "ReservationRecord",
+    "ReservationTrain",
     "SeatSelectionPage",
     "SrtSession",
     "TimetablePage",

@@ -15,6 +15,9 @@ from .models import (
     MutualVerificationResult,
     Notice,
     NoticeListResult,
+    ReservationAttemptResult,
+    ReservationRecord,
+    ReservationTrain,
     SearchPageState,
     SeatSelectionPage,
     TimetablePage,
@@ -440,6 +443,184 @@ def parse_mutual_verification_response(
         status=status,
         message=message,
         verification_code=verification_code,
+        raw=data,
+    )
+
+
+def _reservation_attempt_row(
+    data: dict[str, Any],
+    container_name: str,
+) -> dict[str, Any]:
+    value = data.get(container_name)
+    if (
+        not isinstance(value, list)
+        or len(value) != 1
+        or not isinstance(value[0], dict)
+        or not value[0]
+    ):
+        raise SrtProtocolError(
+            f"SRT reservation attempt {container_name} must contain exactly one object",
+            raw=data,
+        )
+    return value[0]
+
+
+def _reservation_attempt_string(
+    row: dict[str, Any],
+    key: str,
+    *,
+    container_name: str,
+    raw: dict[str, Any],
+    allow_empty: bool = False,
+) -> str:
+    value = row.get(key)
+    if not isinstance(value, str) or (not allow_empty and not value):
+        requirement = "a string" if allow_empty else "a non-empty string"
+        raise SrtProtocolError(
+            f"SRT reservation attempt {container_name} {key} must be {requirement}",
+            raw=raw,
+        )
+    return value
+
+
+def _validate_reservation_attempt_wrapper(data: dict[str, Any]) -> None:
+    code_present = "ERROR_CODE" in data
+    message_present = "ERROR_MSG" in data
+    if code_present != message_present:
+        raise SrtProtocolError(
+            "SRT reservation attempt ERROR_CODE/ERROR_MSG wrapper pair is partial",
+            raw=data,
+        )
+    if not code_present:
+        return
+    code = data["ERROR_CODE"]
+    message = data["ERROR_MSG"]
+    if not isinstance(code, str) or not isinstance(message, str):
+        raise SrtProtocolError(
+            "SRT reservation attempt ERROR_CODE and ERROR_MSG must be strings",
+            raw=data,
+        )
+    if code not in {"", "0"}:
+        raise SrtAppError(code, message or "SRT reservation attempt rejected", raw=data)
+
+
+def parse_reservation_attempt_response(
+    data: dict[str, Any],
+) -> ReservationAttemptResult:
+    """Parse an already-obtained reservation-attempt response without issuing a request."""
+    if not isinstance(data, dict) or not data:
+        raise SrtProtocolError(
+            "SRT reservation attempt response must be a non-empty JSON object",
+            raw=data,
+        )
+    _validate_reservation_attempt_wrapper(data)
+
+    result_row = _reservation_attempt_row(data, "resultMap")
+    status = _reservation_attempt_string(
+        result_row,
+        "strResult",
+        container_name="resultMap",
+        raw=data,
+    )
+    code = _reservation_attempt_string(
+        result_row,
+        "msgCd",
+        container_name="resultMap",
+        raw=data,
+    )
+    message = _reservation_attempt_string(
+        result_row,
+        "msgTxt",
+        container_name="resultMap",
+        raw=data,
+        allow_empty=True,
+    )
+    if code == "WRP011002" or status != "SUCC":
+        raise SrtAppError(code, message or status, raw=data)
+
+    total_received_amount = _reservation_attempt_string(
+        result_row,
+        "totRcvdAmt",
+        container_name="resultMap",
+        raw=data,
+    )
+    temporary_job_sequence = _reservation_attempt_string(
+        result_row,
+        "tmpJobSqno1",
+        container_name="resultMap",
+        raw=data,
+    )
+    reservation_row = _reservation_attempt_row(data, "reservListMap")
+    train_row = _reservation_attempt_row(data, "trainListMap")
+    command_row = _reservation_attempt_row(data, "commandMap")
+
+    reservation_values = {
+        key: _reservation_attempt_string(
+            reservation_row,
+            key,
+            container_name="reservListMap",
+            raw=data,
+        )
+        for key in (
+            "pnrNo",
+            "JRNYLIST_KEY",
+            "arvDt",
+            "arvRsStnCd",
+            "arvTm",
+            "dlayAcptFlg",
+            "dptDt",
+            "dptRsStnCd",
+            "dptTm",
+            "lumpStlTgtNo",
+            "proyStlTgtFlg",
+            "stlbTrnClsfCd",
+            "totSeatNum",
+            "trnGpCd",
+            "trnNo",
+        )
+    }
+    reservation = ReservationRecord(
+        pnr_number=reservation_values["pnrNo"],
+        journey_list_key=reservation_values["JRNYLIST_KEY"],
+        arrival_date=reservation_values["arvDt"],
+        arrival_station_code=reservation_values["arvRsStnCd"],
+        arrival_time=reservation_values["arvTm"],
+        delay_acceptance_flag=reservation_values["dlayAcptFlg"],
+        departure_date=reservation_values["dptDt"],
+        departure_station_code=reservation_values["dptRsStnCd"],
+        departure_time=reservation_values["dptTm"],
+        lump_settlement_target_number=reservation_values["lumpStlTgtNo"],
+        provisional_settlement_target_flag=reservation_values["proyStlTgtFlg"],
+        service_class_code=reservation_values["stlbTrnClsfCd"],
+        total_seat_count=reservation_values["totSeatNum"],
+        train_group_code=reservation_values["trnGpCd"],
+        train_number=reservation_values["trnNo"],
+        raw=reservation_row,
+    )
+    train = ReservationTrain(
+        seat_number=_reservation_attempt_string(
+            train_row,
+            "seatNo",
+            container_name="trainListMap",
+            raw=data,
+        ),
+        car_number=_reservation_attempt_string(
+            train_row,
+            "scarNo",
+            container_name="trainListMap",
+            raw=data,
+        ),
+        raw=train_row,
+    )
+    return ReservationAttemptResult(
+        message_code=code,
+        status=status,
+        total_received_amount=total_received_amount,
+        reservation=reservation,
+        train=train,
+        message=message,
+        temporary_job_sequence=temporary_job_sequence,
+        command=dict(command_row),
         raw=data,
     )
 
