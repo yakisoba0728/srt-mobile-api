@@ -2,6 +2,7 @@
 /build/
 /srt.apk
 /.worktrees/
+/.env
 /.local-live-smoke.env
 __pycache__/
 *.py[cod]

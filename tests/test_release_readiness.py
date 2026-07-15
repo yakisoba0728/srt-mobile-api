@@ -315,6 +315,25 @@ def test_source_release_metadata_is_exact() -> None:
         assert (ROOT / relative_path).is_file()
 
 
+def test_only_repository_root_env_file_is_ignored() -> None:
+    def is_ignored(path: str) -> bool:
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "--quiet", "--", path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode in {0, 1}
+        assert result.stdout == ""
+        assert result.stderr == ""
+        return result.returncode == 0
+
+    assert is_ignored(".env")
+    assert not is_ignored(".env.backup")
+    assert not is_ignored("nested/.env")
+
+
 def test_valid_pair_is_accepted_in_either_argument_order(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
