@@ -94,7 +94,7 @@ class TrainSummary:
     arrival_run_order: str | None = None
     seat_attr_code: str | None = None
     run_time: str | None = None
-    train_run_order: str | None = None
+    train_run_order: int | None = None
     departure_consist_order: str | None = None
     arrival_consist_order: str | None = None
     current_delay: str | None = None

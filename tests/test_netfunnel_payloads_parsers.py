@@ -389,7 +389,9 @@ def test_parse_train_search_response_normalizes_list_and_object_result(load_json
     result = parse_train_search_response(
         load_json_fixture("search_success.json"),
         request_context={
+            "dptRsStnCd1": "0551",
             "dptRsStnCdNm1": "Synthetic Departure",
+            "arvRsStnCd1": "0020",
             "arvRsStnCdNm1": "Synthetic Arrival",
         },
     )

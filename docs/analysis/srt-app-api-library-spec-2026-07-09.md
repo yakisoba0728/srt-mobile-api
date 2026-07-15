@@ -194,13 +194,20 @@ only the documented ones, because the server-rendered form can change.
 
 | Field | Notes |
 |---|---|
-| `ErrorCode`, `ErrorMsg` | Top-level wrapper. |
+| `ErrorCode`, `ErrorMsg` | Personal-search top-level wrapper pair. |
+| `ERROR_CODE`, `ERROR_MSG` | Group-search top-level wrapper pair. Exactly one complete observed pair is required; partial pairs, both pairs, and non-string values are protocol errors. A non-success wrapper is raised before dataset parsing. |
 | `outDataSets.dsOutput0` | Result metadata. Can be array or object. |
 | `outDataSets.dsOutput0.msgCd` | Runtime success: `IRG000000`. |
 | `outDataSets.dsOutput0.strResult` | Runtime success: `SUCC`. |
-| `outDataSets.dsOutput0.qryCnqeCnt` | Row count. |
+| `outDataSets.dsOutput0.qryCnqeCnt` | Non-negative JSON integer in the retained runtime responses; strict ASCII decimal strings remain accepted for legacy compatibility. |
 | `outDataSets.dsOutput0.fllwPgExt` | More-page flag. |
 | `outDataSets.dsOutput1[]` | Train rows. Can be empty. |
+
+The public `TrainSearchMetadata` retains the result code/status, normalized
+non-negative query count, optional `Y`/`N` following-page flag, and repr-hidden message/raw
+mapping. Search hydration may supply display station names only when the
+request-context station code is present and exactly matches the response row's
+station code. Missing or mismatched codes never invent a station name.
 
 ### `TrainRow`
 
@@ -212,9 +219,11 @@ only the documented ones, because the server-rendered form can change.
 | `trnClsfCd` | Train class code. |
 | `runDt`, `dptDt`, `arvDt` | Date fields. |
 | `dptRsStnCd`, `arvRsStnCd` | Station codes. |
+| `dptRsStnNm`, `arvRsStnNm` | Optional response station names; otherwise the strictly code-matched hydrated request names may be used. |
 | `dptTm`, `arvTm` | Time fields. |
 | `dptStnConsOrdr`, `arvStnConsOrdr` | Station consist order. |
 | `dptStnRunOrdr`, `arvStnRunOrdr` | Station run order. |
+| `trnOrdrNo` | Non-negative JSON integer train order in retained runtime rows; strict ASCII decimal strings remain accepted for legacy compatibility. |
 | `seatAttCd` | Seat attribute code. |
 | `sprmRsvPsbStr`, `gnrmRsvPsbStr` | Special/general seat availability labels. |
 | `sprmRsvPsbColor`, `gnrmRsvPsbColor` | UI color hints. |
@@ -222,6 +231,10 @@ only the documented ones, because the server-rendered form can change.
 | `trainDiscGenRt` | Discount/rate field. |
 | `rcvdAmt` | Fare/amount field when present. |
 | `stmpRsvPsbFlgCd` | Standing/reservation flag. |
+
+The typed row also retains evidenced run/consist orders, current/expected delay
+strings, general/special/wait/standing availability strings, received amount,
+and discount rate without interpreting their display vocabularies.
 
 ## 6. Endpoint Matrix
 

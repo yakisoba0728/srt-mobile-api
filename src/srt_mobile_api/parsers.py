@@ -504,11 +504,35 @@ def _optional_row_string(
     return None
 
 
+def _optional_row_nonnegative_int(
+    row: dict[str, Any],
+    *keys: str,
+) -> int | None:
+    for key in keys:
+        if key not in row:
+            continue
+        value = row[key]
+        if type(value) is int and value >= 0:
+            return value
+        if (
+            isinstance(value, str)
+            and value.isascii()
+            and value.isdecimal()
+        ):
+            return int(value)
+        raise SrtProtocolError(
+            f"SRT search train row {key} must be a non-negative integer "
+            "or ASCII integer string"
+        )
+    return None
+
+
 def _station_name(
     row: dict[str, Any],
     *,
     row_key: str,
     context: Mapping[str, str] | None,
+    context_code_key: str,
     context_key: str,
     station_code: str | None,
 ) -> str | None:
@@ -516,6 +540,14 @@ def _station_name(
     if row_name is not None and row_name.strip():
         return row_name.strip()
     if context is None:
+        return None
+    context_code = context.get(context_code_key)
+    if (
+        not isinstance(station_code, str)
+        or not station_code.strip()
+        or not isinstance(context_code, str)
+        or context_code.strip() != station_code.strip()
+    ):
         return None
     context_name = context.get(context_key)
     if not isinstance(context_name, str) or not context_name.strip():
@@ -533,13 +565,18 @@ def _parse_search_metadata(result: dict[str, Any]) -> TrainSearchMetadata:
     if not isinstance(message, str):
         raise SrtProtocolError("SRT search metadata msgTxt must be a string")
     raw_query_count = result.get("qryCnqeCnt")
-    if (
-        not isinstance(raw_query_count, str)
-        or not raw_query_count.isascii()
-        or not raw_query_count.isdecimal()
+    if type(raw_query_count) is int and raw_query_count >= 0:
+        query_count = raw_query_count
+    elif (
+        isinstance(raw_query_count, str)
+        and raw_query_count.isascii()
+        and raw_query_count.isdecimal()
     ):
+        query_count = int(raw_query_count)
+    else:
         raise SrtProtocolError(
-            "SRT search metadata qryCnqeCnt must be an ASCII integer string"
+            "SRT search metadata qryCnqeCnt must be a non-negative integer "
+            "or ASCII integer string"
         )
     raw_following = result.get("fllwPgExt")
     if raw_following is None:
@@ -553,7 +590,7 @@ def _parse_search_metadata(result: dict[str, Any]) -> TrainSearchMetadata:
     return TrainSearchMetadata(
         message_code=code,
         status=status,
-        query_count=int(raw_query_count),
+        query_count=query_count,
         has_following_page=has_following_page,
         message=message,
         raw=result,
@@ -620,6 +657,7 @@ def parse_train_search_response(
                     row,
                     row_key="dptRsStnNm",
                     context=request_context,
+                    context_code_key="dptRsStnCd1",
                     context_key="dptRsStnCdNm1",
                     station_code=departure_station_code,
                 ),
@@ -627,6 +665,7 @@ def parse_train_search_response(
                     row,
                     row_key="arvRsStnNm",
                     context=request_context,
+                    context_code_key="arvRsStnCd1",
                     context_key="arvRsStnCdNm1",
                     station_code=arrival_station_code,
                 ),
@@ -634,7 +673,7 @@ def parse_train_search_response(
                 arrival_run_order=_optional_row_string(row, "arvStnRunOrdr"),
                 seat_attr_code=_optional_row_string(row, "seatAttCd"),
                 run_time=_optional_row_string(row, "runTm", "trnRunTm"),
-                train_run_order=_optional_row_string(
+                train_run_order=_optional_row_nonnegative_int(
                     row,
                     "trnRunOrdr",
                     "trnOrdrNo",

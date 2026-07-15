@@ -197,8 +197,13 @@ car/seat response or availability contract.
   path was intentionally absent.
 - Sanitized schema-v2 fixture focused GREEN: `1 passed, 31 deselected`; the
   tracked fixture was byte-for-byte identical to the reviewed safe report.
-- Current full offline gate: `512 passed, 1 deselected`; the deselected case is
+- Sanitized-fixture phase full offline gate: `512 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
+- Current integrated full offline gate: `579 passed, 1 deselected`. Offline
+  replay of the retained runtime bodies passes for typed notices, timetable
+  names, all 12 fare rows, and six personal/group search responses. The replay
+  also fixed the observed JSON-integer `qryCnqeCnt` and `trnOrdrNo` shapes and
+  requires exact request/response station-code agreement before name enrichment.
 - Final bounded live gate: login succeeded; personal and group pagination each
   produced two pages with row counts `[10, 10]`; the seat evidence summary was
   marker-present and `inventory_source_candidate`. The client session closed

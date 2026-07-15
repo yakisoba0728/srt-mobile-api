@@ -36,7 +36,7 @@ def _success_response(
                     "msgCd": "IRG000000",
                     "strResult": "SUCC",
                     "msgTxt": "synthetic metadata message",
-                    "qryCnqeCnt": str(len(rows or [])),
+                    "qryCnqeCnt": len(rows or []),
                     "fllwPgExt": "N",
                 }
             ],
@@ -233,7 +233,7 @@ def test_search_parser_exposes_typed_metadata_and_optional_train_fields():
         "trnGpCd": "300",
         "stlbTrnClsfCd": "17",
         "runTm": "021500",
-        "trnRunOrdr": "4",
+        "trnOrdrNo": 4,
         "dptStnConsOrdr": "11",
         "arvStnConsOrdr": "22",
         "curDlayTm": "3",
@@ -257,7 +257,7 @@ def test_search_parser_exposes_typed_metadata_and_optional_train_fields():
     assert result.metadata.has_following_page is False
     assert "synthetic metadata message" not in repr(result.metadata)
     assert train.run_time == "021500"
-    assert train.train_run_order == "4"
+    assert train.train_run_order == 4
     assert train.departure_consist_order == "11"
     assert train.arrival_consist_order == "22"
     assert train.current_delay == "3"
@@ -273,8 +273,13 @@ def test_search_parser_exposes_typed_metadata_and_optional_train_fields():
 @pytest.mark.parametrize(
     ("field_name", "bad_value"),
     [
-        ("qryCnqeCnt", 1),
+        ("qryCnqeCnt", True),
+        ("qryCnqeCnt", 1.0),
+        ("qryCnqeCnt", -1),
+        ("qryCnqeCnt", None),
         ("qryCnqeCnt", "one"),
+        ("qryCnqeCnt", " 1"),
+        ("qryCnqeCnt", "１"),
         ("fllwPgExt", True),
         ("fllwPgExt", "MAYBE"),
     ],
@@ -287,6 +292,36 @@ def test_search_parser_rejects_wrong_typed_metadata(field_name, bad_value):
         parse_train_search_response(payload)
 
 
+@pytest.mark.parametrize("query_count", [1, "1"])
+def test_search_parser_accepts_observed_and_legacy_query_count_types(query_count):
+    payload = _success_response(rows=[{"trnNo": "811"}])
+    payload["outDataSets"]["dsOutput0"][0]["qryCnqeCnt"] = query_count
+
+    assert parse_train_search_response(payload).metadata.query_count == 1
+
+
+@pytest.mark.parametrize("train_order", [4, "4"])
+def test_search_parser_normalizes_observed_and_legacy_train_order(train_order):
+    payload = _success_response(
+        rows=[{"trnNo": "811", "trnOrdrNo": train_order}]
+    )
+
+    assert parse_train_search_response(payload).trains[0].train_run_order == 4
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, 4.0, -1, None, " 4", "４", "four"],
+)
+def test_search_parser_rejects_invalid_train_order(bad_value):
+    payload = _success_response(
+        rows=[{"trnNo": "811", "trnOrdrNo": bad_value}]
+    )
+
+    with pytest.raises(SrtProtocolError, match="trnOrdrNo"):
+        parse_train_search_response(payload)
+
+
 def test_search_parser_enriches_missing_station_names_from_request_context():
     row = {
         "trnNo": "811",
@@ -294,7 +329,9 @@ def test_search_parser_enriches_missing_station_names_from_request_context():
         "arvRsStnCd": "2002",
     }
     context = {
+        "dptRsStnCd1": "1001",
         "dptRsStnCdNm1": "Synthetic Departure",
+        "arvRsStnCd1": "2002",
         "arvRsStnCdNm1": "Synthetic Arrival",
     }
 
@@ -314,6 +351,12 @@ def test_search_parser_enriches_missing_station_names_from_request_context():
         {},
         {"dptRsStnCdNm1": "  ", "arvRsStnCdNm1": ""},
         {"dptRsStnCdNm1": "1001", "arvRsStnCdNm1": "2002"},
+        {
+            "dptRsStnCd1": "9999",
+            "dptRsStnCdNm1": "Wrong Departure",
+            "arvRsStnCd1": "8888",
+            "arvRsStnCdNm1": "Wrong Arrival",
+        },
     ],
 )
 def test_search_parser_does_not_invent_station_names_from_absent_context(context):
@@ -326,6 +369,21 @@ def test_search_parser_does_not_invent_station_names_from_absent_context(context
     train = parse_train_search_response(
         _success_response(rows=[row]),
         request_context=context,
+    ).trains[0]
+
+    assert train.departure_station_name is None
+    assert train.arrival_station_name is None
+
+
+def test_search_parser_requires_response_station_codes_for_context_enrichment():
+    train = parse_train_search_response(
+        _success_response(rows=[{"trnNo": "811"}]),
+        request_context={
+            "dptRsStnCd1": "1001",
+            "dptRsStnCdNm1": "Synthetic Departure",
+            "arvRsStnCd1": "2002",
+            "arvRsStnCdNm1": "Synthetic Arrival",
+        },
     ).trains[0]
 
     assert train.departure_station_name is None
