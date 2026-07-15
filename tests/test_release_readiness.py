@@ -318,7 +318,7 @@ def test_source_release_metadata_is_exact() -> None:
 def test_only_repository_root_env_file_is_ignored() -> None:
     def is_ignored(path: str) -> bool:
         result = subprocess.run(
-            ["git", "check-ignore", "--no-index", "--quiet", "--", path],
+            ["git", "check-ignore", "--quiet", "--", path],
             cwd=ROOT,
             capture_output=True,
             text=True,
