@@ -128,7 +128,7 @@ def run_live_smoke(
         "loggedIn": bool(session.user_map),
         "mainLoaded": bool(main.text),
         "bookingLoaded": bool(booking.text),
-        "noticeCount": len(notices["noticeList"]),
+        "noticeCount": len(notices.notices),
         "ticketPageLoaded": bool(tickets.text),
         "personalTrainCount": len(personal.trains),
         "seatPageLoaded": bool(seat_page and seat_page.text),

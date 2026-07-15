@@ -5,7 +5,7 @@ evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The current offline suite is
-`512 passed, 1 deselected`; the deselected case is the explicitly opted-in
+`559 passed, 1 deselected`; the deselected case is the explicitly opted-in
 live-service test.
 
 Internal editable installation and offline verification:
@@ -76,6 +76,29 @@ Default tests are offline:
 pip install -e ".[test]"
 pytest
 ```
+
+### Typed raw-backed read results
+
+Personal search accepts the exact mixed-case `ErrorCode`/`ErrorMsg` wrapper;
+group search accepts the exact uppercase `ERROR_CODE`/`ERROR_MSG` wrapper.
+Partial, duplicate, conflicting, and non-string wrapper pairs fail closed, and
+an app-level wrapper error is raised before result datasets are considered.
+
+`TrainSearchResult.metadata` provides repr-safe `TrainSearchMetadata` with the
+message code/status, integer query count, and optional following-page flag. The
+legacy raw `result` field and its positional slot remain available. Search rows
+also expose optional consist/run order, delay, seat/wait/standing availability,
+received-amount, and discount fields. When the server row omits station names,
+the client can enrich them from the already-hydrated request form; blank or
+code-only context does not invent a name.
+
+`get_notice_list()` returns `NoticeListResult` containing typed `Notice` rows
+for the observed uppercase seven-field contract. Notice bodies and raw mappings
+are excluded from `repr()`. Timetable parsing skips leading empty cells before
+choosing the station name. Fare parsing retains unavailable semantic rows as
+`FareItem(amount=None, available=False, status=...)`; `FarePage.available_items`
+provides the numeric/available subset. These parser changes add no request,
+route, seat-inventory, or mutation behavior.
 
 ### Bounded train-search pagination
 

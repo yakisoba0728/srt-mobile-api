@@ -7,6 +7,7 @@ from srt_mobile_api import SrtClient, SrtConfig
 from srt_mobile_api.errors import SrtAppError, SrtNetFunnelError, SrtProtocolError, SrtSessionExpiredError
 from srt_mobile_api.models import (
     FarePage,
+    NoticeListResult,
     PassengerCounts,
     SeatSelectionPage,
     SrtSession,
@@ -50,7 +51,10 @@ def test_notice_requires_notice_list():
         parse_notice_list_response({})
     with pytest.raises(SrtAppError):
         parse_notice_list_response({"ErrorCode": "NOTICE_ERR", "ErrorMsg": "notice failed"})
-    assert parse_notice_list_response({"noticeList": []}) == {"noticeList": []}
+    result = parse_notice_list_response({"noticeList": []})
+    assert isinstance(result, NoticeListResult)
+    assert result.notices == ()
+    assert result.raw == {"noticeList": []}
 
 
 def test_read_pages_and_notice(load_json_fixture, load_text_fixture):
@@ -68,7 +72,9 @@ def test_read_pages_and_notice(load_json_fixture, load_text_fixture):
     client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
     assert "main" in client.get_main().raw
     assert "booking" in client.get_booking_page().raw
-    assert client.get_notice_list()["noticeList"][0]["title"] == "공지"
+    notice_result = client.get_notice_list()
+    assert notice_result.notices[0].subject == "Synthetic subject"
+    assert notice_result.notices[0].post_no == 42
     assert "승차권" in client.get_ticket_list().text
 
 
@@ -117,7 +123,9 @@ def test_valid_notice_json_with_login_markup_preserves_session_and_cookies():
     client.session.current = session
     client.http.cookies.set("JSESSIONID", "session-cookie")
 
-    assert client.get_notice_list() == payload
+    result = client.get_notice_list()
+    assert result.notices == ()
+    assert result.raw == payload
     assert client.session.current is session
     assert "JSESSIONID" in client.http.cookies
 
@@ -361,7 +369,11 @@ def test_search_uses_act10_and_search_endpoint(load_json_fixture, load_text_fixt
     result = client.search_trains(query)
     group = client.search_group_trains(query)
     assert result.trains[0].train_no == "303"
+    assert result.trains[0].departure_station_name == "수서"
+    assert result.trains[0].arrival_station_name == "부산"
     assert group.trains[0].train_no == "301"
+    assert group.trains[0].departure_station_name == "수서"
+    assert group.trains[0].arrival_station_name == "부산"
     assert [request.url.path for request in calls].count("/ts.wseq") == 2
     assert all(str(request.url).endswith("&1712345678901") for request in calls if request.url.path == "/ts.wseq")
     assert sum(
@@ -401,6 +413,7 @@ def _paginated_search_response(
         rows.append(row)
     return {
         "ErrorCode": "0",
+        "ErrorMsg": "",
         "outDataSets": {
             "dsOutput0": metadata if metadata_as_object else [metadata],
             "dsOutput1": rows,
@@ -877,6 +890,7 @@ def test_ordinary_app_failure_is_not_retried(load_text_fixture):
             200,
             json={
                 "ErrorCode": "0",
+                "ErrorMsg": "",
                 "outDataSets": {
                     "dsOutput0": [{"msgCd": "SEARCH_ERR", "strResult": "FAIL", "msgTxt": "failed"}],
                     "dsOutput1": [],
@@ -1004,9 +1018,9 @@ def test_timetable_and_fare(load_text_fixture):
     timetable = client.get_timetable(train)
     fare = client.get_fare(train, passengers)
     assert isinstance(timetable, TimetablePage)
-    assert "06:00" in timetable.text
+    assert "05:01" in timetable.text
     assert isinstance(fare, FarePage)
-    assert "51,900원" in fare.text
+    assert "12,340 won" in fare.text
     assert captured["/ara/selectListAra12009_n.do"]["stnCourseNm"] == ["수서-부산"]
     assert captured["/ara/selectListAra13010_n.do"]["psgTpCd2"] == ["5"]
     assert captured["/ara/selectListAra13010_n.do"]["dptRsStnCd2"] == [""]

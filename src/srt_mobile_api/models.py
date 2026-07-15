@@ -93,6 +93,28 @@ class TrainSummary:
     departure_run_order: str | None = None
     arrival_run_order: str | None = None
     seat_attr_code: str | None = None
+    run_time: str | None = None
+    train_run_order: str | None = None
+    departure_consist_order: str | None = None
+    arrival_consist_order: str | None = None
+    current_delay: str | None = None
+    expected_delay: str | None = None
+    general_seat_availability: str | None = None
+    special_seat_availability: str | None = None
+    reservation_wait_availability: str | None = None
+    standing_availability: str | None = None
+    received_amount: str | None = None
+    discount_rate: str | None = None
+
+
+@dataclass(frozen=True)
+class TrainSearchMetadata:
+    message_code: str
+    status: str
+    query_count: int
+    has_following_page: bool | None = None
+    message: str = field(default="", repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
 @dataclass(frozen=True)
@@ -100,6 +122,7 @@ class TrainSearchResult:
     trains: list[TrainSummary]
     result: dict[str, Any] = field(default_factory=dict, repr=False)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
+    metadata: TrainSearchMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -123,10 +146,28 @@ class SeatSelectionPage(HtmlPage):
 
 
 @dataclass(frozen=True)
+class Notice:
+    is_main: str
+    page_id: str
+    body: str = field(repr=False)
+    post_no: int = 0
+    create_date: str = ""
+    is_notice: str = ""
+    subject: str = ""
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class NoticeListResult:
+    notices: tuple[Notice, ...]
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
 class TimetableRow:
     station_name: str
     times: tuple[str, ...]
-    raw_text: str
+    raw_text: str = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -137,13 +178,23 @@ class TimetablePage(HtmlPage):
 @dataclass(frozen=True)
 class FareItem:
     label: str
-    amount: int
+    amount: int | None
     raw_amount: str
+    available: bool = True
+    status: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.amount is None and self.available:
+            object.__setattr__(self, "available", False)
 
 
 @dataclass(frozen=True)
 class FarePage(HtmlPage):
     items: tuple[FareItem, ...] = ()
+
+    @property
+    def available_items(self) -> tuple[FareItem, ...]:
+        return tuple(item for item in self.items if item.available)
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,8 @@ from srt_mobile_api.models import (
     FarePage,
     HtmlPage,
     MutualVerificationResult,
+    Notice,
+    NoticeListResult,
     SeatSelectionPage,
     SrtSession,
     TimetablePage,
@@ -72,7 +74,19 @@ def test_live_result_contains_counts_not_ticket_text():
     client.get_passenger_selector.return_value = selector_page
     client.get_seat_option_selector.return_value = selector_page
     client.get_train_group_selector.return_value = selector_page
-    client.get_notice_list.return_value = {"noticeList": [{"title": "notice"}]}
+    client.get_notice_list.return_value = NoticeListResult(
+        notices=(
+            Notice(
+                is_main="N",
+                page_id="SYNTHETIC_PAGE",
+                body="synthetic body",
+                post_no=42,
+                create_date="20990102",
+                is_notice="Y",
+                subject="Synthetic subject",
+            ),
+        )
+    )
     client.get_ticket_list.return_value = HtmlPage(text="ticket", raw="<html>ticket</html>")
     client.search_trains.return_value = TrainSearchResult(trains=[train], result={}, raw={})
     client.get_seat_page.return_value = SeatSelectionPage(
@@ -131,6 +145,7 @@ def test_live_result_contains_counts_not_ticket_text():
         "selectorLoadedCount",
     }
     assert result["selectorLoadedCount"] == 5
+    assert result["noticeCount"] == 1
     assert result["mutualVerificationLoaded"] is True
     assert result["seatPageLoaded"] is True
     assert result["seatSelectionMarkerPresent"] is True

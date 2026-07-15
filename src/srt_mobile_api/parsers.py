@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -12,10 +13,13 @@ from .models import (
     FarePage,
     HtmlPage,
     MutualVerificationResult,
+    Notice,
+    NoticeListResult,
     SearchPageState,
     SeatSelectionPage,
     TimetablePage,
     TimetableRow,
+    TrainSearchMetadata,
     TrainSearchResult,
     TrainSummary,
 )
@@ -176,14 +180,56 @@ def parse_seat_selection_page(html: str) -> SeatSelectionPage:
     return SeatSelectionPage(text=page.text, raw=page.raw)
 
 
-def parse_notice_list_response(data: dict[str, Any]) -> dict[str, Any]:
-    error_code = str(data.get("ErrorCode") or "")
+def parse_notice_list_response(data: dict[str, Any]) -> NoticeListResult:
+    if not isinstance(data, dict):
+        raise SrtProtocolError("SRT notice response must be a JSON object", raw=data)
+    error_code = data.get("ErrorCode", "")
+    error_message = data.get("ErrorMsg", "")
+    if not isinstance(error_code, str):
+        raise SrtProtocolError("SRT notice ErrorCode must be a string", raw=data)
+    if not isinstance(error_message, str):
+        raise SrtProtocolError("SRT notice ErrorMsg must be a string", raw=data)
     if error_code not in {"", "0"}:
-        raise SrtAppError(error_code, str(data.get("ErrorMsg") or ""), raw=data)
-    notices = data.get("noticeList")
-    if not isinstance(notices, list):
-        raise SrtProtocolError("SRT notice response missing noticeList")
-    return data
+        raise SrtAppError(error_code, error_message, raw=data)
+    rows = data.get("noticeList")
+    if not isinstance(rows, list):
+        raise SrtProtocolError("SRT notice response missing noticeList", raw=data)
+    notices: list[Notice] = []
+    string_fields = (
+        "IS_MAIN",
+        "PAGE_ID",
+        "BODY",
+        "CREATE_DATE",
+        "IS_NOTICE",
+        "SUBJ",
+    )
+    for row in rows:
+        if not isinstance(row, dict):
+            raise SrtProtocolError("SRT notice row must be an object", raw=data)
+        for key in string_fields:
+            if not isinstance(row.get(key), str):
+                raise SrtProtocolError(
+                    f"SRT notice row {key} must be a string",
+                    raw=data,
+                )
+        if type(row.get("POST_NO")) is not int:
+            raise SrtProtocolError(
+                "SRT notice row POST_NO must be an integer",
+                raw=data,
+            )
+        notices.append(
+            Notice(
+                is_main=row["IS_MAIN"],
+                page_id=row["PAGE_ID"],
+                body=row["BODY"],
+                post_no=row["POST_NO"],
+                create_date=row["CREATE_DATE"],
+                is_notice=row["IS_NOTICE"],
+                subject=row["SUBJ"],
+                raw=row,
+            )
+        )
+    return NoticeListResult(notices=tuple(notices), raw=data)
 
 
 class _InputParser(HTMLParser):
@@ -213,14 +259,19 @@ class _TableParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.rows: list[list[str]] = []
+        self.data_rows: list[list[str]] = []
         self._row: list[str] | None = None
         self._cell_parts: list[str] | None = None
+        self._row_has_data_cell = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() == "tr":
             self._row = []
+            self._row_has_data_cell = False
         elif tag.lower() in {"td", "th"} and self._row is not None:
             self._cell_parts = []
+            if tag.lower() == "td":
+                self._row_has_data_cell = True
 
     def handle_data(self, data: str) -> None:
         if self._cell_parts is not None:
@@ -233,11 +284,13 @@ class _TableParser(HTMLParser):
         elif tag.lower() == "tr" and self._row is not None:
             if any(self._row):
                 self.rows.append(self._row)
+                if self._row_has_data_cell:
+                    self.data_rows.append(self._row)
             self._row = None
 
 
 TIME_RE = re.compile(r"\b\d{2}:\d{2}\b")
-FARE_RE = re.compile(r"(\d{1,3}(?:,\d{3})*)\s*원")
+FARE_RE = re.compile(r"(\d{1,3}(?:,\d{3})*)\s*(?:원|won)", re.IGNORECASE)
 
 
 def parse_timetable_page(html: str) -> TimetablePage:
@@ -249,7 +302,14 @@ def parse_timetable_page(html: str) -> TimetablePage:
         raw_text = " ".join(cells)
         times = tuple(TIME_RE.findall(raw_text))
         if times:
-            station = next((cell for cell in cells if not TIME_RE.fullmatch(cell)), "")
+            station = next(
+                (
+                    cell
+                    for cell in cells
+                    if cell.strip() and not TIME_RE.fullmatch(cell.strip())
+                ),
+                "",
+            )
             rows.append(TimetableRow(station_name=station, times=times, raw_text=raw_text))
     if not rows:
         times = tuple(TIME_RE.findall(page.text))
@@ -264,21 +324,26 @@ def parse_fare_page(html: str) -> FarePage:
     table = _TableParser()
     table.feed(html)
     items: list[FareItem] = []
-    for cells in table.rows:
-        raw_text = " ".join(cells)
-        match = FARE_RE.search(raw_text)
-        if match:
-            raw_amount = match.group(0)
-            label = raw_text.replace(raw_amount, "").strip()
-            items.append(
-                FareItem(
-                    label=label,
-                    amount=int(match.group(1).replace(",", "")),
-                    raw_amount=raw_amount,
-                )
+    for cells in table.data_rows:
+        semantic_cells = [cell.strip() for cell in cells if cell.strip()]
+        if len(semantic_cells) < 2:
+            continue
+        label = " ".join(semantic_cells[:-1])
+        amount_text = semantic_cells[-1]
+        match = FARE_RE.search(amount_text)
+        raw_amount = match.group(0) if match else amount_text
+        amount = int(match.group(1).replace(",", "")) if match else None
+        items.append(
+            FareItem(
+                label=label,
+                amount=amount,
+                raw_amount=raw_amount,
+                available=amount is not None,
+                status=None if amount is not None else amount_text,
             )
+        )
     if not items:
-        raise SrtProtocolError("SRT fare page did not contain a fare amount")
+        raise SrtProtocolError("SRT fare page did not contain semantic fare rows")
     return FarePage(text=page.text, raw=page.raw, items=tuple(items))
 
 
@@ -372,59 +437,255 @@ def parse_mutual_verification_response(
     )
 
 
-def parse_train_search_response(data: dict[str, Any]) -> TrainSearchResult:
-    wrapper_code_value = data.get("ErrorCode", "")
-    if not isinstance(wrapper_code_value, str):
-        raise SrtProtocolError("SRT search response ErrorCode must be a string")
-    wrapper_message_value = data.get("ErrorMsg", "")
-    if not isinstance(wrapper_message_value, str):
-        raise SrtProtocolError("SRT search response ErrorMsg must be a string")
-    wrapper_code = wrapper_code_value
+SEARCH_WRAPPER_PAIRS = (
+    ("ErrorCode", "ErrorMsg"),
+    ("ERROR_CODE", "ERROR_MSG"),
+)
+
+
+def _normalize_search_wrapper(data: dict[str, Any]) -> tuple[str, str]:
+    complete_pairs: list[tuple[str, str]] = []
+    for code_key, message_key in SEARCH_WRAPPER_PAIRS:
+        code_present = code_key in data
+        message_present = message_key in data
+        if code_present != message_present:
+            raise SrtProtocolError(
+                f"SRT search response {code_key}/{message_key} wrapper pair is partial",
+                raw=data,
+            )
+        if code_present:
+            complete_pairs.append((code_key, message_key))
+    if len(complete_pairs) != 1:
+        raise SrtProtocolError(
+            "SRT search response must contain exactly one observed wrapper pair",
+            raw=data,
+        )
+    code_key, message_key = complete_pairs[0]
+    code = data[code_key]
+    message = data[message_key]
+    if not isinstance(code, str):
+        raise SrtProtocolError(
+            f"SRT search response {code_key} must be a string",
+            raw=data,
+        )
+    if not isinstance(message, str):
+        raise SrtProtocolError(
+            f"SRT search response {message_key} must be a string",
+            raw=data,
+        )
+    return code, message
+
+
+def _required_row_string(
+    row: dict[str, Any],
+    key: str,
+    *,
+    context: str,
+) -> str:
+    value = row.get(key)
+    if not isinstance(value, str):
+        raise SrtProtocolError(f"SRT {context} {key} must be a string")
+    return value
+
+
+def _optional_row_string(
+    row: dict[str, Any],
+    *keys: str,
+) -> str | None:
+    for key in keys:
+        if key not in row:
+            continue
+        value = row[key]
+        if not isinstance(value, str):
+            raise SrtProtocolError(
+                f"SRT search train row {key} must be a string"
+            )
+        return value
+    return None
+
+
+def _station_name(
+    row: dict[str, Any],
+    *,
+    row_key: str,
+    context: Mapping[str, str] | None,
+    context_key: str,
+    station_code: str | None,
+) -> str | None:
+    row_name = _optional_row_string(row, row_key)
+    if row_name is not None and row_name.strip():
+        return row_name.strip()
+    if context is None:
+        return None
+    context_name = context.get(context_key)
+    if not isinstance(context_name, str) or not context_name.strip():
+        return None
+    normalized = context_name.strip()
+    if station_code is not None and normalized == station_code:
+        return None
+    return normalized
+
+
+def _parse_search_metadata(result: dict[str, Any]) -> TrainSearchMetadata:
+    code = _required_row_string(result, "msgCd", context="search metadata")
+    status = _required_row_string(result, "strResult", context="search metadata")
+    message = result.get("msgTxt", "")
+    if not isinstance(message, str):
+        raise SrtProtocolError("SRT search metadata msgTxt must be a string")
+    raw_query_count = result.get("qryCnqeCnt")
+    if (
+        not isinstance(raw_query_count, str)
+        or not raw_query_count.isascii()
+        or not raw_query_count.isdecimal()
+    ):
+        raise SrtProtocolError(
+            "SRT search metadata qryCnqeCnt must be an ASCII integer string"
+        )
+    raw_following = result.get("fllwPgExt")
+    if raw_following is None:
+        has_following_page = None
+    elif isinstance(raw_following, str) and raw_following in {"Y", "N"}:
+        has_following_page = raw_following == "Y"
+    else:
+        raise SrtProtocolError(
+            "SRT search metadata fllwPgExt must be exactly Y or N"
+        )
+    return TrainSearchMetadata(
+        message_code=code,
+        status=status,
+        query_count=int(raw_query_count),
+        has_following_page=has_following_page,
+        message=message,
+        raw=result,
+    )
+
+
+def parse_train_search_response(
+    data: dict[str, Any],
+    request_context: Mapping[str, str] | None = None,
+) -> TrainSearchResult:
+    if not isinstance(data, dict):
+        raise SrtProtocolError(
+            "SRT search response must be a JSON object",
+            raw=data,
+        )
+    wrapper_code, wrapper_message = _normalize_search_wrapper(data)
     if wrapper_code not in {"", "0"}:
-        raise SrtAppError(wrapper_code, wrapper_message_value, raw=data)
+        raise SrtAppError(wrapper_code, wrapper_message, raw=data)
     out = data.get("outDataSets")
     if not isinstance(out, dict):
         raise SrtProtocolError("SRT search response missing outDataSets")
     result = _first_row(out.get("dsOutput0"))
     if not result:
         raise SrtProtocolError("SRT search response missing dsOutput0 result metadata")
-    code = str(result.get("msgCd") or "")
-    status = str(result.get("strResult") or "")
-    message = str(result.get("msgTxt") or "")
+    code = _required_row_string(result, "msgCd", context="search metadata")
+    status = _required_row_string(result, "strResult", context="search metadata")
+    message = result.get("msgTxt", "")
+    if not isinstance(message, str):
+        raise SrtProtocolError("SRT search metadata msgTxt must be a string")
     if code == "NET000001":
         raise SrtNetFunnelError(code, message or "NetFunnel key required", raw=data)
     if code != "IRG000000" or status != "SUCC":
         raise SrtAppError(code or None, message or status or None, raw=data)
+    metadata = _parse_search_metadata(result)
     rows = out.get("dsOutput1")
     if not isinstance(rows, list):
         raise SrtProtocolError("SRT search response missing dsOutput1 list")
-    trains = [
-        TrainSummary(
-            train_no=str(row.get("trnNo") or ""),
-            train_group_code=row.get("trnGpCd"),
-            service_class_code=row.get("stlbTrnClsfCd"),
-            run_date=row.get("runDt"),
-            departure_date=row.get("dptDt"),
-            departure_time=row.get("dptTm"),
-            arrival_date=row.get("arvDt"),
-            arrival_time=row.get("arvTm"),
-            departure_station_code=row.get("dptRsStnCd"),
-            arrival_station_code=row.get("arvRsStnCd"),
-            departure_station_name=row.get("dptRsStnNm"),
-            arrival_station_name=row.get("arvRsStnNm"),
-            departure_run_order=row.get("dptStnRunOrdr"),
-            arrival_run_order=row.get("arvStnRunOrdr"),
-            seat_attr_code=row.get("seatAttCd"),
-            raw=row,
+    trains: list[TrainSummary] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise SrtProtocolError(
+                "SRT search response contained a non-object train row"
+            )
+        train_no = _required_row_string(row, "trnNo", context="search train row")
+        if not train_no:
+            raise SrtProtocolError(
+                "SRT search response contained a train without trnNo"
+            )
+        departure_station_code = _optional_row_string(row, "dptRsStnCd")
+        arrival_station_code = _optional_row_string(row, "arvRsStnCd")
+        trains.append(
+            TrainSummary(
+                train_no=train_no,
+                train_group_code=_optional_row_string(row, "trnGpCd"),
+                service_class_code=_optional_row_string(row, "stlbTrnClsfCd"),
+                run_date=_optional_row_string(row, "runDt"),
+                departure_date=_optional_row_string(row, "dptDt"),
+                departure_time=_optional_row_string(row, "dptTm"),
+                arrival_date=_optional_row_string(row, "arvDt"),
+                arrival_time=_optional_row_string(row, "arvTm"),
+                departure_station_code=departure_station_code,
+                arrival_station_code=arrival_station_code,
+                departure_station_name=_station_name(
+                    row,
+                    row_key="dptRsStnNm",
+                    context=request_context,
+                    context_key="dptRsStnCdNm1",
+                    station_code=departure_station_code,
+                ),
+                arrival_station_name=_station_name(
+                    row,
+                    row_key="arvRsStnNm",
+                    context=request_context,
+                    context_key="arvRsStnCdNm1",
+                    station_code=arrival_station_code,
+                ),
+                departure_run_order=_optional_row_string(row, "dptStnRunOrdr"),
+                arrival_run_order=_optional_row_string(row, "arvStnRunOrdr"),
+                seat_attr_code=_optional_row_string(row, "seatAttCd"),
+                run_time=_optional_row_string(row, "runTm", "trnRunTm"),
+                train_run_order=_optional_row_string(
+                    row,
+                    "trnRunOrdr",
+                    "trnOrdrNo",
+                ),
+                departure_consist_order=_optional_row_string(
+                    row,
+                    "dptStnConsOrdr",
+                ),
+                arrival_consist_order=_optional_row_string(
+                    row,
+                    "arvStnConsOrdr",
+                ),
+                current_delay=_optional_row_string(
+                    row,
+                    "curDlayTm",
+                    "dptDlayTm",
+                ),
+                expected_delay=_optional_row_string(
+                    row,
+                    "expDlayTm",
+                    "arvDlayTm",
+                ),
+                general_seat_availability=_optional_row_string(
+                    row,
+                    "gnrmRsvPsbStr",
+                ),
+                special_seat_availability=_optional_row_string(
+                    row,
+                    "sprmRsvPsbStr",
+                ),
+                reservation_wait_availability=_optional_row_string(
+                    row,
+                    "rsvWaitPsbCd",
+                    "rsvWaitPsbStr",
+                ),
+                standing_availability=_optional_row_string(
+                    row,
+                    "stmpRsvPsbFlgCd",
+                    "stndFlg",
+                ),
+                received_amount=_optional_row_string(row, "rcvdAmt"),
+                discount_rate=_optional_row_string(row, "trainDiscGenRt"),
+                raw=row,
+            )
         )
-        for row in rows
-        if isinstance(row, dict)
-    ]
-    if len(trains) != len(rows):
-        raise SrtProtocolError("SRT search response contained a non-object train row")
-    if any(not train.train_no for train in trains):
-        raise SrtProtocolError("SRT search response contained a train without trnNo")
-    return TrainSearchResult(trains=trains, result=result, raw=data)
+    return TrainSearchResult(
+        trains=trains,
+        result=result,
+        raw=data,
+        metadata=metadata,
+    )
 
 
 def parse_search_has_following_page(data: dict[str, Any]) -> bool:

@@ -14,6 +14,7 @@ from .models import (
     FarePage,
     HtmlPage,
     MutualVerificationResult,
+    NoticeListResult,
     PassengerCounts,
     SearchPageState,
     SeatSelectionPage,
@@ -96,7 +97,7 @@ class SrtClient:
             raw = self.http.get_text("/ara/ara0101v.do")
             return parse_html_page(raw, context="booking page")
 
-    def get_notice_list(self) -> dict:
+    def get_notice_list(self) -> NoticeListResult:
         with self._session_guard():
             return parse_notice_list_response(
                 self.http.post_form(
@@ -251,7 +252,7 @@ class SrtClient:
             accept="application/json, text/javascript, */*; q=0.01",
             referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
         )
-        return parse_train_search_response(data)
+        return parse_train_search_response(data, request_context=payload)
 
     def _search_once(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
         path, payload = self._prepare_search(query, group=group)

@@ -4,6 +4,18 @@ Last updated: 2026-07-15 KST
 
 ## Current State
 
+- Search parsing now distinguishes the exact observed mixed-case personal and
+  uppercase group wrappers, rejects partial/dual/wrong-type pairs, and raises
+  wrapper app errors before reading datasets.
+- `TrainSearchMetadata`, typed optional search-row availability details, and
+  hydrated request-context station-name enrichment are additive; legacy
+  positional fields remain in place.
+- Notice rows use the observed uppercase seven-field typed contract with body
+  and raw data excluded from `repr()`. Timetable rows skip leading empty cells,
+  and fare pages retain both priced and unavailable semantic rows.
+- These parser/model changes add no route, request, seat-info operation, or
+  mutation behavior and were developed from shape-only evidence with synthetic
+  fixtures.
 - Internal release preparation is complete at current `HEAD`: typed-package
   metadata, source-manifest contents, an archive verifier, Python 3.11-3.14
   offline CI, and internal release/security/changelog guidance are present.
@@ -150,6 +162,14 @@ car/seat response or availability contract.
 
 ## Verification
 
+- Raw-backed parser TDD RED: `34 failed, 13 passed`, covering exact wrapper
+  casing/pairs, timetable leading cells, typed notices, lossless fare rows,
+  typed search metadata/details, and station-name enrichment.
+- Raw-backed parser focused GREEN: `50 passed`; the broader parser/model/client
+  contract gate reported `277 passed` before final focused additions.
+- Current raw-backed parser full offline gate: `559 passed, 1 deselected`; the
+  deselected test is the explicit live-service opt-in. No live request,
+  credential read, environment-file read, or captured raw body was used.
 - Seat-layout evidence v2 TDD RED: `7 failed, 14 passed`; each failure was the
   intentionally absent v2 schema/classification behavior.
 - Seat-layout evidence v2 focused GREEN: `22 passed`.

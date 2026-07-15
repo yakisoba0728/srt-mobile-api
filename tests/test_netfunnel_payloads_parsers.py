@@ -386,14 +386,20 @@ def test_passenger_fields_use_protocol_codes_and_preserve_nonempty_hydrated_code
 
 
 def test_parse_train_search_response_normalizes_list_and_object_result(load_json_fixture):
-    result = parse_train_search_response(load_json_fixture("search_success.json"))
+    result = parse_train_search_response(
+        load_json_fixture("search_success.json"),
+        request_context={
+            "dptRsStnCdNm1": "Synthetic Departure",
+            "arvRsStnCdNm1": "Synthetic Arrival",
+        },
+    )
     group = parse_train_search_response(load_json_fixture("group_search_success.json"))
     empty = parse_train_search_response(load_json_fixture("search_empty.json"))
 
     assert result.result["msgCd"] == "IRG000000"
     assert result.trains[0].train_no == "303"
-    assert result.trains[0].departure_station_name == "수서"
-    assert result.trains[0].arrival_station_name == "부산"
+    assert result.trains[0].departure_station_name == "Synthetic Departure"
+    assert result.trains[0].arrival_station_name == "Synthetic Arrival"
     assert group.trains[0].train_no == "301"
     assert empty.trains == []
 
@@ -560,15 +566,15 @@ def test_timetable_and_fare_parsers_return_html_compatible_models(load_text_fixt
     timetable = parse_timetable_page(load_text_fixture("timetable.html"))
     fare = parse_fare_page(load_text_fixture("fare.html"))
     assert isinstance(timetable, HtmlPage)
-    assert timetable.rows[0].station_name == "수서"
-    assert timetable.rows[0].times == ("06:00",)
-    assert "06:00" in timetable.text
+    assert timetable.rows[0].station_name == "Synthetic Origin"
+    assert timetable.rows[0].times == ("05:01",)
+    assert "05:01" in timetable.text
     assert "<table>" in timetable.raw
     assert isinstance(fare, HtmlPage)
-    assert fare.items[0].label == "어른 일반실"
-    assert fare.items[0].amount == 51900
-    assert fare.items[0].raw_amount == "51,900원"
-    assert "51,900원" in fare.text
+    assert fare.items[0].label == "Synthetic A1"
+    assert fare.items[0].amount == 12340
+    assert fare.items[0].raw_amount == "12,340 won"
+    assert "12,340 won" in fare.text
     assert "<table>" in fare.raw
 
 
