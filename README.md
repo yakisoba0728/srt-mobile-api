@@ -5,7 +5,7 @@ evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The current offline suite is
-`510 passed, 1 deselected`; the deselected case is the explicitly opted-in
+`512 passed, 1 deselected`; the deselected case is the explicitly opted-in
 live-service test.
 
 Internal editable installation and offline verification:
@@ -138,10 +138,10 @@ This method does not select or hold a seat. It does not call NetFunnel
 JavaScript/callbacks, retry, or scan fallback trains. The live helper reports
 only bounded booleans and never emits the page body.
 
-The internal SRT page was loaded, but the bounded result alone does not prove
-a stable embedded car/seat DOM or data-source contract. Individual physical
-seats remain untyped pending sanitized live schema-v2 evidence that identifies
-a stable iterable source and availability vocabulary.
+The internal SRT page was loaded, but the retained sanitized schema-v2 evidence
+proves only a bounded car/UI candidate and a static Ajax handoff. It does not
+prove a stable iterable physical-seat record or availability vocabulary, so
+individual physical seats remain untyped.
 
 ### Bounded seat-layout evidence gate
 
@@ -184,17 +184,35 @@ simple key names; quoted object keys are ignored.
 Raw HTML, visible text, attribute/input values, element IDs, query strings,
 arbitrary URLs, train/car/seat values, credentials, cookies, tokens, and
 exception messages are never written. Typed cars and physical seats remain
-unimplemented until a separately reviewed sanitized live report identifies a
-stable iterable source and availability vocabulary. Schema-v2 evidence does not
+unimplemented until separately authorized response evidence identifies a stable
+iterable source and availability vocabulary. Schema-v2 evidence does not
 authorize another origin, route, or mutation.
 
+The exact sanitized offline-replay report is retained as
+`tests/fixtures/seat_page_schema_v2_evidence.json`. Its regression test locks
+the complete nested schema, canonical digest, zero offline call counts, and the
+existing fail-closed safety scan. The fixture stores only bounded structural
+metadata: no raw body, visible value, dynamic identifier, credential, cookie,
+or session scalar.
+
+That evidence proves one static same-origin `POST` handoff to
+`/arc/selectListArc02011_n.do`. The page serializes the 11 hidden controls in
+`#trnScarSeatFrm`: `trnGpCd`, `runDt`, `trnNo`, `scarNo`, `psrmClCd`,
+`dptRsStnCd`, `arvRsStnCd`, `seatAttCd`, `dptStnRunOrdr`, `arvStnRunOrdr`, and
+`choiceSeatCount`. Static success logic expects HTML, handles a separate
+sentinel-delimited error form, and injects successful content into
+`#trnScarSeatInfo`; it does not expose an iterable JSON schema. Arc02011 is not
+allowlisted, there is no closed response parser, and the client neither calls
+nor implements it.
+
 The same bounded 2026-07-15 session loaded one seat page from the first
-complete personal-search row. The fixed summary reported the visible marker,
-9 scripts, 3 forms, no iframe, no embedded JSON block, 5 source categories,
-and `sufficiency=inventory_source_candidate`. It retained no category names,
-paths, digests, structural names, raw HTML, or identifiers. This proves only a
-candidate source exists; it does not yet prove an iterable car/seat schema or
-availability vocabulary, so typed physical seats remain excluded.
+complete personal-search row. The fixed live summary reported the visible
+marker, 9 scripts, 3 forms, no iframe, no embedded JSON block, 5 source
+categories, and `sufficiency=inventory_source_candidate`; it emitted no raw
+HTML or identifiers. A later authorized offline replay produced only the
+sanitized fixture described above. Together they prove a candidate source and
+the static handoff, not an iterable car/seat response or availability
+vocabulary, so typed physical seats remain excluded.
 
 ### Mutual verification
 

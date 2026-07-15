@@ -1,0 +1,357 @@
+{
+  "calls": {
+    "login": 0,
+    "search": 0,
+    "seat_page": 0
+  },
+  "page": {
+    "element_count": 168,
+    "embedded_json": {
+      "count": 0,
+      "invalid_count": 0,
+      "items": [],
+      "valid_count": 0
+    },
+    "external_handoff_candidate": false,
+    "forms": {
+      "count": 3,
+      "cross_origin_count": 0,
+      "items": [
+        {
+          "input_names": [
+            "login_referer3"
+          ],
+          "inventory_names": [],
+          "method": "POST",
+          "path": "/login/login.do",
+          "target": "same_origin"
+        },
+        {
+          "input_names": [
+            "login_referer4"
+          ],
+          "inventory_names": [],
+          "method": "POST",
+          "path": "/login/login.do",
+          "target": "same_origin"
+        },
+        {
+          "input_names": [
+            "arvRsStnCd",
+            "arvStnRunOrdr",
+            "choiceSeatCount",
+            "dptRsStnCd",
+            "dptStnRunOrdr",
+            "psrmClCd",
+            "runDt",
+            "scarNo",
+            "seatAttCd",
+            "trnGpCd",
+            "trnNo"
+          ],
+          "inventory_names": [
+            "choiceSeatCount",
+            "scarNo",
+            "seatAttCd"
+          ],
+          "method": "GET",
+          "path": null,
+          "target": "self"
+        }
+      ],
+      "same_origin_count": 2,
+      "self_count": 1
+    },
+    "iframes": {
+      "count": 0,
+      "cross_origin_count": 0,
+      "same_origin_count": 0,
+      "same_origin_paths": [],
+      "unresolved_count": 0
+    },
+    "inventory_marker_element_count": 11,
+    "marker_present": true,
+    "scripts": {
+      "count": 9,
+      "cross_origin_count": 0,
+      "inline_count": 4,
+      "items": [
+        {
+          "ajax_primitives": [],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [],
+          "inventory_names": [],
+          "kind": "same_origin_external",
+          "length": 0,
+          "path": "/js/jquery.js",
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [],
+          "sha256": null,
+          "truncated": false,
+          "type": "classic"
+        },
+        {
+          "ajax_primitives": [],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [],
+          "inventory_names": [],
+          "kind": "same_origin_external",
+          "length": 0,
+          "path": "/js/jquery.mobile-1.4.5.min.js",
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [],
+          "sha256": null,
+          "truncated": false,
+          "type": "classic"
+        },
+        {
+          "ajax_primitives": [],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [],
+          "inventory_names": [],
+          "kind": "same_origin_external",
+          "length": 0,
+          "path": "/js/stationInfo.js",
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [],
+          "sha256": null,
+          "truncated": false,
+          "type": "classic"
+        },
+        {
+          "ajax_primitives": [],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [],
+          "inventory_names": [],
+          "kind": "same_origin_external",
+          "length": 0,
+          "path": "/js/common/messages.js",
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [],
+          "sha256": null,
+          "truncated": false,
+          "type": "classic"
+        },
+        {
+          "ajax_primitives": [],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [],
+          "inventory_names": [],
+          "kind": "inline",
+          "length": 211,
+          "path": null,
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [
+            "/main/main.do"
+          ],
+          "sha256": "5bcc2bc00f0d42836116d77e58885f423d59dc66a91285a9d6ec78bfb98610ab",
+          "truncated": false,
+          "type": "classic"
+        },
+        {
+          "ajax_primitives": [],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [],
+          "inventory_names": [],
+          "kind": "inline",
+          "length": 16384,
+          "path": null,
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [],
+          "sha256": "c6ae91a0631d956a2ffcb1bf466bb64d75b6e0ae78d475777eb509a203ce95b0",
+          "truncated": true,
+          "type": "classic"
+        },
+        {
+          "ajax_primitives": [],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [],
+          "inventory_names": [],
+          "kind": "inline",
+          "length": 133,
+          "path": null,
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [],
+          "sha256": "cce7589295e756a48e64ec730d0f1f55c868361d3b85cea057f2b4933df72562",
+          "truncated": false,
+          "type": "classic"
+        },
+        {
+          "ajax_primitives": [
+            "jquery_ajax"
+          ],
+          "async": false,
+          "cross_origin_route_count": 0,
+          "defer": false,
+          "http_methods": [
+            "POST"
+          ],
+          "inventory_names": [],
+          "kind": "inline",
+          "length": 9020,
+          "path": null,
+          "payload_keys": [],
+          "response_paths": [],
+          "route_paths": [
+            "/arc/selectListArc02011_n.do"
+          ],
+          "sha256": "239b64c303f6d45414bb86e9da9beac3e4177818842cfddc433f3f33b22869f9",
+          "truncated": false,
+          "type": "classic"
+        }
+      ],
+      "same_origin_count": 5
+    },
+    "source_categories": [
+      "embedded_dom_inventory_candidate",
+      "generic_script",
+      "inline_ajax_contract",
+      "same_origin_form_reference",
+      "same_origin_script_reference"
+    ],
+    "structural_names": {
+      "attribute_names": [
+        "action",
+        "align",
+        "alt",
+        "aria-hidden",
+        "aria-level",
+        "class",
+        "content",
+        "data-ajax",
+        "data-close-btn",
+        "data-inline",
+        "data-mini",
+        "data-rel",
+        "data-role",
+        "height",
+        "href",
+        "http-equiv",
+        "id",
+        "lang",
+        "method",
+        "name",
+        "onchange",
+        "onclick",
+        "rel",
+        "role",
+        "src",
+        "style",
+        "tabindex",
+        "type",
+        "value",
+        "width"
+      ],
+      "class_tokens": [
+        "arri",
+        "bg",
+        "center",
+        "depa",
+        "dimm",
+        "f22",
+        "f24",
+        "f28",
+        "footerBtn",
+        "fullSize",
+        "ico-user",
+        "img",
+        "jqm-demos",
+        "layerArea",
+        "layerPage",
+        "mb10",
+        "presentTitle",
+        "present_footer",
+        "stationCheckBox",
+        "type1",
+        "type2",
+        "type3",
+        "ui-bar-inherit",
+        "ui-block-b",
+        "ui-btn",
+        "ui-btn-icon-left",
+        "ui-btn-left",
+        "ui-content",
+        "ui-corner-all",
+        "ui-grid-a",
+        "ui-group",
+        "ui-header",
+        "ui-mobile",
+        "ui-mobile-viewport",
+        "ui-overlay-a",
+        "ui-page-active",
+        "ui-present",
+        "ui-present-info",
+        "ui-present-title",
+        "ui-select",
+        "ui-title",
+        "ui-type-flex",
+        "yScroll"
+      ],
+      "input_names": [
+        "arvRsStnCd",
+        "arvStnRunOrdr",
+        "choiceSeatCount",
+        "dptRsStnCd",
+        "dptStnRunOrdr",
+        "login_referer3",
+        "login_referer4",
+        "psrmClCd",
+        "runDt",
+        "scarNo",
+        "seatAttCd",
+        "trnGpCd",
+        "trnNo"
+      ],
+      "inventory_names": [
+        "choiceSeatCount",
+        "scarNo",
+        "seatAttCd"
+      ],
+      "tag_names": [
+        "a",
+        "body",
+        "div",
+        "form",
+        "h1",
+        "head",
+        "html",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "option",
+        "p",
+        "script",
+        "select",
+        "span",
+        "strong",
+        "style",
+        "title"
+      ]
+    }
+  },
+  "schema_version": 2,
+  "status": "success",
+  "sufficiency": "inventory_source_candidate"
+}

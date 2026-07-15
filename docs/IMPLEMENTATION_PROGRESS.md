@@ -38,12 +38,20 @@ Last updated: 2026-07-15 KST
   DOM/JSON inventory candidates, static Ajax contracts, same-origin references,
   cross-origin reference counts, and external handoffs.
 - The route and mutation boundary remains unchanged. Typed physical seats remain
-  excluded until sanitized live schema-v2 evidence identifies a stable iterable
-  source and availability vocabulary.
+  excluded until separately authorized response evidence identifies a stable
+  iterable source and availability vocabulary.
 - Schema v2 introduces no public API or package-version change; the package
   remains `0.2.0`. Its exact operation budget remains one login, one personal
   search operation, and zero or one seat-page read for the first complete SRT
   row.
+- The exact safe offline-replay report is retained as
+  `tests/fixtures/seat_page_schema_v2_evidence.json`. Tests lock its full nested
+  schema, canonical digest, zero offline call counts, and fail-closed safety
+  scan; no raw body, visible value, or dynamic identifier is tracked.
+- The fixture proves one static `POST /arc/selectListArc02011_n.do` handoff from
+  an 11-field serialized form, plus HTML-fragment response clues. Arc02011 is
+  not allowlisted, there is no closed response parser, and no client route was
+  added or called.
 
 ## Implemented Public Operations
 
@@ -104,10 +112,20 @@ cookies, tokens, dates, stations, train/car/seat values, and exception messages
 are forbidden. The serialized report is fail-closed scanned before a sorted
 UTF-8 temporary sibling is atomically replaced into the requested path.
 
-Typed cars and physical seats remain blocked until a separately reviewed,
-sanitized live schema-v2 report identifies a stable iterable car/seat source
-and availability vocabulary. No schema-v2 category widens the origin, route, or
-mutation boundary.
+Typed cars and physical seats remain blocked until separately authorized
+response evidence identifies a stable iterable car/seat source and availability
+vocabulary. No schema-v2 category widens the origin, route, or mutation
+boundary.
+
+The retained sanitized fixture proves the exact schema-v2 report shape and one
+static same-origin Ajax signal: `POST /arc/selectListArc02011_n.do`. Its request
+data is the serialized `#trnScarSeatFrm` containing exactly `trnGpCd`, `runDt`,
+`trnNo`, `scarNo`, `psrmClCd`, `dptRsStnCd`, `arvRsStnCd`, `seatAttCd`,
+`dptStnRunOrdr`, `arvStnRunOrdr`, and `choiceSeatCount`. Static callback logic
+expects an HTML fragment, recognizes a separate sentinel-delimited error form,
+and injects success into `#trnScarSeatInfo`; no iterable JSON or availability
+schema is evidenced. Arc02011 is not allowlisted, there is no closed response
+parser, and the current client does not call it.
 
 The single authorized live evidence attempt on 2026-07-14 failed closed at the
 pre-client configuration gate with exit code 2. Network operation counts were
@@ -123,10 +141,11 @@ session and retained fixed statuses and counts only. Personal and group
 pagination each yielded two 10-row pages, proving a continuation was observed.
 The first complete personal row loaded one seat page with the visible marker,
 9 scripts, 3 forms, no iframe, no embedded JSON block, 5 source categories,
-and `sufficiency=inventory_source_candidate`. No raw HTML, category name, path,
-digest, structural name, train/car/seat value, credential, cookie, or token was
-printed or persisted. The candidate classification is not yet a stable
-iterable car/seat or availability contract.
+and `sufficiency=inventory_source_candidate`. No raw HTML, train/car/seat value,
+credential, cookie, or token was printed or persisted. The later authorized
+offline replay retained only the bounded structural fixture described above.
+The candidate classification and static handoff are not yet a stable iterable
+car/seat response or availability contract.
 
 ## Verification
 
@@ -153,7 +172,11 @@ iterable car/seat or availability contract.
   `"fetch(foo)"` was treated as executable structure. Quoted object keys are now
   fully masked; only unquoted safe simple payload keys are collected.
 - Final quoted-key focused GREEN: `31 passed`.
-- Current full offline gate: `510 passed, 1 deselected`; the deselected case is
+- Sanitized schema-v2 fixture TDD RED: `1 failed, 31 deselected`; the fixture
+  path was intentionally absent.
+- Sanitized schema-v2 fixture focused GREEN: `1 passed, 31 deselected`; the
+  tracked fixture was byte-for-byte identical to the reviewed safe report.
+- Current full offline gate: `512 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
 - Final bounded live gate: login succeeded; personal and group pagination each
   produced two pages with row counts `[10, 10]`; the seat evidence summary was
@@ -272,12 +295,12 @@ and typed physical-seat inventory remain outside the current core package.
 
 ## Next Candidate Phase
 
-Keep typed physical-seat layout and selection as a future candidate requiring a
-separately reviewed, more specific sanitized schema-v2 report that proves a
-stable iterable source and availability vocabulary. Continue to exclude every
-mutation endpoint, external seat-map call, callback, and native bridge. The
-implemented personal and group continuation contract now has bounded live
-evidence.
+Keep typed physical-seat layout and selection as a future candidate requiring
+separately authorized Arc02011 response evidence that proves a stable iterable
+source, availability vocabulary, and closed parser. Continue to exclude the
+unallowlisted Arc02011 handoff, every mutation endpoint, external seat-map call,
+callback, and native bridge. The implemented personal and group continuation
+contract now has bounded live evidence.
 
 See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
 combined KORAIL/SRT orchestration instructions.

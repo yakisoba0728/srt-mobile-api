@@ -837,14 +837,26 @@ def test_ambient_live_opt_in_is_deselected_by_the_release_command() -> None:
 def test_repository_truth_and_full_mutation_policy() -> None:
     readme = (ROOT / "README.md").read_text()
     readme_lower = readme.casefold()
+    readme_flat = " ".join(readme_lower.split())
+    progress = (ROOT / "docs/IMPLEMENTATION_PROGRESS.md").read_text()
+    progress_lower = progress.casefold()
+    progress_flat = " ".join(progress_lower.split())
     assert "installable read-only" in readme_lower
     assert "analysis workspace" not in readme_lower
     assert "20 routes" in readme
-    assert "510 passed" in readme and "1 deselected" in readme
+    assert "512 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in readme.casefold()
     assert "personal and group each returned two pages" in readme.casefold()
     assert "inventory_source_candidate" in readme
+    for evidence_truth in (
+        "seat_page_schema_v2_evidence.json",
+        "/arc/selectListArc02011_n.do",
+        "not allowlisted",
+        "no closed response parser",
+    ):
+        assert evidence_truth.casefold() in readme_flat
+        assert evidence_truth.casefold() in progress_flat
     assert "docs/RELEASE.md" in readme
 
     specification = (ROOT / "docs/analysis/srt-app-api-library-spec-2026-07-09.md").read_text()

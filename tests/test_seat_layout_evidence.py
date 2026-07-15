@@ -18,6 +18,12 @@ from srt_mobile_api.models import (
 
 
 SCRIPT_PATH = Path("scripts/capture_seat_layout_evidence.py")
+CAPTURED_SCHEMA_V2_PATH = Path(
+    "tests/fixtures/seat_page_schema_v2_evidence.json"
+)
+CAPTURED_SCHEMA_V2_CANONICAL_SHA256 = (
+    "2ceba03c2b045f555b1b29dc978ea537d9841b6696e96174a4cd38b5d4a60e17"
+)
 PAGE_KEYS = {
     "marker_present",
     "element_count",
@@ -98,6 +104,54 @@ def _load_module():
 
 
 module = _load_module()
+
+
+def test_retained_schema_v2_fixture_has_exact_safe_report_contract():
+    serialized = CAPTURED_SCHEMA_V2_PATH.read_text()
+    report = json.loads(serialized)
+
+    assert set(report) == REPORT_KEYS
+    assert report["schema_version"] == 2
+    assert report["status"] == "success"
+    assert report["calls"] == {"login": 0, "search": 0, "seat_page": 0}
+    assert report["sufficiency"] == "inventory_source_candidate"
+
+    page = report["page"]
+    assert set(page) == PAGE_KEYS
+    assert set(page["structural_names"]) == STRUCTURAL_NAME_KEYS
+    assert set(page["scripts"]) == SCRIPT_KEYS
+    assert all(
+        set(item) == SCRIPT_ITEM_KEYS for item in page["scripts"]["items"]
+    )
+    assert set(page["forms"]) == FORM_KEYS
+    assert all(set(item) == FORM_ITEM_KEYS for item in page["forms"]["items"])
+    assert set(page["iframes"]) == IFRAME_KEYS
+    assert set(page["embedded_json"]) == JSON_KEYS
+    assert all(
+        set(item) == JSON_ITEM_KEYS for item in page["embedded_json"]["items"]
+    )
+
+    ajax_contract = next(
+        item
+        for item in page["scripts"]["items"]
+        if item["route_paths"] == ["/arc/selectListArc02011_n.do"]
+    )
+    assert ajax_contract["ajax_primitives"] == ["jquery_ajax"]
+    assert ajax_contract["http_methods"] == ["POST"]
+    assert ajax_contract["payload_keys"] == []
+    assert ajax_contract["response_paths"] == []
+    assert ajax_contract["inventory_names"] == []
+
+    canonical = json.dumps(
+        report,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    assert hashlib.sha256(canonical).hexdigest() == (
+        CAPTURED_SCHEMA_V2_CANONICAL_SHA256
+    )
+    assert module.report_is_safe(serialized, ())
 
 
 def _complete_train(train_no: str = "00303") -> TrainSummary:
