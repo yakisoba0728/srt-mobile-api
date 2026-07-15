@@ -5,7 +5,7 @@ evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The current offline suite is
-`579 passed, 1 deselected`; the deselected case is the explicitly opted-in
+`587 passed, 1 deselected`; the deselected case is the explicitly opted-in
 live-service test.
 
 Internal editable installation and offline verification:
@@ -92,13 +92,15 @@ received-amount, and discount fields. When the server row omits station names,
 the client can enrich them from the already-hydrated request form; blank or
 code-only context does not invent a name.
 
-`get_notice_list()` returns `NoticeListResult` containing typed `Notice` rows
-for the observed uppercase seven-field contract. Notice bodies and raw mappings
-are excluded from `repr()`. Timetable parsing skips leading empty cells before
-choosing the station name. Fare parsing retains unavailable semantic rows as
-`FareItem(amount=None, available=False, status=...)`; `FarePage.available_items`
-provides the numeric/available subset. These parser changes add no request,
-route, seat-inventory, or mutation behavior.
+`get_notice_list()` preserves its legacy raw `dict` result.
+`get_typed_notice_list()` exposes the same one-request read as a
+`NoticeListResult` containing typed `Notice` rows for the observed uppercase
+seven-field contract. Notice bodies and raw mappings are excluded from
+`repr()`. Timetable parsing skips leading empty cells before choosing the
+station name. `FarePage.items` preserves its legacy numeric-only rows, while
+`FarePage.semantic_items` also retains unavailable rows as
+`FareItem(amount=None, available=False, status=...)`. These parser changes add
+no route, seat-inventory, or mutation behavior.
 
 ### Bounded train-search pagination
 

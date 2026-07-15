@@ -10,9 +10,11 @@ Last updated: 2026-07-15 KST
 - `TrainSearchMetadata`, typed optional search-row availability details, and
   hydrated request-context station-name enrichment are additive; legacy
   positional fields remain in place.
-- Notice rows use the observed uppercase seven-field typed contract with body
-  and raw data excluded from `repr()`. Timetable rows skip leading empty cells,
-  and fare pages retain both priced and unavailable semantic rows.
+- `get_notice_list()` retains its legacy raw mapping contract; the additive
+  `get_typed_notice_list()` exposes observed uppercase seven-field typed rows
+  with body and raw data excluded from `repr()`. Timetable rows skip leading
+  empty cells. `FarePage.items` remains numeric-only and the additive
+  `semantic_items` retains both priced and unavailable semantic rows.
 - These parser/model changes add no route, request, seat-info operation, or
   mutation behavior and were developed from shape-only evidence with synthetic
   fixtures.
@@ -199,10 +201,11 @@ car/seat response or availability contract.
   tracked fixture was byte-for-byte identical to the reviewed safe report.
 - Sanitized-fixture phase full offline gate: `512 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
-- Current integrated full offline gate: `579 passed, 1 deselected`. Offline
+- Current integrated full offline gate: `587 passed, 1 deselected`. Offline
   replay of the retained runtime bodies passes for typed notices, timetable
   names, all 12 fare rows, and six personal/group search responses. The replay
-  also fixed the observed JSON-integer `qryCnqeCnt` and `trnOrdrNo` shapes and
+  also fixed the observed JSON-integer `qryCnqeCnt`, `trnOrdrNo`, and
+  `ocurDlayTnum` shapes, retained `rcvdFare` and five composition codes, and
   requires exact request/response station-code agreement before name enrichment.
 - Final bounded live gate: login succeeded; personal and group pagination each
   produced two pages with row counts `[10, 10]`; the seat evidence summary was

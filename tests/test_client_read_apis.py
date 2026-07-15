@@ -72,7 +72,10 @@ def test_read_pages_and_notice(load_json_fixture, load_text_fixture):
     client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
     assert "main" in client.get_main().raw
     assert "booking" in client.get_booking_page().raw
-    notice_result = client.get_notice_list()
+    notice_raw = client.get_notice_list()
+    assert isinstance(notice_raw, dict)
+    assert notice_raw["noticeList"][0]["SUBJ"] == "Synthetic subject"
+    notice_result = client.get_typed_notice_list()
     assert notice_result.notices[0].subject == "Synthetic subject"
     assert notice_result.notices[0].post_no == 42
     assert "승차권" in client.get_ticket_list().text
@@ -124,8 +127,7 @@ def test_valid_notice_json_with_login_markup_preserves_session_and_cookies():
     client.http.cookies.set("JSESSIONID", "session-cookie")
 
     result = client.get_notice_list()
-    assert result.notices == ()
-    assert result.raw == payload
+    assert result == payload
     assert client.session.current is session
     assert "JSESSIONID" in client.http.cookies
 
@@ -1020,7 +1022,7 @@ def test_timetable_and_fare(load_text_fixture):
     assert isinstance(timetable, TimetablePage)
     assert "05:01" in timetable.text
     assert isinstance(fare, FarePage)
-    assert "12,340 won" in fare.text
+    assert "12,340원" in fare.text
     assert captured["/ara/selectListAra12009_n.do"]["stnCourseNm"] == ["수서-부산"]
     assert captured["/ara/selectListAra13010_n.do"]["psgTpCd2"] == ["5"]
     assert captured["/ara/selectListAra13010_n.do"]["dptRsStnCd2"] == [""]

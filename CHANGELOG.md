@@ -5,9 +5,12 @@
 - Normalized the two observed personal/group search wrapper casings strictly,
   added typed repr-safe search metadata and optional row availability details,
   and enriched missing station names only from hydrated request context.
-- Added typed uppercase-contract notice results, retained leading-empty-cell
-  timetable station names, and preserved unavailable fare rows with optional
-  amounts and explicit availability.
+- Preserved the legacy raw notice mapping and numeric-only fare item contracts;
+  added typed uppercase notice results and all semantic fare rows through
+  separate additive APIs/fields, and retained leading-empty timetable names.
+- Aligned search details with sanitized 51-field personal and 43-field group
+  shapes, including integer delay/order values, received fare, and five train
+  composition codes.
 - Added bounded, lazy personal and group train-search page iteration while
   preserving the existing single-page search methods.
 - Reused the hydrated search form and NetFunnel key across continuation pages,

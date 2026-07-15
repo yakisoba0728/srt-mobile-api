@@ -575,8 +575,8 @@ def test_timetable_and_fare_parsers_return_html_compatible_models(load_text_fixt
     assert isinstance(fare, HtmlPage)
     assert fare.items[0].label == "Synthetic A1"
     assert fare.items[0].amount == 12340
-    assert fare.items[0].raw_amount == "12,340 won"
-    assert "12,340 won" in fare.text
+    assert fare.items[0].raw_amount == "12,340원"
+    assert "12,340원" in fare.text
     assert "<table>" in fare.raw
 
 

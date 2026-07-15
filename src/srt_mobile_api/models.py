@@ -97,7 +97,7 @@ class TrainSummary:
     train_run_order: int | None = None
     departure_consist_order: str | None = None
     arrival_consist_order: str | None = None
-    current_delay: str | None = None
+    current_delay: int | None = None
     expected_delay: str | None = None
     general_seat_availability: str | None = None
     special_seat_availability: str | None = None
@@ -105,6 +105,8 @@ class TrainSummary:
     standing_availability: str | None = None
     received_amount: str | None = None
     discount_rate: str | None = None
+    received_fare: str | None = None
+    train_composition_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -191,10 +193,11 @@ class FareItem:
 @dataclass(frozen=True)
 class FarePage(HtmlPage):
     items: tuple[FareItem, ...] = ()
+    semantic_items: tuple[FareItem, ...] = ()
 
     @property
     def available_items(self) -> tuple[FareItem, ...]:
-        return tuple(item for item in self.items if item.available)
+        return self.items
 
 
 @dataclass(frozen=True)

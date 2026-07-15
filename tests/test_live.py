@@ -74,7 +74,7 @@ def test_live_result_contains_counts_not_ticket_text():
     client.get_passenger_selector.return_value = selector_page
     client.get_seat_option_selector.return_value = selector_page
     client.get_train_group_selector.return_value = selector_page
-    client.get_notice_list.return_value = NoticeListResult(
+    client.get_typed_notice_list.return_value = NoticeListResult(
         notices=(
             Notice(
                 is_main="N",
@@ -163,7 +163,7 @@ def test_live_result_contains_counts_not_ticket_text():
         "get_passenger_selector",
         "get_seat_option_selector",
         "get_train_group_selector",
-        "get_notice_list",
+        "get_typed_notice_list",
         "get_ticket_list",
         "search_trains",
         "get_seat_page",

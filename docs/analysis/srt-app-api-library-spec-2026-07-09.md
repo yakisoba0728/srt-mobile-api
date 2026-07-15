@@ -230,11 +230,16 @@ station code. Missing or mismatched codes never invent a station name.
 | `sprmRsvPsbImg`, `gnrmRsvPsbImg` | UI image/status hints. |
 | `trainDiscGenRt` | Discount/rate field. |
 | `rcvdAmt` | Fare/amount field when present. |
+| `rcvdFare` | Received fare string when present. |
+| `ocurDlayTnum` | Non-negative JSON integer current-delay value. |
+| `expnDptDlayTnum` | Expected departure-delay string in personal rows. |
+| `trnCpsCd1..5` | Five observed train-composition code slots. |
 | `stmpRsvPsbFlgCd` | Standing/reservation flag. |
 
-The typed row also retains evidenced run/consist orders, current/expected delay
-strings, general/special/wait/standing availability strings, received amount,
-and discount rate without interpreting their display vocabularies.
+The typed row also retains evidenced run/consist orders, normalized current
+delay, expected-delay string, general/special/wait/standing availability,
+received amount/fare, composition codes, and discount rate without interpreting
+their display vocabularies.
 
 ## 6. Endpoint Matrix
 
@@ -248,7 +253,7 @@ and discount rate without interpreting their display vocabularies.
 | Runtime success | GET | `/main/main.do` | Query `deviceId`, optional `pushMsg`. | HTML app main page, HTTP 200. |
 | Static only | GET | `/srail-app/main/main.do` | Static/offline alias found in bundled/native references. | Runtime not called; do not prefer over `/main/main.do`. |
 | Runtime success | GET | `/ara/ara0101v.do` | No body after login. | HTML booking start page. |
-| Runtime success | POST | `/main/noticeList.do` | `pageId=MB0101000000`. | JSON with `noticeList[]`; runtime returned 2 notices. |
+| Runtime success | POST | `/main/noticeList.do` | `pageId=MB0101000000`. | JSON with `noticeList[]`; `get_notice_list()` preserves the raw mapping and `get_typed_notice_list()` exposes the observed typed rows. |
 | Runtime success | GET | `/atc/selectListAtc14017_n.do?pageNo=0` | Query `pageNo`. | HTML ticket/reservation list; before/after negative reservation checks were identical. |
 | Static/native | GET | `https://app.srail.co.kr/neo/atc/selectListAtc14016_n.do?pageNo=0` | Query `pageNo`. | Foreground notification/native ticket route candidate; runtime not called. |
 | Static only | GET | `/srail-app/atc/selectListAtc14016_n.do?pageNo=0` | Query `pageNo`. | Offline marker/cached ticket route; runtime not called. |
@@ -302,7 +307,7 @@ Search implementation notes:
 | Evidence | Method | Endpoint | Request | Response and parser rule |
 |---|---:|---|---|---|
 | Runtime success | POST | `/ara/selectListAra12009_n.do` | `stnCourseNm`, `trnSort`, `runDt`, zero-padded `trnNo` such as `00303`. | HTML timetable page. Parse table rows first; fallback to `HH:MM` regex. |
-| Runtime success | POST | `/ara/selectListAra13010_n.do` | `stnCourseNm`, `trnSort`, `runDt`, `trnNo`, `chtnDvCd`, `dptRsStnCd1`, `arvRsStnCd1`, `runDt1`, `trnNo1`, `psgTpCd1..6`, `psgInfoPerPrnb1..6`, return-leg placeholders. | HTML fare page. Parse fare table first; store integer amount and raw label. |
+| Runtime success | POST | `/ara/selectListAra13010_n.do` | `stnCourseNm`, `trnSort`, `runDt`, `trnNo`, `chtnDvCd`, `dptRsStnCd1`, `arvRsStnCd1`, `runDt1`, `trnNo1`, `psgTpCd1..6`, `psgInfoPerPrnb1..6`, return-leg placeholders. | HTML fare page. Parse observed `원` amounts; legacy `items` stays numeric-only and `semantic_items` also preserves unavailable rows. |
 
 Runtime fare examples from the selected train:
 

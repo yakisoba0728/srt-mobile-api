@@ -290,7 +290,7 @@ class _TableParser(HTMLParser):
 
 
 TIME_RE = re.compile(r"\b\d{2}:\d{2}\b")
-FARE_RE = re.compile(r"(\d{1,3}(?:,\d{3})*)\s*(?:원|won)", re.IGNORECASE)
+FARE_RE = re.compile(r"(\d{1,3}(?:,\d{3})*)\s*원")
 
 
 def parse_timetable_page(html: str) -> TimetablePage:
@@ -344,7 +344,14 @@ def parse_fare_page(html: str) -> FarePage:
         )
     if not items:
         raise SrtProtocolError("SRT fare page did not contain semantic fare rows")
-    return FarePage(text=page.text, raw=page.raw, items=tuple(items))
+    semantic_items = tuple(items)
+    available_items = tuple(item for item in semantic_items if item.available)
+    return FarePage(
+        text=page.text,
+        raw=page.raw,
+        items=available_items,
+        semantic_items=semantic_items,
+    )
 
 
 def _first_row(value: Any) -> dict[str, Any]:
@@ -512,19 +519,44 @@ def _optional_row_nonnegative_int(
         if key not in row:
             continue
         value = row[key]
-        if type(value) is int and value >= 0:
-            return value
-        if (
-            isinstance(value, str)
-            and value.isascii()
-            and value.isdecimal()
-        ):
-            return int(value)
-        raise SrtProtocolError(
-            f"SRT search train row {key} must be a non-negative integer "
-            "or ASCII integer string"
-        )
+        return _nonnegative_int(value, context=f"search train row {key}")
     return None
+
+
+def _optional_row_string_tuple(
+    row: dict[str, Any],
+    *keys: str,
+) -> tuple[str, ...]:
+    values: list[str] = []
+    for key in keys:
+        if key not in row:
+            continue
+        value = row[key]
+        if not isinstance(value, str):
+            raise SrtProtocolError(
+                f"SRT search train row {key} must be a string"
+            )
+        values.append(value)
+    return tuple(values)
+
+
+def _nonnegative_int(value: Any, *, context: str) -> int:
+    if type(value) is int and value >= 0:
+        return value
+    if (
+        isinstance(value, str)
+        and value.isascii()
+        and value.isdecimal()
+    ):
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise SrtProtocolError(
+                f"SRT {context} exceeds the supported integer size"
+            ) from exc
+    raise SrtProtocolError(
+        f"SRT {context} must be a non-negative integer or ASCII integer string"
+    )
 
 
 def _station_name(
@@ -541,19 +573,21 @@ def _station_name(
         return row_name.strip()
     if context is None:
         return None
+    normalized_station_code = (
+        station_code.strip() if isinstance(station_code, str) else ""
+    )
     context_code = context.get(context_code_key)
     if (
-        not isinstance(station_code, str)
-        or not station_code.strip()
+        not normalized_station_code
         or not isinstance(context_code, str)
-        or context_code.strip() != station_code.strip()
+        or context_code.strip() != normalized_station_code
     ):
         return None
     context_name = context.get(context_key)
     if not isinstance(context_name, str) or not context_name.strip():
         return None
     normalized = context_name.strip()
-    if station_code is not None and normalized == station_code:
+    if normalized == normalized_station_code:
         return None
     return normalized
 
@@ -565,19 +599,10 @@ def _parse_search_metadata(result: dict[str, Any]) -> TrainSearchMetadata:
     if not isinstance(message, str):
         raise SrtProtocolError("SRT search metadata msgTxt must be a string")
     raw_query_count = result.get("qryCnqeCnt")
-    if type(raw_query_count) is int and raw_query_count >= 0:
-        query_count = raw_query_count
-    elif (
-        isinstance(raw_query_count, str)
-        and raw_query_count.isascii()
-        and raw_query_count.isdecimal()
-    ):
-        query_count = int(raw_query_count)
-    else:
-        raise SrtProtocolError(
-            "SRT search metadata qryCnqeCnt must be a non-negative integer "
-            "or ASCII integer string"
-        )
+    query_count = _nonnegative_int(
+        raw_query_count,
+        context="search metadata qryCnqeCnt",
+    )
     raw_following = result.get("fllwPgExt")
     if raw_following is None:
         has_following_page = None
@@ -686,13 +711,15 @@ def parse_train_search_response(
                     row,
                     "arvStnConsOrdr",
                 ),
-                current_delay=_optional_row_string(
+                current_delay=_optional_row_nonnegative_int(
                     row,
+                    "ocurDlayTnum",
                     "curDlayTm",
                     "dptDlayTm",
                 ),
                 expected_delay=_optional_row_string(
                     row,
+                    "expnDptDlayTnum",
                     "expDlayTm",
                     "arvDlayTm",
                 ),
@@ -716,6 +743,15 @@ def parse_train_search_response(
                 ),
                 received_amount=_optional_row_string(row, "rcvdAmt"),
                 discount_rate=_optional_row_string(row, "trainDiscGenRt"),
+                received_fare=_optional_row_string(row, "rcvdFare"),
+                train_composition_codes=_optional_row_string_tuple(
+                    row,
+                    "trnCpsCd1",
+                    "trnCpsCd2",
+                    "trnCpsCd3",
+                    "trnCpsCd4",
+                    "trnCpsCd5",
+                ),
                 raw=row,
             )
         )

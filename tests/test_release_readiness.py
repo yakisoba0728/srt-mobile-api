@@ -844,7 +844,7 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     assert "installable read-only" in readme_lower
     assert "analysis workspace" not in readme_lower
     assert "20 routes" in readme
-    assert "579 passed" in readme and "1 deselected" in readme
+    assert "587 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in readme.casefold()
     assert "personal and group each returned two pages" in readme.casefold()

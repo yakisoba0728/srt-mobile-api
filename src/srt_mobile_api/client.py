@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Any, Iterator
 
 import httpx
 
@@ -97,7 +97,7 @@ class SrtClient:
             raw = self.http.get_text("/ara/ara0101v.do")
             return parse_html_page(raw, context="booking page")
 
-    def get_notice_list(self) -> NoticeListResult:
+    def _get_notice_list_result(self) -> NoticeListResult:
         with self._session_guard():
             return parse_notice_list_response(
                 self.http.post_form(
@@ -106,6 +106,14 @@ class SrtClient:
                     accept="application/json, text/javascript, */*; q=0.01",
                 )
             )
+
+    def get_notice_list(self) -> dict[str, Any]:
+        """Return the legacy raw notice mapping without changing its shape."""
+        return self._get_notice_list_result().raw
+
+    def get_typed_notice_list(self) -> NoticeListResult:
+        """Return the same notice read as frozen typed rows."""
+        return self._get_notice_list_result()
 
     def get_ticket_list(self, page_no: int = 0) -> HtmlPage:
         with self._session_guard():

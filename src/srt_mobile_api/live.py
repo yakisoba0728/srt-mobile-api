@@ -115,7 +115,7 @@ def run_live_smoke(
         client.get_seat_option_selector(request_seat_attr_code=query.seat_attr_code),
         client.get_train_group_selector(query.train_group_code, group_name),
     )
-    notices = client.get_notice_list()
+    notices = client.get_typed_notice_list()
     tickets = client.get_ticket_list()
     personal = client.search_trains(query)
     seat_train = _first_complete_srt_seat_train(personal.trains)

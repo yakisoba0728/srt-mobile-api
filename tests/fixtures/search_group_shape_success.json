@@ -1,0 +1,63 @@
+{
+  "ERROR_CODE": "0",
+  "ERROR_MSG": "",
+  "outDataSets": {
+    "dsOutput0": {
+      "cgPsId": "synthetic-cg",
+      "fllwPgExt": "N",
+      "msgCd": "IRG000000",
+      "msgTxt": "",
+      "qryCnqeCnt": 1,
+      "strResult": "SUCC",
+      "uuid": "synthetic-uuid",
+      "wctNo": "synthetic-window"
+    },
+    "dsOutput1": [
+      {
+        "arvDt": "20990102",
+        "arvRsStnCd": "2002",
+        "arvStnConsOrdr": "22",
+        "arvStnRunOrdr": "32",
+        "arvTm": "090000",
+        "chtnDvCd": "synthetic-transfer",
+        "chtnTrnOrdrNo": "synthetic-transfer-order",
+        "doReserv": "synthetic-reserve-action",
+        "dptDt": "20990102",
+        "dptRsStnCd": "1001",
+        "dptStnConsOrdr": "11",
+        "dptStnRunOrdr": "31",
+        "dptTm": "060000",
+        "gnrmRsvPsbCdNm": "synthetic-general-name",
+        "gnrmRsvPsbColor": "synthetic-general-color",
+        "gnrmRsvPsbImg": "synthetic-general-image",
+        "gnrmRsvPsbStr": "synthetic-general-availability",
+        "ocurDlayTnum": 2,
+        "payTable": "synthetic-pay-table",
+        "rcvdAmt": "23450",
+        "rcvdFare": "23000",
+        "runDt": "20990102",
+        "runTm": "030000",
+        "seatAttCd": "015",
+        "seatSelect": "synthetic-seat-select",
+        "sprmRsvPsbCdNm": "synthetic-special-name",
+        "sprmRsvPsbColor": "synthetic-special-color",
+        "sprmRsvPsbImg": "synthetic-special-image",
+        "sprmRsvPsbStr": "synthetic-special-availability",
+        "stlbCarTpCd": "synthetic-car-type",
+        "stlbDturDvCd": "synthetic-detour",
+        "stlbTrnClsfCd": "17",
+        "timeTable": "synthetic-time-table",
+        "trainDiscGenRt": "8",
+        "trnCpsCd1": "G1",
+        "trnCpsCd2": "G2",
+        "trnCpsCd3": "G3",
+        "trnCpsCd4": "G4",
+        "trnCpsCd5": "G5",
+        "trnGpCd": "300",
+        "trnNo": "00812",
+        "trnOrdrNo": 5,
+        "ymsAplFlg": "N"
+      }
+    ]
+  }
+}

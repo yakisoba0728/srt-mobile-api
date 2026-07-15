@@ -210,17 +210,20 @@ def test_fare_parser_retains_numeric_and_unavailable_semantic_rows(
 ):
     page = parse_fare_page(load_text_fixture("fare.html"))
 
-    assert len(page.items) == 12
-    assert sum(item.amount is not None for item in page.items) == 9
-    assert len(page.available_items) == 9
+    assert len(page.items) == 9
+    assert all(item.amount is not None for item in page.items)
+    assert page.available_items == page.items
+    assert len(page.semantic_items) == 12
     assert page.items[0] == FareItem(
         label="Synthetic A1",
         amount=12340,
-        raw_amount="12,340 won",
+        raw_amount="12,340원",
         available=True,
         status=None,
     )
-    unavailable = next(item for item in page.items if item.label == "Synthetic A3")
+    unavailable = next(
+        item for item in page.semantic_items if item.label == "Synthetic A3"
+    )
     assert unavailable.amount is None
     assert unavailable.available is False
     assert unavailable.status == "Unavailable-A"
@@ -260,7 +263,7 @@ def test_search_parser_exposes_typed_metadata_and_optional_train_fields():
     assert train.train_run_order == 4
     assert train.departure_consist_order == "11"
     assert train.arrival_consist_order == "22"
-    assert train.current_delay == "3"
+    assert train.current_delay == 3
     assert train.expected_delay == "5"
     assert train.general_seat_availability == "GENERAL-AVAILABLE"
     assert train.special_seat_availability == "SPECIAL-UNAVAILABLE"
@@ -268,6 +271,114 @@ def test_search_parser_exposes_typed_metadata_and_optional_train_fields():
     assert train.standing_availability == "STANDING-CLOSED"
     assert train.received_amount == "12340"
     assert train.discount_rate == "7"
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_keys", "expected_delay", "composition"),
+    [
+        (
+            "search_personal_shape_success.json",
+            {
+                "arvDt", "arvRsStnCd", "arvStnConsOrdr", "arvStnRunOrdr",
+                "arvTm", "chtnDvCd", "dlaySaleFlg", "doReserv", "dptDt",
+                "dptRsStnCd", "dptStnConsOrdr", "dptStnRunOrdr", "dptTm",
+                "etcRsvPsbCdNm", "expnDptDlayTnum", "fresOprCno",
+                "fresRsvPsbCdNm", "gnrmRsvPsbCdNm", "gnrmRsvPsbColor",
+                "gnrmRsvPsbImg", "gnrmRsvPsbStr", "ocurDlayTnum",
+                "payTable", "rcvdAmt", "rcvdFare", "rsvWaitPsbCd",
+                "rsvWaitPsbCdNm", "runDt", "runTm", "seatAttCd",
+                "seatSelect", "sprmRsvPsbCdNm", "sprmRsvPsbColor",
+                "sprmRsvPsbImg", "sprmRsvPsbStr", "stlbDturDvCd",
+                "stlbTrnClsfCd", "stmpRsvPsbFlgCd", "stndRsvPsbCdNm",
+                "timeTable", "trainDiscGenRt", "trnCpsCd1", "trnCpsCd2",
+                "trnCpsCd3", "trnCpsCd4", "trnCpsCd5", "trnGpCd",
+                "trnNo", "trnNstpLeadInfo", "trnOrdrNo", "ymsAplFlg",
+            },
+            "5",
+            ("C1", "C2", "C3", "C4", "C5"),
+        ),
+        (
+            "search_group_shape_success.json",
+            {
+                "arvDt", "arvRsStnCd", "arvStnConsOrdr", "arvStnRunOrdr",
+                "arvTm", "chtnDvCd", "chtnTrnOrdrNo", "doReserv", "dptDt",
+                "dptRsStnCd", "dptStnConsOrdr", "dptStnRunOrdr", "dptTm",
+                "gnrmRsvPsbCdNm", "gnrmRsvPsbColor", "gnrmRsvPsbImg",
+                "gnrmRsvPsbStr", "ocurDlayTnum", "payTable", "rcvdAmt",
+                "rcvdFare", "runDt", "runTm", "seatAttCd", "seatSelect",
+                "sprmRsvPsbCdNm", "sprmRsvPsbColor", "sprmRsvPsbImg",
+                "sprmRsvPsbStr", "stlbCarTpCd", "stlbDturDvCd",
+                "stlbTrnClsfCd", "timeTable", "trainDiscGenRt",
+                "trnCpsCd1", "trnCpsCd2", "trnCpsCd3", "trnCpsCd4",
+                "trnCpsCd5", "trnGpCd", "trnNo", "trnOrdrNo", "ymsAplFlg",
+            },
+            None,
+            ("G1", "G2", "G3", "G4", "G5"),
+        ),
+    ],
+)
+def test_sanitized_search_shapes_cover_observed_keys_and_modeled_fields(
+    load_json_fixture,
+    fixture_name,
+    expected_keys,
+    expected_delay,
+    composition,
+):
+    payload = load_json_fixture(fixture_name)
+    row = payload["outDataSets"]["dsOutput1"][0]
+
+    assert set(row) == expected_keys
+    assert type(row["trnOrdrNo"]) is int
+    assert type(row["ocurDlayTnum"]) is int
+    if "fresRsvPsbCdNm" in row:
+        assert row["fresRsvPsbCdNm"] is None
+
+    train = parse_train_search_response(
+        payload,
+        request_context={
+            "dptRsStnCd1": "1001",
+            "dptRsStnCdNm1": "Synthetic Departure",
+            "arvRsStnCd1": "2002",
+            "arvRsStnCdNm1": "Synthetic Arrival",
+        },
+    ).trains[0]
+
+    assert train.departure_station_name == "Synthetic Departure"
+    assert train.arrival_station_name == "Synthetic Arrival"
+    assert train.departure_run_order == "31"
+    assert train.arrival_run_order == "32"
+    assert train.departure_consist_order == "11"
+    assert train.arrival_consist_order == "22"
+    assert train.run_time == "030000"
+    assert train.train_run_order in {4, 5}
+    assert train.current_delay in {2, 3}
+    assert train.expected_delay == expected_delay
+    assert train.general_seat_availability == "synthetic-general-availability"
+    assert train.special_seat_availability == "synthetic-special-availability"
+    assert train.received_amount in {"12340", "23450"}
+    assert train.received_fare in {"12000", "23000"}
+    assert train.discount_rate in {"7", "8"}
+    assert train.train_composition_codes == composition
+
+
+@pytest.mark.parametrize(
+    ("field_name", "bad_value"),
+    [
+        ("ocurDlayTnum", True),
+        ("rcvdFare", 1),
+        ("trnCpsCd3", 3),
+    ],
+)
+def test_sanitized_search_shape_rejects_wrong_typed_promoted_fields(
+    load_json_fixture,
+    field_name,
+    bad_value,
+):
+    payload = load_json_fixture("search_personal_shape_success.json")
+    payload["outDataSets"]["dsOutput1"][0][field_name] = bad_value
+
+    with pytest.raises(SrtProtocolError, match=field_name):
+        parse_train_search_response(payload)
 
 
 @pytest.mark.parametrize(
@@ -319,6 +430,19 @@ def test_search_parser_rejects_invalid_train_order(bad_value):
     )
 
     with pytest.raises(SrtProtocolError, match="trnOrdrNo"):
+        parse_train_search_response(payload)
+
+
+@pytest.mark.parametrize("target", ["query_count", "train_order"])
+def test_search_parser_wraps_oversized_decimal_conversion(target):
+    payload = _success_response(rows=[{"trnNo": "811"}])
+    oversized = "9" * 5000
+    if target == "query_count":
+        payload["outDataSets"]["dsOutput0"][0]["qryCnqeCnt"] = oversized
+    else:
+        payload["outDataSets"]["dsOutput1"][0]["trnOrdrNo"] = oversized
+
+    with pytest.raises(SrtProtocolError):
         parse_train_search_response(payload)
 
 
@@ -390,13 +514,40 @@ def test_search_parser_requires_response_station_codes_for_context_enrichment():
     assert train.arrival_station_name is None
 
 
+def test_search_parser_does_not_promote_trimmed_code_as_station_name():
+    train = parse_train_search_response(
+        _success_response(
+            rows=[
+                {
+                    "trnNo": "811",
+                    "dptRsStnCd": " 1001 ",
+                    "arvRsStnCd": " 2002 ",
+                }
+            ]
+        ),
+        request_context={
+            "dptRsStnCd1": "1001",
+            "dptRsStnCdNm1": "1001",
+            "arvRsStnCd1": "2002",
+            "arvRsStnCdNm1": "2002",
+        },
+    ).trains[0]
+
+    assert train.departure_station_name is None
+    assert train.arrival_station_name is None
+
+
 def test_new_typed_models_are_exported_without_moving_legacy_positional_fields():
     assert srt_mobile_api.Notice is models.Notice
     assert srt_mobile_api.NoticeListResult is models.NoticeListResult
     assert srt_mobile_api.TrainSearchMetadata is models.TrainSearchMetadata
     assert (
-        srt_mobile_api.SrtClient.get_notice_list.__annotations__["return"]
+        srt_mobile_api.SrtClient.get_typed_notice_list.__annotations__["return"]
         == "NoticeListResult"
+    )
+    assert (
+        srt_mobile_api.SrtClient.get_notice_list.__annotations__["return"]
+        == "dict[str, Any]"
     )
     assert [field.name for field in fields(TrainSummary)][:16] == [
         "train_no",

@@ -20,6 +20,7 @@ def test_client_public_method_set_is_stable():
         "get_main",
         "get_mutual_verification",
         "get_notice_list",
+        "get_typed_notice_list",
         "get_passenger_selector",
         "get_seat_page",
         "get_seat_option_selector",
