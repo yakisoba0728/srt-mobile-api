@@ -642,7 +642,7 @@ reservation, payment, or other mutation behavior.
 | Valid reservation success response | Not captured by design; would create live inventory hold. |
 | Real ARD page internals after valid reservation | Not captured; dummy page evidence is not payment behavior. |
 | ATA detail valid-state behavior | Dummy PNR failed; no valid reservation context will be created. |
-| Search pagination live verification | The bounded iterator implements the static app contract; a separately authorized read-only run is still needed to verify production continuation. |
+| Search pagination live verification | The bounded 2026-07-15 read-only run observed two 10-row pages for personal and group search; continuation behavior beyond that single bounded observation remains unverified. |
 | External seatmap callback | Current live page can hand off to external Korail seatmap; keep out of core unless separately scoped. |
 | Native secure keyboard/FIDO parity | Not needed for basic HTTP login/search but may matter for app-identical UX. |
 
@@ -651,7 +651,7 @@ reservation, payment, or other mutation behavior.
 The earlier temporary catalog, runtime report, static APK notes, and deep-dive
 notes were merged into this file. The repository now retains the installable
 package source, offline tests and fixtures, implementation progress, approved
-specifications and execution plans, the root README, and bounded smoke tooling.
+design specifications, the root README, and bounded smoke tooling.
 
 | Retained file | Purpose |
 |---|---|
@@ -660,9 +660,12 @@ specifications and execution plans, the root README, and bounded smoke tooling.
 | `tests/` | Offline contract tests and sanitized synthetic fixtures. |
 | `docs/IMPLEMENTATION_PROGRESS.md` | Current implementation and verification evidence. |
 | `docs/superpowers/specs/` | Retained design decisions and completion status. |
-| `docs/superpowers/plans/` | Retained implementation and review plans. |
 | `scripts/srt_app_api_smoke.py` | Re-runnable smoke/negative test harness. |
 | `README.md` | Package entry point, evidence map, and safety notes. |
+
+The completed execution plans formerly under `docs/superpowers/plans/` were
+removed after implementation; their outcomes are recorded in `CHANGELOG.md`,
+`docs/IMPLEMENTATION_PROGRESS.md`, and this specification.
 
 ## 13. Regenerating Static Evidence
 

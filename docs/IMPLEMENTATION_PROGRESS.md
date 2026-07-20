@@ -1,6 +1,6 @@
 # SRT Python Package Implementation Progress
 
-Last updated: 2026-07-15 KST
+Last updated: 2026-07-20 KST (state at HEAD `955de306`, version `0.2.0`)
 
 ## Current State
 
@@ -18,6 +18,12 @@ Last updated: 2026-07-15 KST
 - These parser/model changes add no route, request, seat-info operation, or
   mutation behavior and were developed from shape-only evidence with synthetic
   fixtures.
+- The package exports the pure offline `parse_reservation_attempt_response()`
+  parser and typed repr-safe `ReservationAttemptResult` for the documented
+  reservation-attempt response shape. It accepts caller-supplied JSON only and
+  raises the existing protocol/app errors for malformed or rejected shapes. No
+  reservation route, request builder, `act_19` flow, client method, or live
+  call was added.
 - Internal release preparation is complete at current `HEAD`: typed-package
   metadata, source-manifest contents, an archive verifier, Python 3.11-3.14
   offline CI, and internal release/security/changelog guidance are present.
@@ -88,6 +94,9 @@ Last updated: 2026-07-15 KST
 - Seat-option preference selector popup read
 - Train-group selector popup read
 - Physical seat-selection page read returning `SeatSelectionPage`
+
+The package also exports the offline `parse_reservation_attempt_response()`
+helper; it performs no I/O and is not a client route.
 
 The transport currently allows 20 exact read-only app/NetFunnel routes.
 Reservation, `act_19`, payment, cancellation, refund, ATA/ARD flows, native
@@ -201,7 +210,10 @@ car/seat response or availability contract.
   tracked fixture was byte-for-byte identical to the reviewed safe report.
 - Sanitized-fixture phase full offline gate: `512 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
-- Current integrated full offline gate: `587 passed, 1 deselected`. Offline
+- Current full offline gate at HEAD `955de306`, including the additive
+  reservation-attempt parser tests: `625 passed, 1 deselected`; the deselected
+  case remains the explicit live-service opt-in.
+- Prior integrated full offline gate: `587 passed, 1 deselected`. Offline
   replay of the retained runtime bodies passes for typed notices, timetable
   names, all 12 fare rows, and six personal/group search responses. The replay
   also fixed the observed JSON-integer `qryCnqeCnt`, `trnOrdrNo`, and
@@ -322,17 +334,11 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
 Static aliases, reservation execution, payment handoff, native integrations,
 and typed physical-seat inventory remain outside the current core package.
 
-## Next Candidate Phase
+## Deferred Work
 
-Keep typed physical-seat layout and selection as a future candidate requiring
+Typed physical-seat layout and selection remain a future candidate requiring
 separately authorized Arc02011 response evidence that proves a stable iterable
-source, availability vocabulary, and closed parser. Continue to exclude the
-unallowlisted Arc02011 handoff, every mutation endpoint, external seat-map call,
-callback, and native bridge. The implemented personal and group continuation
-contract now has bounded live evidence.
-
-See the shared [next-session prompt](../../NEXT_SESSION_PROMPT.md) for the
-combined KORAIL/SRT orchestration instructions.
-
-The shared parent handoff was refreshed after the final reviewed SRT and KORAIL
-heads and final verification counts became available.
+source, availability vocabulary, and closed parser. The unallowlisted Arc02011
+handoff, every mutation endpoint, external seat-map call, callback, and native
+bridge remain excluded. The implemented personal and group continuation
+contract has bounded live evidence.

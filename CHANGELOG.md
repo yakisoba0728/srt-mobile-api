@@ -18,6 +18,11 @@
   a continuation page rejected with `NET000001`.
 - Kept the reviewed 20-route read-only boundary unchanged. A bounded live run
   verified two personal and two group pages without retaining response values.
+- Added the pure offline `parse_reservation_attempt_response()` parser and the
+  typed repr-safe `ReservationAttemptResult` for the documented
+  reservation-attempt response shape. No reservation route, request builder,
+  NetFunnel `act_19` flow, client method, or live call was added; the read-only
+  boundary is unchanged.
 
 ## 0.1.0 - 2026-07-14
 

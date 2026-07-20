@@ -4,8 +4,10 @@ This repository provides an installable read-only Python package for the
 evidenced SRT Android app WebView API surface. The retained APK specification
 and smoke tooling remain the evidence context for that package.
 
-The reviewed safety boundary contains 20 routes. The current offline suite is
-`587 passed, 1 deselected`; the deselected case is the explicitly opted-in
+The reviewed safety boundary contains 20 routes. The integrated 0.2.0 gate
+recorded `587 passed, 1 deselected`; after the additive reservation-attempt
+response parser landed, the current offline suite at HEAD is
+`625 passed, 1 deselected`. The deselected case is the explicitly opted-in
 live-service test.
 
 Internal editable installation and offline verification:
@@ -262,5 +264,17 @@ python3 -c "from srt_mobile_api.live import run_live_smoke_from_env; print(run_l
 The live helper reports only booleans and bounded counts. It exercises one
 non-adult passenger mapping in the example above and contains no `act_19` or
 reservation path.
+
+### Offline reservation-attempt response parsing
+
+`parse_reservation_attempt_response()` is a pure offline parser for the
+documented reservation-attempt response shape
+(`resultMap`/`reservListMap`/`trainListMap`/`commandMap`). It accepts
+caller-supplied JSON and returns a typed `ReservationAttemptResult` for a
+complete success shape; malformed or rejected shapes raise the existing
+protocol/app error types. Server message, temporary job sequence, command map,
+and the raw mapping are excluded from `repr()`. It adds no reservation route,
+request builder, NetFunnel `act_19` flow, client method, or live call, so the
+reviewed 20-route read-only boundary is unchanged.
 
 Reservation, payment, refund, cancellation, ARD, ATA, and native bridge flows are not implemented in this package version.
