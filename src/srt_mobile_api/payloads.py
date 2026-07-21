@@ -1,3 +1,5 @@
+import re
+
 from .models import PassengerCounts, TrainSearchQuery, TrainSummary
 
 
@@ -28,44 +30,36 @@ def station_selector_payload(
     departure_code: str,
     arrival_code: str,
 ) -> dict[str, str]:
+    # The app's station picker posts only these keys (ara0101v.js:158-165); it does
+    # not send chk_rtrp / page / boolRtrp.
     return {
         "reqCode": "1",
         "sDptStnNm": _required_text(departure_name, "departure_name"),
         "sArvStnNm": _required_text(arrival_name, "arrival_name"),
         "sDptStnCd": _required_text(departure_code, "departure_code"),
         "sArvStnCd": _required_text(arrival_code, "arrival_code"),
-        "chk_rtrp": "false",
         "sNowSel": "1",
-        "page": "ARA0101",
-        "boolRtrp": "false",
     }
 
 
 def station_map_selector_payload() -> dict[str, str]:
+    # Mirrors the station picker's param set (ara0101v.js:158-165) minus the
+    # station-name/code fields: no chk_rtrp / page / boolRtrp.
     return {
         "reqCode": "2",
-        "chk_rtrp": "false",
         "sNowSel": "1",
-        "page": "ARA0101",
-        "boolRtrp": "false",
     }
 
 
-def date_selector_payload(date: str, hour: str = "06") -> dict[str, str]:
+def date_selector_payload(date: str) -> dict[str, str]:
     if not isinstance(date, str) or len(date) != 8 or not date.isdigit():
         raise ValueError("date must use YYYYMMDD")
-    if (
-        not isinstance(hour, str)
-        or len(hour) != 2
-        or not hour.isdigit()
-        or not 0 <= int(hour) <= 23
-    ):
-        raise ValueError("hour must use HH from 00 through 23")
+    # The app's date-picker request carries only reqCode/selectDay/selectDt; the SRT
+    # picker returns a date only, so there is no selectTime field (ara0101v.js:187-191).
     return {
         "reqCode": "3",
         "selectDay": "",
         "selectDt": date,
-        "selectTime": hour,
     }
 
 
@@ -127,6 +121,18 @@ def _passenger_fields(
     return fields
 
 
+def _distinct_passenger_type_count(passengers: PassengerCounts) -> int:
+    # psgGridcnt is the number of distinct passenger TYPES with count>0, NOT the head
+    # count: the app sets psgGridcnt=idx-1 (occupied type count, ara0101v.js:826-836)
+    # and srtgo uses len(combined_passengers) (srt.py:191). Infant is not a psgTpCd
+    # picker type, so it is excluded from the count.
+    return sum(
+        1
+        for attribute, _type_code in PASSENGER_SLOTS
+        if attribute != "infant" and getattr(passengers, attribute) > 0
+    )
+
+
 def search_page_payload(query: TrainSearchQuery, netfunnel_key: str) -> dict[str, str]:
     group_name, service_class = TRAIN_GROUP_OPTIONS[query.train_group_code]
     payload = {
@@ -158,7 +164,7 @@ def search_page_payload(query: TrainSearchQuery, netfunnel_key: str) -> dict[str
         "arvTm1": "",
         "totPrnb": str(query.passengers.total),
         "totPrnbNm": f"{query.passengers.total}명",
-        "psgGridcnt": str(query.passengers.total),
+        "psgGridcnt": str(_distinct_passenger_type_count(query.passengers)),
         "smkSeatAttCd1": "000",
         "dirSeatAttCd1": "009",
         "locSeatAttCd1": "000",
@@ -265,11 +271,17 @@ def _required_digits(
     return value
 
 
-def seat_page_payload(train: TrainSummary, cabin_class: str = "1") -> dict[str, str]:
+def seat_page_payload(
+    train: TrainSummary, cabin_class: str = "1", seat_count: str = "1"
+) -> dict[str, str]:
     if train.train_group_code != "300":
         raise ValueError("train_group_code must be 300 for an SRT seat page")
     if cabin_class not in {"1", "2"}:
         raise ValueError("cabin_class must be '1' (일반실) or '2' (특실)")
+    # choiceSeatCount is the total passenger count (app: lfn_getRsv("totPrnb"),
+    # ara1001l.js:1511), not a fixed '1'; validate it as a positive integer.
+    if not isinstance(seat_count, str) or re.fullmatch(r"[1-9][0-9]*", seat_count) is None:
+        raise ValueError("seat_count must be a positive integer")
     train_no = _required_digits(train.train_no, "train_no", max_length=5).zfill(5)
     return {
         "reqCode": "9",
@@ -298,7 +310,7 @@ def seat_page_payload(train: TrainSummary, cabin_class: str = "1") -> dict[str, 
             train.arrival_run_order,
             "arrival_run_order",
         ),
-        "choiceSeatCount": "1",
+        "choiceSeatCount": seat_count,
     }
 
 

@@ -174,7 +174,7 @@ def test_live_result_contains_counts_not_ticket_text():
     ):
         assert getattr(client, method_name).called
     client.get_station_selector.assert_called_once_with("수서", "부산", "0551", "0020")
-    client.get_date_selector.assert_called_once_with("20260710", hour="06")
+    client.get_date_selector.assert_called_once_with("20260710")
     client.get_passenger_selector.assert_called_once_with(query.passengers)
     client.get_seat_option_selector.assert_called_once_with(request_seat_attr_code="015")
     client.get_train_group_selector.assert_called_once_with("900", "KTX+SRT")

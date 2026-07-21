@@ -158,11 +158,39 @@ def test_search_payloads_include_expected_keys():
     assert page_payload["arvRsStnCdNm1"] == "부산"
     assert page_payload["stlbTrnClsfCd1"] == "17"
     assert page_payload["trnGpNm1"] == "SRT"
+    # Single adult: one distinct type, so psgGridcnt coincides with the head count.
+    assert page_payload["psgGridcnt"] == "1"
     assert ajax_payload["netfunnelKey"] == "NF"
     assert ajax_payload["psgNum"] == "1"
     assert ajax_payload["serverNonce"] == "nonce-1"
     assert group_payload["psgNum"] == "10"
     assert group_payload["grpDv"] == "1"
+
+
+def test_search_page_psg_gridcnt_counts_distinct_types_not_head_count():
+    # psgGridcnt is the number of distinct passenger TYPES with count>0, not totPrnb
+    # (ara0101v.js:826-836; srtgo len(combined_passengers)).
+    two_adults = TrainSearchQuery(
+        "0551",
+        "0020",
+        "20260710",
+        passengers=PassengerCounts(adult=2),
+        train_group_code="300",
+    )
+    payload = search_page_payload(two_adults, "NF")
+    assert payload["totPrnb"] == "2"
+    assert payload["psgGridcnt"] == "1"
+
+    mixed = TrainSearchQuery(
+        "0551",
+        "0020",
+        "20260710",
+        passengers=PassengerCounts(adult=2, child=1, senior=1),
+        train_group_code="300",
+    )
+    mixed_payload = search_page_payload(mixed, "NF")
+    assert mixed_payload["totPrnb"] == "4"
+    assert mixed_payload["psgGridcnt"] == "3"
 
 
 def test_search_continuation_payload_preserves_hydrated_state_and_changes_cursor_only():
@@ -261,35 +289,30 @@ def test_search_following_page_metadata_rejects_missing_or_invalid_flag(metadata
 
 
 def test_station_selector_payload_is_exact():
+    # The app posts only these keys (ara0101v.js:158-165): no chk_rtrp/page/boolRtrp.
     assert station_selector_payload("수서", "부산", "0551", "0020") == {
         "reqCode": "1",
         "sDptStnNm": "수서",
         "sArvStnNm": "부산",
         "sDptStnCd": "0551",
         "sArvStnCd": "0020",
-        "chk_rtrp": "false",
         "sNowSel": "1",
-        "page": "ARA0101",
-        "boolRtrp": "false",
     }
 
 
 def test_station_map_selector_payload_is_exact():
     assert station_map_selector_payload() == {
         "reqCode": "2",
-        "chk_rtrp": "false",
         "sNowSel": "1",
-        "page": "ARA0101",
-        "boolRtrp": "false",
     }
 
 
 def test_date_selector_payload_is_exact():
-    assert date_selector_payload("20260714", "06") == {
+    # The date picker returns a date only, so no selectTime (ara0101v.js:187-191).
+    assert date_selector_payload("20260714") == {
         "reqCode": "3",
         "selectDay": "",
         "selectDt": "20260714",
-        "selectTime": "06",
     }
 
 
@@ -343,8 +366,7 @@ def test_train_group_selector_payload_is_exact():
         (station_selector_payload, ("수서", "", "0551", "0020")),
         (station_selector_payload, ("수서", "부산", "", "0020")),
         (station_selector_payload, ("수서", "부산", "0551", "")),
-        (date_selector_payload, ("2026-07-14", "06")),
-        (date_selector_payload, ("20260714", "24")),
+        (date_selector_payload, ("2026-07-14",)),
         (seat_option_selector_payload, ("", "000", "일반/기본")),
         (seat_option_selector_payload, ("015", "", "일반/기본")),
         (seat_option_selector_payload, ("015", "000", "")),
@@ -504,7 +526,21 @@ def test_seat_page_payload_first_class_sends_psrmClCd_2():
     assert payload["psrmClCd"] == "2"
     # Everything else stays the fixed read-only contract.
     assert payload["trnGpCd"] == "300"
+    # seat_count defaults to "1".
     assert payload["choiceSeatCount"] == "1"
+
+
+def test_seat_page_payload_multi_seat_sends_requested_count():
+    # choiceSeatCount is the total passenger count (totPrnb), not a fixed '1'.
+    payload = seat_page_payload(_complete_seat_page_train(), "1", "3")
+    assert payload["choiceSeatCount"] == "3"
+    assert payload["trnGpCd"] == "300"
+
+
+@pytest.mark.parametrize("seat_count", ["0", "", "1a", "-1", "٢", "01"])
+def test_seat_page_payload_rejects_non_positive_seat_count(seat_count):
+    with pytest.raises(ValueError, match="seat_count"):
+        seat_page_payload(_complete_seat_page_train(), "1", seat_count)
 
 
 @pytest.mark.parametrize("cabin_class", ["0", "3", "", "12", "١"])

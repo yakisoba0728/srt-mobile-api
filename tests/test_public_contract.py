@@ -87,9 +87,7 @@ def test_selector_method_signatures_are_stable():
     ]
     assert list(inspect.signature(SrtClient.get_station_map_selector).parameters) == ["self"]
     date_parameters = inspect.signature(SrtClient.get_date_selector).parameters
-    assert list(date_parameters) == ["self", "date", "hour"]
-    assert date_parameters["hour"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert date_parameters["hour"].default == "06"
+    assert list(date_parameters) == ["self", "date"]
     assert list(inspect.signature(SrtClient.get_passenger_selector).parameters) == ["self", "passengers"]
     seat_parameters = inspect.signature(SrtClient.get_seat_option_selector).parameters
     assert list(seat_parameters) == [
@@ -132,7 +130,8 @@ def test_seat_page_method_type_and_export_are_stable():
     from srt_mobile_api import SeatSelectionPage
 
     signature = inspect.signature(SrtClient.get_seat_page)
-    assert list(signature.parameters) == ["self", "train", "cabin_class"]
+    assert list(signature.parameters) == ["self", "train", "cabin_class", "seat_count"]
     assert signature.parameters["cabin_class"].default == "1"
+    assert signature.parameters["seat_count"].default == "1"
     assert get_type_hints(SrtClient.get_seat_page)["return"] is SeatSelectionPage
     assert srt_mobile_api.SeatSelectionPage is SeatSelectionPage

@@ -110,7 +110,7 @@ def run_live_smoke(
             query.arrival_station_code,
         ),
         client.get_station_map_selector(),
-        client.get_date_selector(query.departure_date, hour=query.departure_time[:2]),
+        client.get_date_selector(query.departure_date),
         client.get_passenger_selector(query.passengers),
         client.get_seat_option_selector(request_seat_attr_code=query.seat_attr_code),
         client.get_train_group_selector(query.train_group_code, group_name),

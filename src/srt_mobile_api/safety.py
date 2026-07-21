@@ -37,7 +37,6 @@ SEAT_PAGE_FIELDS = frozenset(
 SEAT_PAGE_FIXED_VALUES = {
     "reqCode": "9",
     "trnGpCd": "300",
-    "choiceSeatCount": "1",
 }
 SEAT_PAGE_VALUE_PATTERNS = {
     "runDt": r"[0-9]{8}",
@@ -53,6 +52,10 @@ SEAT_PAGE_VALUE_PATTERNS = {
     "seatAttCd": r"[0-9]{3}",
     "dptStnRunOrdr": r"[0-9]+",
     "arvStnRunOrdr": r"[0-9]+",
+    # choiceSeatCount is the total passenger count sent dynamically by the app
+    # (arc02012: choiceSeatCount = lfn_getRsv("totPrnb"), ara1001l.js:1511).
+    # Validated as a positive integer rather than pinned to a fixed value.
+    "choiceSeatCount": r"[1-9][0-9]*",
 }
 
 

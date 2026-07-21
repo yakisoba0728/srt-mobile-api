@@ -70,7 +70,9 @@ class SrtClient:
     def close(self) -> None:
         self.http.close()
 
-    def login(self, login_id: str, password: str, *, login_type: str = "3") -> SrtSession:
+    def login(
+        self, login_id: str, password: str, *, login_type: str | None = None
+    ) -> SrtSession:
         return self.session.login(login_id, password, login_type=login_type)
 
     def clear_session(self) -> None:
@@ -156,11 +158,11 @@ class SrtClient:
                 context="station map selector",
             )
 
-    def get_date_selector(self, date: str, *, hour: str = "06") -> HtmlPage:
+    def get_date_selector(self, date: str) -> HtmlPage:
         with self._session_guard():
             return self._get_selector_page(
                 "/common/ARA/ARA0401P/view.do",
-                date_selector_payload(date, hour),
+                date_selector_payload(date),
                 context="date selector",
             )
 
@@ -388,11 +390,12 @@ class SrtClient:
         self,
         train: TrainSummary,
         cabin_class: str = "1",
+        seat_count: str = "1",
     ) -> SeatSelectionPage:
         with self._session_guard():
             raw = self.http.post_html_form(
                 "/arc/selectListArc02012_n.do",
-                seat_page_payload(train, cabin_class),
+                seat_page_payload(train, cabin_class, seat_count),
                 referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
             )
             return parse_seat_selection_page(raw)

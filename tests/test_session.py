@@ -25,9 +25,63 @@ def test_login_flow_posts_expected_fields(load_json_fixture):
 
     assert session.login_id == "login-id"
     login_body = captured[1][2]
-    assert "srchDvCd=3" in login_body
+    # "login-id" is neither email nor phone → membership number (srchDvCd=1).
+    assert "srchDvCd=1" in login_body
     assert "srchDvNm=login-id" in login_body
     assert "hmpgPwdCphd=pw" in login_body
+
+
+@pytest.mark.parametrize(
+    ("login_id", "expected_srch_dv_cd", "expected_srch_dv_nm"),
+    [
+        # Auto-detected from the identifier (srtgo srt.py:691-698):
+        ("user@example.com", "2", "user%40example.com"),  # email → 2
+        ("010-1234-5678", "3", "01012345678"),  # phone → 3, dashes stripped
+        ("1234567890", "1", "1234567890"),  # all-digit membership number → 1
+    ],
+)
+def test_login_type_is_auto_detected_from_identifier(
+    load_json_fixture, login_id, expected_srch_dv_cd, expected_srch_dv_nm
+):
+    captured = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.url.path, request.content.decode()))
+        if request.url.path == "/login/login.do":
+            return httpx.Response(200, text="<html>login</html>")
+        if request.url.path == "/apb/selectListApb01080_n.do":
+            return httpx.Response(200, json=load_json_fixture("login_success.json"))
+        return httpx.Response(200, text="<html>ok</html>")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    client.login(login_id, "pw")
+
+    login_body = captured[1][1]
+    assert f"srchDvCd={expected_srch_dv_cd}" in login_body
+    assert f"srchDvNm={expected_srch_dv_nm}" in login_body
+
+
+def test_login_type_explicit_override_is_preserved(load_json_fixture):
+    captured = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.url.path, request.content.decode()))
+        if request.url.path == "/login/login.do":
+            return httpx.Response(200, text="<html>login</html>")
+        if request.url.path == "/apb/selectListApb01080_n.do":
+            return httpx.Response(200, json=load_json_fixture("login_success.json"))
+        return httpx.Response(200, text="<html>ok</html>")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    # An explicit login_type overrides auto-detection; a "3" override still strips dashes.
+    client.login("010-1234-5678", "pw", login_type="3")
+    assert "srchDvCd=3" in captured[1][1]
+    assert "srchDvNm=01012345678" in captured[1][1]
+
+    captured.clear()
+    client.login("user@example.com", "pw", login_type="1")
+    assert "srchDvCd=1" in captured[1][1]
+    assert "srchDvNm=user%40example.com" in captured[1][1]
 
 
 def test_login_failure_raises_auth_error(load_json_fixture):

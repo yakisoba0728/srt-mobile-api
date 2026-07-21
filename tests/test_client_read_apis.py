@@ -160,10 +160,7 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
                 "sArvStnNm": "부산",
                 "sDptStnCd": "0551",
                 "sArvStnCd": "0020",
-                "chk_rtrp": "false",
                 "sNowSel": "1",
-                "page": "ARA0101",
-                "boolRtrp": "false",
             },
         ),
         (
@@ -171,16 +168,13 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
             "selector_station_map.html",
             {
                 "reqCode": "2",
-                "chk_rtrp": "false",
                 "sNowSel": "1",
-                "page": "ARA0101",
-                "boolRtrp": "false",
             },
         ),
         (
             "/common/ARA/ARA0401P/view.do",
             "selector_date.html",
-            {"reqCode": "3", "selectDay": "", "selectDt": "20260714", "selectTime": "06"},
+            {"reqCode": "3", "selectDay": "", "selectDt": "20260714"},
         ),
         (
             "/common/ARA/ARA0901P/view.do",
@@ -219,7 +213,7 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
         pages = [
             client.get_station_selector("수서", "부산", "0551", "0020"),
             client.get_station_map_selector(),
-            client.get_date_selector("20260714", hour="06"),
+            client.get_date_selector("20260714"),
             client.get_passenger_selector(PassengerCounts(adult=1, child=1)),
             client.get_seat_option_selector(),
             client.get_train_group_selector(),
@@ -249,7 +243,6 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
     [
         ("get_station_selector", ("", "부산", "0551", "0020"), {}),
         ("get_date_selector", ("2026-07-14",), {}),
-        ("get_date_selector", ("20260714",), {"hour": "24"}),
         ("get_seat_option_selector", (), {"seat_name": ""}),
         ("get_train_group_selector", ("999", "전체"), {}),
         ("get_train_group_selector", ("109", ""), {}),

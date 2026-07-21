@@ -194,6 +194,15 @@ def test_seat_page_first_class_cabin_is_allowed():
     )
 
 
+def test_seat_page_multi_passenger_count_is_allowed():
+    # choiceSeatCount is now dynamic-but-validated (positive integer); a 2+ passenger
+    # seat request (totPrnb) must pass.
+    assert_read_only_request(
+        _seat_request(body=urlencode({**_seat_form(), "choiceSeatCount": "2"})),
+        SrtConfig(),
+    )
+
+
 def test_seat_page_rejects_bare_query_delimiter():
     with pytest.raises(SrtProtocolError):
         assert_read_only_request(_seat_request(query="?"), SrtConfig())
@@ -218,7 +227,8 @@ def test_seat_page_rejects_bare_query_delimiter():
             )
         ),
         _seat_request(body=urlencode({**_seat_form(), "seatNo1_1": ""})),
-        _seat_request(body=urlencode({**_seat_form(), "choiceSeatCount": "2"})),
+        _seat_request(body=urlencode({**_seat_form(), "choiceSeatCount": "0"})),
+        _seat_request(body=urlencode({**_seat_form(), "choiceSeatCount": ""})),
         _seat_request(body=urlencode({**_seat_form(), "psrmClCd": "3"})),
         _seat_request(body=urlencode({**_seat_form(), "psrmClCd": "0"})),
         _seat_request(body=urlencode({**_seat_form(), "psrmClCd": ""})),
