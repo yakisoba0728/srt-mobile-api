@@ -17,6 +17,12 @@ cancel / change).
   completes SRT reserve/pay/cancel/refund over the **mobile JSON API**. This
   reverses several verdicts below; see the marked `UPDATE (2026-07-21)` notes and
   `## Revision 2026-07-21` near the end.
+- **Cross-validation vs OUR decompile (added 2026-07-21):** `docs/analysis/cross-validation-2026-07-21.md`
+  — reconciles srtgo endpoint-by-endpoint against OUR decompiled v2.0.41 bundle
+  (the ground truth). It **walks back** the srtgo-optimistic payment/cancel/refund
+  verdicts (those endpoints are **0-hit across all 21,673 files** in our bundle)
+  while **confirming** reserve (`arc05013`) and NetFunnel `act_10`. See the
+  `UPDATE 2 (2026-07-21)` notes and `## Revision 2 (2026-07-21)` near the end.
 - Prior runtime spec: `docs/analysis/srt-app-api-library-spec-2026-07-09.md`
 - Decompiled app: `analysis/jadx/sources/kr/co/srail/newapp/webview/SRWebActivity.java`
 - Bundled web JS (the real request shapes): `analysis/apktool/assets/offline/js/ara/ara1001l.js`,
@@ -48,6 +54,21 @@ cancel / change).
 > The still-genuine gaps are seat-designation/change and group (`arc06014`) — srtgo
 > does not implement those either. Corrections are inlined below and summarized in
 > `## Revision 2026-07-21`.
+>
+> **⚠️ UPDATE 2 (2026-07-21, cross-validation vs decompiled v2.0.41 — PAYMENT WALK-BACK).**
+> The "KEY REVERSAL" above was **over-optimistic for OUR version.** Cross-validating
+> srtgo against OUR decompiled v2.0.41 bundle
+> (`docs/analysis/cross-validation-2026-07-21.md`) found the mobile-JSON
+> payment/cancel/refund endpoints `Ata09036` / `Ard02045` / `Atc02063` (plus standby
+> `Ata01135`, reserve-info `getListAtc14087`, ticket-info `Ard02019`) are **0-hit
+> across all 21,673 files** in our bundle — attested **only by srtgo's live runs**
+> (possibly a different/newer app version). OUR app's real payment path IS the
+> `ard02017/18` **WebView** page gated by **TransKey (SEED secure keypad) + FIDO +
+> AppGuard**. So for OUR v2.0.41, **payment / cancel / refund are NOT statically
+> confirmable** and revert to "**needs a live v2.0.41 capture**" (srtgo's shapes =
+> starting hypothesis, not confirmed fact). **RESERVATION (`arc05013`, NetFunnel
+> `act_10`) remains CONFIRMED present** in our app and stays feasible. See
+> `## Revision 2 (2026-07-21)`.
 
 ---
 
@@ -127,11 +148,11 @@ yet cover. Listed as *route → purpose → source ref → why unimplemented*.
 
 | # | Route / feature | Purpose | Source ref | Why unimplemented |
 |---|---|---|---|---|
-| R1 | `POST /arc/selectListArc02011_n.do` | **Physical seat-inventory JSON** (the real per-car/per-seat availability feed behind the seat-selection page) | `tests/fixtures/seat_page_schema_v2_evidence.json:200-222` (inline `jquery_ajax` POST → `/arc/selectListArc02011_n.do`); `IMPLEMENTATION_PROGRESS.md:71-75,337-344` | **Deferred physical-seat schema.** No stable iterable seat/car source or availability vocabulary has been captured yet; response grammar unknown; not allowlisted. Requires live capture. |
+| R1 | `POST /arc/selectListArc02011_n.do` | **Physical seat-inventory JSON** (the real per-car/per-seat availability feed behind the seat-selection page) | `tests/fixtures/seat_page_schema_v2_evidence.json:200-222` (inline `jquery_ajax` POST → `/arc/selectListArc02011_n.do`); `IMPLEMENTATION_PROGRESS.md:71-75,337-344` | **Deferred physical-seat schema.** No stable iterable seat/car source or availability vocabulary has been captured yet; response grammar unknown; not allowlisted. Requires live capture. **⚠️ UPDATE 2 (2026-07-21, cross-val): `arc02011` is a PHANTOM — 0 hits across our entire decompile (the only `02011` match is an incidental AES T-table substring). The real seat endpoint is `arc02012` (`/arc/selectListArc02012_n.do`), which returns an HTML seat page, NOT a JSON inventory feed; the only structured output is the `popCallback` `{scarSeatNo,scarSeatNm,scarNo}` tuple (`ara0101v.js:868`). This "seat-inventory JSON" is mis-modelled and must be reframed (§Rev 2).** |
 | R2 | `GET /ata/selectListAta01032_n.do` | Discount / fare detail for a booked PNR | `arc/arc0102c.js:33-37` (`data:"pnrNo=${commandMap.pnrNo}"` — unresolved JSP EL) | State-dependent: needs a real PNR; prior spec runtime = HTTP 500 with dummy PNR. Server-rendered HTML, no closed parser. |
 | R3 | `GET /atc/selectListAtc14016_n.do` (incl. legacy `/neo`) | Alternate ticket/reservation list (the `btnNo` variant of the implemented `atc14017`) | `SRForegroundDialogActivity.java:31`; `SRWebActivity.java:1592`; analysis §1.2 | Adjacent variant of the already-implemented `atc14017` read; low value, HTML only. |
 | R4 | Round-trip (왕복) search flow | Two sequential search calls to the same endpoint with leg swap (`rtnDv=1`, `fv_sRtnCd` 1→2, `back_dptDt1`/`back_dptTm1`) | `ara1001l.js:113-118`; analysis §3.2 | Client only issues one-way searches (`payloads.search_page_payload` fixes `rtnDv="0"`, `jrnyCnt="1"`, `search_page_payload:130-170`). No return-leg state machine. |
-| R5 | Typed physical-seat model over the seat page | Turn `SeatSelectionPage` (opaque HTML) into typed cars/seats/availability | `models.py:186` (`SeatSelectionPage` is just `HtmlPage`); `IMPLEMENTATION_PROGRESS.md:337-344` | Blocked until R1 (`arc02011`) response evidence proves a stable schema. |
+| R5 | Typed physical-seat model over the seat page | Turn `SeatSelectionPage` (opaque HTML) into typed cars/seats/availability | `models.py:186` (`SeatSelectionPage` is just `HtmlPage`); `IMPLEMENTATION_PROGRESS.md:337-344` | Blocked until R1 response evidence proves a stable schema (**Rev 2: `arc02011` is a phantom; the real seat endpoint is `arc02012` and returns HTML, not a JSON inventory feed**). |
 | R6 | Date picker return-leg (`reqCode=4`, ARA0401P) | "오는열차 출발일시" return-date selection | `ara0101v.js:193-199` | Client's `get_date_selector` only issues the outbound `reqCode=3` path (and via ARA0403P — see §5.1). |
 
 > **Excluded, not a gap:** `ara/selectListAra10h01.do` (dead Nexacro gateway inside
@@ -170,6 +191,14 @@ decompiled Java** — verified by exhaustive `.do` enumeration across
 >
 > *Change (변경)* and *group reserve* (`arc06014`) are still unimplemented by srtgo,
 > so those two remain genuine capture-blocked gaps.
+>
+> **⚠️ UPDATE 2 (2026-07-21, cross-validation).** The three mobile-JSON endpoints
+> asserted just above — `Ata09036` (payment), `Ard02045` (cancel),
+> `getListAtc14087`→`Atc02063` (refund), plus `Ata01135` and `Ard02019` — are
+> **0-hit across all 21,673 files** in OUR v2.0.41 decompile. They are attested only
+> by srtgo's live runs, so for our version they are **NOT confirmed** and revert to
+> capture-blocked. Only **reserve `arc05013`** (with `jobId 1101/1102`) and its
+> **`act_10`** gate are actually present in our bundle. See `## Revision 2 (2026-07-21)`.
 
 ### 3.1 Response envelopes
 
@@ -195,6 +224,12 @@ decompiled Java** — verified by exhaustive `.do` enumeration across
   the standard `SRTResponseData` envelope (`strResult == "SUCC"|"FAIL"`,
   `srt.py:366-411`); refund pre-info (`atc14087`) uses an `{ErrorCode, ErrorMsg}`
   envelope instead.
+- **⚠️ UPDATE 2 (2026-07-21, cross-validation):** these envelope shapes describe
+  **srtgo's** live responses only — `ata09036`, cancel `ard02045`, refund
+  `atc14087`/`atc02063` are **0-hit in OUR v2.0.41 bundle** and cannot be verified
+  from our code. The only response envelope actually confirmed in our app is the
+  reserve 4-array JSON (`arc05013`). Treat the payment/cancel/refund envelopes as
+  unconfirmed hypotheses (`docs/analysis/cross-validation-2026-07-21.md` §3–§4).
 
 ### 3.2 The multi-step happy-path flow
 
@@ -229,16 +264,16 @@ request shapes are not in the APK.
 
 | Route | Method | Params (as posted by bundled JS) | Response | JS source | Replicability |
 |---|---|---|---|---|---|
-| `/arc/selectListArc02012_n.do` (seat map) | POST | `reqCode`(9/10/11), `runDt`, `dptDt`, `trnNo`, `dptTm`, `trnGpCd="300"` (hard-coded SRT-only), `dptRsStnCd`, `arvRsStnCd`, `psrmClCd`, `seatAttCd`, `dptStnRunOrdr`, `arvStnRunOrdr`, `choiceSeatCount` | HTML page; seat pick returns `{scarSeatNo,scarSeatNm,scarNo}` via `popCallback` | `ara1001l.js:1498-1520`; `ara0101v.js:866-894` | **Partial.** POST is replicable (already allowlisted read-only for `reqCode=9`). The *actual per-seat selection* is DOM/WebView interaction; the machine-readable inventory is the separate `arc02011` JSON (R1). |
+| `/arc/selectListArc02012_n.do` (seat map) | POST | `reqCode`(9/10/11), `runDt`, `dptDt`, `trnNo`, `dptTm`, `trnGpCd="300"` (hard-coded SRT-only), `dptRsStnCd`, `arvRsStnCd`, `psrmClCd`, `seatAttCd`, `dptStnRunOrdr`, `arvStnRunOrdr`, `choiceSeatCount` | HTML page; seat pick returns `{scarSeatNo,scarSeatNm,scarNo}` via `popCallback` | `ara1001l.js:1498-1520`; `ara0101v.js:866-894` | **Partial.** POST is replicable (already allowlisted read-only for `reqCode=9`). The *actual per-seat selection* is DOM/WebView interaction; the only machine-readable output is the `popCallback` tuple, **not** a separate JSON feed (see R1: `arc02011` is a phantom; the real endpoint is this `arc02012`, HTML). |
 | `/arc/selectListArc05013_n.do` (reserve, individual) | POST | `$("#rsvForm").serialize()`; 21 fields validated by `fn_validChk`: `jobId, jrnyTpCd, jrnyCnt, totPrnb, stndFlg, jrnySqno1, trnGpCd1, stlbTrnClsfCd1, dptDt1, dptTm1, dptRsStnCd1, arvRsStnCd1, psrmClCd1, smkSeatAttCd1, dirSeatAttCd1, locSeatAttCd1, psgInfoPerPrnb1, etcSeatAttCd1, rqSeatAttCd1, psgGridcnt, psgTpCd1` (+ seat fields `seatNo1_*`, `scarNo1`) | 4-array JSON envelope (§3.1) | `ara1001l.js:1547,1550,1649-1701` | **Cleanly replicable via direct POST.** ~~*iff* the full `#rsvForm` field set and the live NetFunnel `act_19` key are captured~~ → **UPDATE (2026-07-21): both prerequisites RESOLVED.** srtgo posts the complete ~30-field body (`srt.py:962-997`, jobId `1101`/`1102`; seat fields omitted → server auto-assigns) and gates on the **`act_10`** key we already implement — **not** `act_19` (`srt.py:987`). No live `#rsvForm` scrape and no new gate needed. |
 | `/arc/selectListArc06014_n.do` (reserve, group) | POST | same `#rsvForm`; selected purely by `grpDv=="1"`; ≥10 pax; group receives **no `pnrNo`** | same envelope | `ara1001l.js:1542-1544,1597-1605` | Same as `arc05013`. |
-| `/ard/selectListArd02017_n.do` (payment entry, individual) | **POST (form submit)** | `#rsvForm` retargeted: `pnrNo`=reservListMap.pnrNo, `jrnySqno=1`, `JRNYLIST_KEY`, `arvDt/arvRsStnCd/arvTm`, `dlayAcptFlg`, `dptDt/dptRsStnCd/dptTm`, `jrnyTpCd`, `lumpStlTgtNo`, `proyStlTgtFlg`, `stlbTrnClsfCd`, `totSeatNum`, `trnGpCd`, `trnNo` + all remaining rsvForm fields | **HTML payment page** (~84 KB) | `ara1001l.js:1606-1626,1642-1646` | **WebView/PG-dependent — for THIS endpoint only.** A Python client can POST it and inspect the returned HTML, but this page *is* the WebView payment UI (PG redirect + secure keypad); approval cannot complete here. **UPDATE (2026-07-21): payment is NOT infeasible overall** — the mobile app pays via a *different* JSON endpoint, `ata09036` (new row below), which charges a card over plain HTTP with no PG/keypad/FIDO. `ard02017/18` is simply not the route the native app uses to pay. |
+| `/ard/selectListArd02017_n.do` (payment entry, individual) | **POST (form submit)** | `#rsvForm` retargeted: `pnrNo`=reservListMap.pnrNo, `jrnySqno=1`, `JRNYLIST_KEY`, `arvDt/arvRsStnCd/arvTm`, `dlayAcptFlg`, `dptDt/dptRsStnCd/dptTm`, `jrnyTpCd`, `lumpStlTgtNo`, `proyStlTgtFlg`, `stlbTrnClsfCd`, `totSeatNum`, `trnGpCd`, `trnNo` + all remaining rsvForm fields | **HTML payment page** (~84 KB) | `ara1001l.js:1606-1626,1642-1646` | **WebView/PG-dependent — for THIS endpoint only.** A Python client can POST it and inspect the returned HTML, but this page *is* the WebView payment UI (PG redirect + secure keypad); approval cannot complete here. **UPDATE (2026-07-21): payment is NOT infeasible overall** — the mobile app pays via a *different* JSON endpoint, `ata09036` (new row below), which charges a card over plain HTTP with no PG/keypad/FIDO. `ard02017/18` is simply not the route the native app uses to pay. **⚠️ UPDATE 2 (cross-val): `ata09036` is 0-hit in OUR v2.0.41 bundle; OUR real payment path IS this `ard02017/18` WebView page + TransKey keypad + FIDO + AppGuard — payment reverts to needs-live-capture (§Rev 2).** |
 | `/ard/selectListArd02018_n.do` (payment entry, group) | **POST (form submit)** | `pnrNo=-1` (hard), `rcvdAmt`=resultMap.totRcvdAmt, `tmpJobSqno1`, `tmpJobSqno2=0`, `seatNo1`=trainListMap.seatNo, `scarNo1`=trainListMap.scarNo + shared journey fields | HTML payment page (~83 KB) | `ara1001l.js:1596-1605` | Same WebView/PG dependency. |
 | `/ata/selectListAta01032_n.do` (discount detail) | GET | `pnrNo=${commandMap.pnrNo}` (JSP EL, server-rendered) | HTML page | `arc/arc0102c.js:33-37` | Read-but-state-dependent (needs a real PNR). Not a mutation, listed for flow completeness. |
-| **cancel / refund / change** | **unknown** | **no static evidence in APK** | unknown | — (absent) | ~~**Blocked on live capture.**~~ **UPDATE (2026-07-21): cancel & refund RESOLVED via mobile-JSON API** (rows below); **change (변경) still capture-blocked** (srtgo has no change endpoint either). |
-| **`/ata/selectListAta09036_n.do` (payment, card)** — mobile-JSON *(NEW, 2026-07-21)* | POST | `stlCrCrdNo1`(PAN, no hyphens), `crdVlidTrm1`(expiry YYMM), `vanPwd1`(pw first 2 digits), `athnVal1`(birthday YYMMDD / biz-no), `athnDvCd1`(`J` personal / `S` corp), `ismtMnthNum1`(installment), `stlMnsCd1="02"`(credit card), `crdInpWayCd1="@"`, `totNewStlAmt`/`mnsStlAmt1`(=total_cost), `pnrNo`, `mbCrdNo`, `ctlDvCd="3102"`, `cgPsId="korail"`, `trnGpCd="300"`, `jrnyCnt="1"` … | **JSON** (`dsOutput0[0].strResult`) | `srt.py:99`, body `srt.py:1184-1216`, resp `srt.py:1220-1225` | **Fully HTTP-replicable — NO PG/keypad/FIDO.** Real card charge over plain form-POST. **This is the opposite of the `ard02017/18` verdict** and is exactly what the §4 safety guardrails must block. |
-| **`/ard/selectListArd02045_n.do` (cancel, 예약취소)** — mobile-JSON *(NEW, 2026-07-21)* | POST | `pnrNo`, `jrnyCnt="1"`, `rsvChgTno="0"` | `SRTResponseData` (SUCC/FAIL) | `srt.py:97`, body `srt.py:1138` | **Fully replicable.** Unpaid-reservation cancel. |
-| **`/atc/getListAtc14087.do` → `/atc/selectListAtc02063_n.do` (refund, 환불)** — mobile-JSON, 2-step *(NEW, 2026-07-21)* | POST | step 1 (Referer `/common/ATC/ATC0201L/view.do?pnrNo=<pnr>`, no body) → returns `ogtkSaleDt, ogtkSaleWctNo, ogtkSaleSqno, ogtkRetPwd, buyPsNm`; step 2 body: `pnr_no`(underscore!), `cnc_dmn_cont="승차권 환불로 취소"`, `saleDt, saleWctNo, saleSqno, tkRetPwd, psgNm` | step 1 `{ErrorCode,ErrorMsg}`; step 2 `SRTResponseData` | `srt.py:100,101,102`, `srt.py:1227-1257` | **Fully replicable.** Paid/issued-ticket refund; needs the pre-info fetch first. |
+| **cancel / refund / change** | **unknown** | **no static evidence in APK** | unknown | — (absent) | ~~**Blocked on live capture.**~~ **UPDATE (2026-07-21): cancel & refund RESOLVED via mobile-JSON API** (rows below); **change (변경) still capture-blocked** (srtgo has no change endpoint either). **⚠️ UPDATE 2 (cross-val): cancel `ard02045` & refund `atc14087`/`atc02063` are 0-hit in OUR bundle — srtgo-attested only; all three revert to needs-live-capture (§Rev 2).** |
+| **`/ata/selectListAta09036_n.do` (payment, card)** — mobile-JSON *(NEW, 2026-07-21)* | POST | `stlCrCrdNo1`(PAN, no hyphens), `crdVlidTrm1`(expiry YYMM), `vanPwd1`(pw first 2 digits), `athnVal1`(birthday YYMMDD / biz-no), `athnDvCd1`(`J` personal / `S` corp), `ismtMnthNum1`(installment), `stlMnsCd1="02"`(credit card), `crdInpWayCd1="@"`, `totNewStlAmt`/`mnsStlAmt1`(=total_cost), `pnrNo`, `mbCrdNo`, `ctlDvCd="3102"`, `cgPsId="korail"`, `trnGpCd="300"`, `jrnyCnt="1"` … | **JSON** (`dsOutput0[0].strResult`) | `srt.py:99`, body `srt.py:1184-1216`, resp `srt.py:1220-1225` | **Fully HTTP-replicable — NO PG/keypad/FIDO.** Real card charge over plain form-POST. **This is the opposite of the `ard02017/18` verdict** and is exactly what the §4 safety guardrails must block. **⚠️ UPDATE 2 (cross-val): `ata09036` is 0-hit across all 21,673 files in OUR v2.0.41 bundle — srtgo-attested only (maybe a different/newer app); UNCONFIRMED for our version, needs live capture (§Rev 2).** |
+| **`/ard/selectListArd02045_n.do` (cancel, 예약취소)** — mobile-JSON *(NEW, 2026-07-21)* | POST | `pnrNo`, `jrnyCnt="1"`, `rsvChgTno="0"` | `SRTResponseData` (SUCC/FAIL) | `srt.py:97`, body `srt.py:1138` | **Fully replicable.** Unpaid-reservation cancel. **⚠️ UPDATE 2 (cross-val): `ard02045` 0-hit in OUR bundle — srtgo-attested only; needs live capture (§Rev 2).** |
+| **`/atc/getListAtc14087.do` → `/atc/selectListAtc02063_n.do` (refund, 환불)** — mobile-JSON, 2-step *(NEW, 2026-07-21)* | POST | step 1 (Referer `/common/ATC/ATC0201L/view.do?pnrNo=<pnr>`, no body) → returns `ogtkSaleDt, ogtkSaleWctNo, ogtkSaleSqno, ogtkRetPwd, buyPsNm`; step 2 body: `pnr_no`(underscore!), `cnc_dmn_cont="승차권 환불로 취소"`, `saleDt, saleWctNo, saleSqno, tkRetPwd, psgNm` | step 1 `{ErrorCode,ErrorMsg}`; step 2 `SRTResponseData` | `srt.py:100,101,102`, `srt.py:1227-1257` | **Fully replicable.** Paid/issued-ticket refund; needs the pre-info fetch first. **⚠️ UPDATE 2 (cross-val): `getListAtc14087`/`atc02063` 0-hit in OUR bundle — srtgo-attested only; needs live capture (§Rev 2).** |
 
 ### 3.4 Prerequisites for mutation
 
@@ -313,6 +348,20 @@ request shapes are not in the APK.
 >   physical-seat selection & the `arc02011` seat-inventory schema* (srtgo lets the
 >   server auto-assign and never posts `seatNo1_*`/`scarNo1`).
 
+> **⚠️ UPDATE 2 (2026-07-21, cross-validation) — the re-draw above is walked back for
+> OUR version.** srtgo's payment/cancel/refund endpoints (`ata09036`, `ard02045`,
+> `atc14087`→`atc02063`, plus `ata01135`, `ard02019`) are **0-hit across all 21,673
+> files** in OUR v2.0.41 bundle, so for our app they are **NOT** "cleanly replicable"
+> — they revert to **capture-blocked / needs-live-capture** (srtgo shapes = hypothesis).
+> The only mutation endpoints actually present in our bundle are **reserve `arc05013`
+> / group `arc06014`** and **seat-map `arc02012` (HTML)** with the **`act_10`** gate.
+> So the corrected buckets are: **replicable & confirmed in-bundle:** reserve
+> `arc05013` (`jobId 1101/1102`) + `act_10`. **WebView/native-blocked (OUR real
+> payment path):** `ard02017/18` + TransKey keypad + FIDO + AppGuard. **Capture-
+> blocked (srtgo-attested only, unconfirmed for v2.0.41):** payment, cancel, refund,
+> change, group reserve `arc06014`, and the `arc02012` HTML seat page. See
+> `## Revision 2 (2026-07-21)`.
+
 The original WebView-surface classification is retained below for reference, with the
 reversed items struck:
 
@@ -370,6 +419,13 @@ The redesign keeps the current guarantees for read traffic bit-for-bit and adds 
 > a test and a real charge), (2) **default dry-run**, (3) **never auto-submit** the
 > charge, (4) **never persist** card/PNR/credential, and (5) **auto-cancel** every
 > test reservation. Nothing about the mobile-JSON surface is "self-safe."
+>
+> **⚠️ UPDATE 2 (2026-07-21, cross-validation).** For OUR v2.0.41 the `ata09036`
+> charge path is **srtgo-attested only** (0-hit in our bundle) — our confirmed
+> billable action is **reserve `arc05013`**, and payment is the WebView `ard02017/18`
+> page. The guardrails above stay **mandatory as a precaution**: if srtgo's `ata09036`
+> shape is ever wired up on a live capture, it would charge, so fake-card-only +
+> dry-run + never-persist + auto-cancel must be in place *before* any such attempt.
 
 **One-line approach:** *replace the single `READ_ONLY_ROUTES` allowlist with a
 tiered route policy — READ is always on; RESERVE / PAYMENT / CANCEL each require
@@ -428,6 +484,12 @@ auto-cancel test reservations.*
    `ard02017/18` PG page and the native bridges. Because the `PAYMENT_ENTRY` tier can
    now actually charge, its fake-card-only + dry-run guardrails are load-bearing, not
    documentation.
+   **⚠️ UPDATE 2 (2026-07-21, cross-validation):** `ata09036` is **0-hit in OUR
+   v2.0.41 bundle** — it is srtgo-attested only, so for our version the *confirmed*
+   payment surface is the WebView `ard02017/18` page (TransKey keypad + FIDO +
+   AppGuard). Keep the `PAYMENT_ENTRY` opt-in tier + guardrails scaffolded, but treat
+   an `ata09036` implementation as gated behind a live-capture confirmation, not a
+   settled fact.
 9. **PII redaction extension.** `redaction.py` already masks PNR/journey/NetFunnel
    keys and cards; add the card/easypay/auth keys above and confirm reserve/pay
    request+response bodies are redacted in every error path (`errors.py` already
@@ -516,6 +578,19 @@ Each item cites both sides. Several are "correct for their layer" per analysis
    Client sends `isOrg="2"` always (`payloads.py:75`); JS sets
    `isOrg = chk_grp_dv ? "1" : "2"` (`ara0101v.js:233`). Group booking needs
    `isOrg="1"`. Minor, matters for group mutation.
+10. **`config.py` User-Agent has an EXTRA SPACE (client bug — being fixed separately).**
+   OUR `config.py` inserts a space before `SRT-APP-Android` so the wire UA ends
+   `…Mobile Safari/537.36 SRT-APP-Android V.2.0.41`. Neither the real app (which
+   concatenates the suffix with **no** separator, `SRWebActivity.java:2645`) nor srtgo
+   (`srt.py:22`) emits that space (`docs/analysis/cross-validation-2026-07-21.md` §6;
+   `config.py:7-8`, sent verbatim via `http.py`). A fidelity bug that could be
+   fingerprinted. *(Source fix tracked separately — not changed by this doc edit.)*
+11. **`safety.py` carries a stale `netfunnel-act-19` reference (client bug — being fixed
+   separately).** `EXCLUDED_API_DOMAINS` still lists `netfunnel-act-19`
+   (`safety.py:183`) for a gate that **does not exist** — `act_19` is 0-hit across the
+   whole decompile and reserve reuses `act_10` (§5.4 above;
+   `docs/analysis/cross-validation-2026-07-21.md` §2/§6). Retire the label.
+   *(Source fix tracked separately — not changed by this doc edit.)*
 
 ---
 
@@ -535,9 +610,12 @@ search/selector HTML. Add (all synthetic or sanitized, **zero PII/card/PNR**):
 - `payment_entry_individual.html` / `payment_entry_group.html` — sanitized
   `ard02017`/`ard02018` HTML shells (structure only, no card/PG secrets) to lock
   "we return HTML, never auto-submit."
-- `seat_inventory_arc02011.json` — the R1 seat-inventory JSON, **once captured
-  and sanitized**, to design the deferred physical-seat schema.
-- `netfunnel_act19.js` — reserve-gate NetFunnel response, **once captured**.
+- `seat_inventory_arc02012.json` — the R1 seat data, **once captured and
+  sanitized**, to design the deferred physical-seat schema. **⚠️ Rev 2: `arc02011`
+  is a phantom; the real endpoint is `arc02012`, which returns HTML (no JSON
+  inventory feed) — the only structured output is the `popCallback` tuple.**
+- ~~`netfunnel_act19.js`~~ — **removed: `act_19` does not exist; reserve reuses the
+  `act_10` key already implemented (§5.4, §Rev 2).**
 - `roundtrip_search_leg1.json` / `_leg2.json` — return-leg search sequence.
 - `ata01032_discount.html` — discount detail page (if a real PNR ever yields 200).
 
@@ -546,11 +624,13 @@ search/selector HTML. Add (all synthetic or sanitized, **zero PII/card/PNR**):
 - **Stage A — read-only live (already exists).** `run_live_smoke`
   (`live.py:94-149`) with `SRT_MOBILE_API_LIVE=1` + `.env` credentials (the stored
   phone login). No state change. Extend to capture (not persist) the R1
-  `arc02011` and `act_19` shapes into sanitized fixtures under a bounded evidence
-  script (mirror `scripts/capture_seat_layout_evidence.py`).
+  `arc02012` seat-page shape into a sanitized fixture under a bounded evidence
+  script (mirror `scripts/capture_seat_layout_evidence.py`). **⚠️ Rev 2: `arc02011`
+  and `act_19` were both phantoms — the seat endpoint is `arc02012` (HTML) and
+  reserve reuses `act_10`, so neither needs a separate capture.**
 - **Stage B — reserve live (state change).** Gated behind `MutationPolicy(allow_reserve=True)`
   + `SRT_ALLOW_TEST_RESERVATION=1` + typed `ReserveConsent`. Flow: login → search →
-  build `#rsvForm` from live hydration + gds_rsv → `act_19` → `arc05013` → assert a
+  build `#rsvForm` from live hydration + gds_rsv → `act_10` → `arc05013` → assert a
   `pnrNo` comes back → **immediately run cleanup**. Because cancel is not yet
   captured (§3.5), cleanup is a loud manual-cancel warning until Phase 4 lands the
   cancel endpoint; the test must fail loudly if a PNR is left dangling.
@@ -644,8 +724,10 @@ until a live request/response shape is recorded and sanitized.
 - [ ] Generalize seat-page read: allow `psrmClCd=2` (특실), `choiceSeatCount>1`,
       `reqCode` 10/11 (§5.5) — relax the field-lock accordingly.
 - [ ] `atc14016` ticket-list variant (R3).
-- [ ] 🔒 **Capture + type the `arc02011` seat-inventory JSON (R1/R5)** → design the
-      deferred physical-seat schema. **Blocked on live capture of `arc02011`.**
+- [ ] 🔒 **Capture + type the `arc02012` seat page (R1/R5)** → design the deferred
+      physical-seat schema. **Blocked on live capture.** **⚠️ Rev 2: `arc02011` is a
+      phantom; the real endpoint is `arc02012`, which returns HTML (no JSON inventory
+      feed) — reframe the deferred schema around the `popCallback` tuple.**
 
 ### P2 — Reservation (`arc05013`) POST layer — risk: **Med** *(was High; unblocked 2026-07-21)*
 
@@ -665,7 +747,7 @@ until a live request/response shape is recorded and sanitized.
       is wanted — 🔒 **capturing `arc06014` (group ≥10 pax), which srtgo does NOT
       implement.** Individual reserve needs no further capture.
 
-### P3 — Payment path — risk: **High** *(reframed 2026-07-21: payment IS replicable)*
+### P3 — Payment path — risk: **High** *(reframed 2026-07-21; re-corrected — payment UNCONFIRMED for OUR v2.0.41)*
 
 > **UPDATE (2026-07-21, srtgo ref).** The old "feasibility spike / probably
 > infeasible" framing is **wrong** for the mobile-JSON surface. Payment is a plain
@@ -673,6 +755,13 @@ until a live request/response shape is recorded and sanitized.
 > PG/keypad/FIDO** (`srt.py:1149-1225`, §6 of ref). The risk here is therefore **not
 > feasibility** but **safety**: a working charge path makes the fake-card-only /
 > dry-run guardrails load-bearing (§4).
+>
+> **⚠️ UPDATE 2 (2026-07-21, cross-validation).** `ata09036` is **0-hit in OUR
+> v2.0.41 bundle** — it is srtgo-attested only, possibly a different/newer app. For
+> OUR version payment is **NOT statically confirmed**: the real in-app path is the
+> `ard02017/18` WebView page (TransKey keypad + FIDO + AppGuard). So P3 is **back to
+> capture-blocked** — treat the `ata09036` shape as a hypothesis to verify with a
+> live v2.0.41 capture before implementing, not a resolved route.
 
 - [ ] Implement the `ata09036` JSON payment POST → parse `dsOutput0[0].strResult`
       (never auto-submit; default dry-run). Body fields per §3.3 new row /
@@ -685,7 +774,14 @@ until a live request/response shape is recorded and sanitized.
       payment field list is known (§3.3). Remaining live step: Stage-C smoke with a
       **fake (Luhn-invalid) card → expected FAIL, no charge**; never feed a real PAN.
 
-### P4 — Refund / cancel / change — risk: **Med for cancel/refund, High for change** *(mostly unblocked 2026-07-21)*
+### P4 — Refund / cancel / change — risk: **High** *(re-corrected 2026-07-21: cancel/refund UNCONFIRMED for OUR v2.0.41)*
+
+> **⚠️ UPDATE 2 (2026-07-21, cross-validation).** Cancel `ard02045`, refund
+> `getListAtc14087`→`atc02063`, plus `ata01135`/`ard02019` are **0-hit across all
+> 21,673 files** in OUR v2.0.41 bundle — srtgo-attested only. So P4 is **back to
+> capture-blocked for our version**: srtgo's shapes are a starting hypothesis, and a
+> live v2.0.41 capture is still required before implementing cancel/refund (change
+> was always capture-blocked).
 
 - [ ] ~~🔒 First capture the cancel/refund/change shapes — ZERO static evidence.~~
       **UPDATE (2026-07-21): cancel & refund shapes are known** from srtgo's
@@ -733,9 +829,26 @@ refund are now **derivable statically** from srtgo (`docs/analysis/ref-srtgo_plu
 and need only a confirmatory live smoke, not a shape-capture, before implementation.
 P0 and P5 are not blocked.
 
+> **⚠️ UPDATE 2 (2026-07-21, cross-validation) — this summary is corrected.** Only
+> **individual reserve `arc05013`** (`jobId 1101/1102`, `act_10` gate) is
+> statically confirmed in OUR v2.0.41 bundle. **Payment (`ata09036`), cancel
+> (`ard02045`), and refund (`atc14087`→`atc02063`) are 0-hit** in our bundle
+> (srtgo-attested only) and are therefore **still capture-blocked** for our version,
+> NOT "derivable statically." The `arc02011` seat schema is a **phantom** — the real
+> endpoint is `arc02012` (HTML). Corrected capture-blocked list: 🔒 **payment /
+> cancel / refund** (P3/P4, live v2.0.41 capture), 🔒 **`arc02012` HTML seat page**
+> (P1/R1/R5), 🔒 **`arc06014` group reserve** (P2), 🔒 **change/변경** (P4). See
+> `## Revision 2 (2026-07-21)`.
+
 ---
 
 ## Revision 2026-07-21 — srtgo/srtgo_plus reference findings
+
+> **⚠️ SUPERSEDED IN PART by `## Revision 2 (2026-07-21)` below.** The
+> payment/cancel/refund optimism in this section (endpoints `Ata09036`, `Ard02045`,
+> `getListAtc14087`→`Atc02063`) is **walked back**: cross-validation found all of
+> them **0-hit in OUR v2.0.41 bundle**, so they are srtgo-attested only and revert to
+> needs-live-capture. The reserve (`arc05013`) + `act_10` findings here **stand**.
 
 Static analysis of the external tool **`srtgo`/`srtgo_plus`** (`srtgo/srt.py`;
 full write-up in **`docs/analysis/ref-srtgo_plus.md`**) reversed several verdicts in
@@ -793,6 +906,102 @@ file** — recommend adding one (see §7).
 *Sections corrected inline (search "UPDATE (2026-07-21)"):* feasibility headline,
 §3 intro, §3.1, §3.3 (table + 4 new rows), §3.4, §3.5, §4 (+item 8), §5.4, §5.7,
 §7 (LICENSE), §8 (P2/P3/P4 + dependency map).
+
+---
+
+## Revision 2 (2026-07-21) — cross-validation vs decompiled v2.0.41
+
+Cross-validating **srtgo against OUR own decompiled v2.0.41 bundle** — the ground
+truth — corrects the srtgo-optimistic verdicts in `## Revision 2026-07-21` above.
+Full report: **`docs/analysis/cross-validation-2026-07-21.md`**. srtgo was checked
+endpoint-by-endpoint against `analysis/apktool` (smali + assets), `analysis/jadx`
+(Java), and OUR `src/`. Inline `UPDATE 2 (2026-07-21)` notes carry the same
+corrections at each point they change a verdict.
+
+### 1. PAYMENT / CANCEL / REFUND — walk-back (most important)
+
+The earlier Revision claimed SRT payment/cancel/refund are feasible via a pure-JSON
+mobile API (`Ata09036` / `Ard02045` / `Atc02063`). **That is UNCONFIRMED for OUR
+version.** These endpoints — plus standby-option `Ata01135`, reserve-info
+`getListAtc14087`, and ticket-info `Ard02019` — are **0-hit across all 21,673 files**
+in our v2.0.41 bundle (`cross-validation-2026-07-21.md` §3–§4; classes.dex, smali,
+jadx, and bundled JS all return zero). They are attested **only by srtgo's live
+runs**, possibly against a different/newer app version.
+
+OUR app's actual payment path is the **`ard02017` / `ard02018` WebView page** gated by
+**TransKey (SEED secure keypad)** + **RaonSecure FIDO** + **AppGuard/appiron**
+(`cross-validation-2026-07-21.md` §3; `ara1001l.js:1599,1608`;
+`SRWebActivity.java:2352-2390,2517-2519`). The only `Ata####` payment endpoint
+actually present in the bundle is **`Ata01032`** (discount / payable-card-company
+page), **not `Ata09036`** (`arc0102c.js:34`).
+
+**Verdict for OUR v2.0.41:** payment / cancel / refund are **NOT statically
+confirmable** and revert to "**needs a live v2.0.41 capture**" — srtgo's request
+shapes are a **starting hypothesis, not confirmed fact**. §3.3/§3.5 rows, §4 (item 8
++ mandate note), and the P3/P4 roadmap are corrected inline accordingly.
+
+**Still confirmed feasible:** **RESERVATION `Arc05013`** (`jobId 1101` personal /
+`1102` standby) and its **NetFunnel `act_10`** gate ARE present in our app
+(`cross-validation-2026-07-21.md` §1–§2; `ara1001l.js:1547`; `netfunnel.js:16-17`).
+Individual reserve stays feasible; only payment/cancel/refund walk back.
+
+### 2. OUR-own phantoms corrected
+
+- **`act_19` does not exist** — only `act_10` is in the bundle (3× `act_10`, 0×
+  `act_19` across apktool assets); reserve reuses the same `act_10` key
+  (`cross-validation-2026-07-21.md` §2, §6). Already corrected in this plan's body
+  (§3.4, §3.5, §5.4, P2); residual test/roadmap references (§6.1, §6.2, dependency
+  map) now fixed too.
+- **Seat-inventory endpoint is `arc02012`, not `arc02011`.** `arc02011` is a phantom
+  (0 hits; the only `02011` match is an incidental AES T-table substring). The real
+  endpoint `/arc/selectListArc02012_n.do` returns an **HTML seat page, NOT a JSON
+  inventory feed**; the only machine-readable output is the `popCallback`
+  `{scarSeatNo:'2,7,10', scarSeatNm:'1B,2C,3B', scarNo:1}` tuple
+  (`cross-validation-2026-07-21.md` §5; `ara0101v.js:868`). R1/R5's deferred
+  "seat-inventory JSON schema" is mis-modelled and must be reframed.
+
+### 3. Newly-found hidden surface (extends §2/§3/§5)
+
+- **Alternate host `app.srail.co.kr/neo`** serves the same `_n.do` JSON (dev variant
+  `devapp.srail.co.kr/neo`), which srtgo never models
+  (`cross-validation-2026-07-21.md` §1; `SRForegroundDialogActivity.java:31`).
+- **Full group / seat-map branch** (srtgo is individual-only): group search
+  **`Ara10082`** (`ara1001l.js:177`), group reserve **`Arc06014`** (`:1544`, by
+  `grpDv=='1'`, ≥10 pax, round-trip forbidden), group payment-entry **`Ard02018`**
+  (`:1599`, `pnrNo=-1`, `tmpJobSqno1/2`), seat-map **`Arc02012`** (`reqCode` 9/10/11),
+  **`jobId '1103'`** 시트맵예약 (`:1436`), and Korail-interop verification
+  **`Ara10130`** returning `mutMrkVrfCd` (`:229`)
+  (`cross-validation-2026-07-21.md` §2, §5).
+- **Complete bundled inventory = EXACTLY 14 `_n.do` endpoints:** `apb01080`,
+  `ara10007`, `ara10082`, `ara10130`, `ara12009`, `ara13010`, `arc02012`, `arc05013`,
+  `arc06014`, `ard02017`, `ard02018`, `ata01032`, `atc14016`, `atc14017`
+  (`cross-validation-2026-07-21.md` §5). `Ard02019`, `Ard02045`, `Ata09036`,
+  `Ata01135`, `Atc02063`, `getListAtc14087` are all ABSENT (runtime-only).
+- **Uncaptured native secrets** (not in §7): hardcoded Google/Firebase API keys
+  (Firebase project `<SRT-APP-FIREBASE-PROJECT-REDACTED>`), Kakao and Facebook app keys, and an
+  `android_id`/MAC/IP device fingerprint feeding `push.srail.co.kr:3101`
+  (`cross-validation-2026-07-21.md` §5; `strings.xml`; `SRWebActivity.java:1841-1851`).
+  *(Key values intentionally NOT reproduced in this plan.)*
+
+### 4. OUR-own client fidelity bugs (being fixed separately — see §5 items 10–11)
+
+- **`config.py` User-Agent has an EXTRA SPACE** before `SRT-APP-Android` that neither
+  the real app (no separator, `SRWebActivity.java:2645`) nor srtgo (`srt.py:22`)
+  emits (`cross-validation-2026-07-21.md` §6; `config.py:7-8`).
+- **`safety.py` carries a stale `netfunnel-act-19`** exclusion label
+  (`EXCLUDED_API_DOMAINS`, `safety.py:183`) for a gate that does not exist; retire it.
+- *(Both source fixes are tracked separately — this doc edit does not touch code.)*
+
+### 5. Net effect on the plan
+
+srtgo remains a **correct model of the individual reserve flow** for v2.0.41 (login,
+search, reserve, tickets, `act_10` all match). But payment/cancel/refund are the
+**largest remaining verification gap** for our version — treat srtgo's shapes as
+hypotheses to confirm with a live v2.0.41 capture, not as resolved. The corrected
+capture-blocked list is: 🔒 **payment** (WebView `ard02017/18`, or an unconfirmed
+`ata09036`), 🔒 **cancel**, 🔒 **refund**, 🔒 **change (변경)**, 🔒 **group reserve
+`arc06014`**, and 🔒 **designated-seat / the `arc02012` HTML seat page**. Confirmed and
+implementable now: **individual reserve `arc05013`** with the existing `act_10` gate.
 
 ---
 
