@@ -152,6 +152,30 @@ def test_mutual_parser_accepts_success_under_non_irz_msg_code():
     assert "fixture-mutual-code" not in repr(result)
 
 
+def test_mutual_parser_accepts_success_without_msg_code():
+    # The app never reads msgCd (ara1001l.js:234-241) and the documented Ara10130
+    # dsOutput0 schema is {strResult, msgTxt, mutMrkVrfCd} with no msgCd. A valid SUCC
+    # response lacking msgCd must be accepted (message_code = None), not rejected.
+    payload = {
+        "ErrorCode": "0",
+        "outDataSets": {
+            "dsOutput0": [
+                {
+                    "strResult": "SUCC",
+                    "msgTxt": "ok",
+                    "mutMrkVrfCd": "fixture-mutual-code",
+                }
+            ]
+        },
+    }
+
+    result = parse_mutual_verification_response(payload)
+
+    assert result.message_code is None
+    assert result.status == "SUCC"
+    assert result.verification_code == "fixture-mutual-code"
+
+
 def test_client_sends_exact_empty_mutual_form_headers_and_referer(
     load_json_fixture,
 ):

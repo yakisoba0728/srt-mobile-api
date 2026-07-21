@@ -5,7 +5,13 @@ from typing import Any, Mapping
 import httpx
 
 from .config import APP_ORIGIN, SrtConfig
-from .errors import SrtAppError, SrtProtocolError, SrtSessionExpiredError, SrtTransportError
+from .errors import (
+    SrtAppError,
+    SrtAuthError,
+    SrtProtocolError,
+    SrtSessionExpiredError,
+    SrtTransportError,
+)
 from .parsers import is_login_form
 from .safety import assert_read_only_request
 
@@ -72,6 +78,16 @@ class SrtHttpClient:
                     "SRT authenticated request returned the login form",
                     raw=response.text,
                 ) from None
+            # An IP block on the login endpoint returns a non-JSON plain-text body (e.g.
+            # "Your IP Address Blocked ..."). srtgo surfaces this as a login failure
+            # (srt.py:719-720: if "Your IP Address Blocked" in r.text -> SRTLoginError).
+            # Classify it as an auth error -- not a generic protocol error -- so callers
+            # catching SrtAuthError from login() see it, with the block reason preserved.
+            if (
+                response.request.url.path == LOGIN_API_PATH
+                and "Your IP Address Blocked" in response.text
+            ):
+                raise SrtAuthError(response.text.strip()) from None
             raise SrtProtocolError("Expected JSON object but response body was not valid JSON") from None
         if not isinstance(payload, dict):
             raise SrtProtocolError("Expected JSON object but received a non-object JSON payload")

@@ -125,6 +125,26 @@ def test_login_failure_reads_top_level_msg_without_user_map(load_json_fixture):
     assert "JSESSIONID" not in client.http.cookies
 
 
+def test_login_ip_block_raises_auth_error_not_protocol_error():
+    # An IP block returns a non-JSON plain-text body; srtgo surfaces it as a login failure
+    # (srt.py:719-720). It must be a catchable SrtAuthError (with the block reason), not a
+    # generic SrtProtocolError raised before the auth branch.
+    block_body = "Your IP Address Blocked. Please contact the administrator."
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/login/login.do":
+            return httpx.Response(200, text="<html>login</html>")
+        return httpx.Response(200, text=block_body, headers={"Content-Type": "text/html"})
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    client.http.cookies.set("JSESSIONID", "stale")
+    with pytest.raises(SrtAuthError) as exc_info:
+        client.login("login-id", "pw")
+    assert "Your IP Address Blocked" in str(exc_info.value)
+    assert client.session.current is None
+    assert "JSESSIONID" not in client.http.cookies
+
+
 def test_failed_relogin_clears_existing_session_and_cookies(load_json_fixture):
     responses = iter(
         [

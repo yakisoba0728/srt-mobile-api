@@ -134,7 +134,9 @@ class TrainSearchResult:
 
 @dataclass(frozen=True)
 class MutualVerificationResult:
-    message_code: str
+    # msgCd is informational and absent from the documented Ara10130 dsOutput0 schema;
+    # the app never reads it (ara1001l.js:234-241), so it may be None on a valid response.
+    message_code: str | None
     status: str
     message: str = field(default="", repr=False)
     verification_code: str = field(default="", repr=False)

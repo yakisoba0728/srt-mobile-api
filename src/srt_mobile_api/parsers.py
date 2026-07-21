@@ -420,20 +420,23 @@ def parse_mutual_verification_response(
     status = row.get("strResult")
     message = row.get("msgTxt", "")
     verification_code = row.get("mutMrkVrfCd")
-    if not isinstance(code, str) or not isinstance(status, str):
+    # The app never reads msgCd for Ara10130 -- fn_searchMutMrkVrfCd only checks
+    # dsOutput0.strResult == "FAIL" then reads dsOutput0.mutMrkVrfCd (ara1001l.js:234-241),
+    # and the documented dsOutput0 schema is {strResult, msgTxt, mutMrkVrfCd} with no
+    # msgCd. Treat msgCd as informational/optional so a valid response lacking it is not
+    # rejected; gate solely on strResult (+ a present mutMrkVrfCd).
+    message_code = code if isinstance(code, str) else None
+    if not isinstance(status, str):
         raise SrtProtocolError(
-            "SRT mutual verification code and status must be strings"
+            "SRT mutual verification strResult must be a string"
         )
     if not isinstance(message, str):
         raise SrtProtocolError(
             "SRT mutual verification message must be a string"
         )
-    # The app treats Ara10130 as success whenever strResult != "FAIL" and simply reads
-    # mutMrkVrfCd; it never inspects msgCd (ara1001l.js:234-241). Match that: fail only on
-    # strResult == "FAIL" (or a missing verification code); msgCd is informational.
     if status == "FAIL":
         raise SrtAppError(
-            code or None,
+            message_code,
             "SRT mutual verification failed",
             raw=data,
         )
@@ -442,7 +445,7 @@ def parse_mutual_verification_response(
             "SRT mutual verification mutMrkVrfCd must be a non-empty string"
         )
     return MutualVerificationResult(
-        message_code=code,
+        message_code=message_code,
         status=status,
         message=message,
         verification_code=verification_code,

@@ -160,7 +160,6 @@ def test_search_payloads_include_expected_keys():
     hydrated_fields = {"serverNonce": "nonce-1", "dptRsStnCdNm1": "수서", "psgTpCd1": "1"}
     page_payload = search_page_payload(query, "NF")
     ajax_payload = search_ajax_payload(query, "NF", hydrated_fields=hydrated_fields)
-    group_payload = group_search_ajax_payload(query, "NF", hydrated_fields=hydrated_fields)
 
     assert page_payload["dptRsStnCd1"] == "0551"
     assert page_payload["arvRsStnCdNm1"] == "부산"
@@ -171,8 +170,42 @@ def test_search_payloads_include_expected_keys():
     assert ajax_payload["netfunnelKey"] == "NF"
     assert ajax_payload["psgNum"] == "1"
     assert ajax_payload["serverNonce"] == "nonce-1"
+
+    # A group search requires totPrnb >= 10 (ara0101v.js:551-554) and sends
+    # psgNum == totPrnb == total (ara1001l.js:104,165) -- never a clamped/bumped value.
+    group_query = TrainSearchQuery(
+        "0551",
+        "0020",
+        "20260710",
+        passengers=PassengerCounts(adult=10),
+        train_group_code="300",
+        departure_station_name="수서",
+        arrival_station_name="부산",
+    )
+    group_hydrated = search_page_payload(group_query, "NF")
+    group_payload = group_search_ajax_payload(
+        group_query, "NF", hydrated_fields=group_hydrated
+    )
     assert group_payload["psgNum"] == "10"
+    assert group_payload["psgNum"] == group_hydrated["totPrnb"]
     assert group_payload["grpDv"] == "1"
+
+
+def test_group_search_rejects_fewer_than_ten_passengers():
+    # The app rejects a group search client-side when totPrnb < 10 (ara0101v.js:551-554)
+    # rather than clamping psgNum; mirror that with a clear error.
+    query = TrainSearchQuery(
+        "0551",
+        "0020",
+        "20260710",
+        passengers=PassengerCounts(adult=1),
+        train_group_code="300",
+        departure_station_name="수서",
+        arrival_station_name="부산",
+    )
+    hydrated = search_page_payload(query, "NF")
+    with pytest.raises(ValueError, match="at least 10 passengers"):
+        group_search_ajax_payload(query, "NF", hydrated_fields=hydrated)
 
 
 def test_search_page_psg_gridcnt_counts_distinct_types_not_head_count():
@@ -528,6 +561,9 @@ def test_search_success_gated_on_str_result_not_exact_msg_cd():
 
 
 def _complete_seat_page_train() -> TrainSummary:
+    # A genuine dsOutput1 row carries NO seatAttCd (the app/srtgo source it from the
+    # request side), so the "complete" seat-page train deliberately omits seat_attr_code;
+    # seat_page_payload must still build, defaulting seatAttCd to the request-side "015".
     return TrainSummary(
         train_no="303",
         train_group_code="300",
@@ -539,7 +575,6 @@ def _complete_seat_page_train() -> TrainSummary:
         arrival_station_code="0020",
         departure_run_order="000001",
         arrival_run_order="000010",
-        seat_attr_code="015",
     )
 
 
@@ -620,6 +655,29 @@ def test_seat_page_payload_multi_seat_sends_requested_count():
     assert payload["trnGpCd"] == "300"
 
 
+def test_seat_page_payload_sources_seat_att_cd_from_request_side_default():
+    # seatAttCd is a REQUEST-SIDE constant (app: seatAttCd = lfn_getRsv("rqSeatAttCd1"),
+    # seeded to "015"; ara1001l.js:1508 / ara0101v.js:132; srtgo srt.py:193). A genuine
+    # search-response row omits seatAttCd, so the payload must still build and default the
+    # field to "015" -- never require train.seat_attr_code.
+    train = _complete_seat_page_train()
+    assert train.seat_attr_code is None
+    assert seat_page_payload(train)["seatAttCd"] == "015"
+
+
+def test_seat_page_payload_accepts_caller_supplied_seat_att_cd():
+    # A caller may pass the seat-attribute code they searched with (e.g. 021/028 wheelchair
+    # per ara0101v.js:611,621); it is validated as a 3-digit code.
+    payload = seat_page_payload(_complete_seat_page_train(), seat_attr_code="021")
+    assert payload["seatAttCd"] == "021"
+
+
+@pytest.mark.parametrize("seat_attr_code", ["", "15", "0155", "01a", "٠١٥"])
+def test_seat_page_payload_rejects_malformed_seat_att_cd(seat_attr_code):
+    with pytest.raises(ValueError, match="seat_attr_code"):
+        seat_page_payload(_complete_seat_page_train(), seat_attr_code=seat_attr_code)
+
+
 @pytest.mark.parametrize("seat_count", ["0", "", "1a", "-1", "٢", "01"])
 def test_seat_page_payload_rejects_non_positive_seat_count(seat_count):
     with pytest.raises(ValueError, match="seat_count"):
@@ -646,7 +704,6 @@ def test_seat_page_payload_rejects_unknown_cabin_class(cabin_class):
         ({"arrival_station_code": "20"}, "arrival_station_code"),
         ({"departure_run_order": None}, "departure_run_order"),
         ({"arrival_run_order": "A10"}, "arrival_run_order"),
-        ({"seat_attr_code": "15"}, "seat_attr_code"),
     ],
 )
 def test_seat_page_payload_rejects_incomplete_or_malformed_train(changes, message):

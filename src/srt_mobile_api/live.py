@@ -28,6 +28,10 @@ def _first_complete_srt_seat_train(
     trains: Sequence[TrainSummary],
 ) -> TrainSummary | None:
     for train in trains:
+        # seatAttCd is NOT a search-response-row field: the app/srtgo source it from the
+        # request side (rqSeatAttCd1="015"), so a genuine captured row omits it and
+        # seat_page_payload defaults it to "015" rather than reading train.seat_attr_code.
+        # Requiring train.seat_attr_code here would wrongly skip every real train.
         required = (
             train.train_no,
             train.run_date,
@@ -37,7 +41,6 @@ def _first_complete_srt_seat_train(
             train.arrival_station_code,
             train.departure_run_order,
             train.arrival_run_order,
-            train.seat_attr_code,
         )
         if train.train_group_code == "300" and all(
             isinstance(value, str) and bool(value) for value in required

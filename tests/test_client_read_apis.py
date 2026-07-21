@@ -359,7 +359,11 @@ def test_search_uses_act10_and_search_endpoint(load_json_fixture, load_text_fixt
         transport=httpx.MockTransport(handler),
         clock=lambda: 1712345678.901,
     )
-    query = TrainSearchQuery("0551", "0020", "20260710")
+    # A group search requires totPrnb >= 10 (ara0101v.js:551-554); use a valid group-size
+    # query so search_group_trains builds a payload the app would actually send.
+    query = TrainSearchQuery(
+        "0551", "0020", "20260710", passengers=PassengerCounts(adult=10)
+    )
     result = client.search_trains(query)
     group = client.search_group_trains(query)
     assert result.trains[0].train_no == "303"
@@ -899,6 +903,8 @@ def test_ordinary_app_failure_is_not_retried(load_text_fixture):
 
 
 def _complete_seat_train() -> TrainSummary:
+    # A real captured train has no seatAttCd (request-side field); get_seat_page must still
+    # build the arc02012 request, defaulting seatAttCd to "015".
     return TrainSummary(
         train_no="303",
         train_group_code="300",
@@ -910,7 +916,6 @@ def _complete_seat_train() -> TrainSummary:
         arrival_station_code="0020",
         departure_run_order="000001",
         arrival_run_order="000010",
-        seat_attr_code="015",
     )
 
 
@@ -962,9 +967,10 @@ def test_get_seat_page_posts_once_and_returns_inert_page(load_text_fixture):
     assert requests[0].method == "POST"
     assert requests[0].url.path == "/arc/selectListArc02012_n.do"
     assert not requests[0].url.query
-    assert dict(parse_qsl(requests[0].content.decode(), keep_blank_values=True))[
-        "choiceSeatCount"
-    ] == "1"
+    posted = dict(parse_qsl(requests[0].content.decode(), keep_blank_values=True))
+    assert posted["choiceSeatCount"] == "1"
+    # seatAttCd comes from the request-side default "015", not the (absent) row value.
+    assert posted["seatAttCd"] == "015"
 
 
 def test_get_seat_page_rejects_incomplete_train_before_transport():

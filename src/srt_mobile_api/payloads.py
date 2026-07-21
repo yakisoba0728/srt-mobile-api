@@ -254,9 +254,18 @@ def group_search_ajax_payload(
     *,
     hydrated_fields: dict[str, str],
 ) -> dict[str, str]:
+    # The app requires a group booking to be >=10 people and rejects it client-side
+    # otherwise (ara0101v.js:551-554 alerts and returns without sending a request). It
+    # never bumps psgNum: psgNum is always == totPrnb == passengers.total for both
+    # individual and group searches (ara1001l.js:104 sPsgNum=lfn_getRsv("totPrnb"), :165
+    # "psgNum":sPsgNum). Mirror the app's own guard instead of silently clamping psgNum to
+    # 10 while totPrnb stays below it (which would emit a psgNum!=totPrnb payload the app
+    # would never send).
+    if query.passengers.total < 10:
+        raise ValueError("group search requires at least 10 passengers (totPrnb >= 10)")
     payload = search_ajax_payload(query, netfunnel_key, hydrated_fields=hydrated_fields)
     payload["grpDv"] = "1"
-    payload["psgNum"] = str(max(query.passengers.total, 10))
+    payload["psgNum"] = str(query.passengers.total)
     return payload
 
 
@@ -297,7 +306,11 @@ def _required_digits(
 
 
 def seat_page_payload(
-    train: TrainSummary, cabin_class: str = "1", seat_count: str = "1"
+    train: TrainSummary,
+    cabin_class: str = "1",
+    seat_count: str = "1",
+    *,
+    seat_attr_code: str = "015",
 ) -> dict[str, str]:
     if train.train_group_code != "300":
         raise ValueError("train_group_code must be 300 for an SRT seat page")
@@ -326,7 +339,14 @@ def seat_page_payload(
             length=4,
         ),
         "psrmClCd": cabin_class,
-        "seatAttCd": _required_digits(train.seat_attr_code, "seat_attr_code", length=3),
+        # seatAttCd is sourced from the REQUEST side, not the search-response row: the
+        # app sends seatAttCd = lfn_getRsv("rqSeatAttCd1"), which is seeded to the
+        # constant "015" (ara1001l.js:1508; ara0101v.js:132). srtgo confirms the design
+        # -- it hardcodes rqSeatAttCd1="015" (srt.py:193) and its row parser never reads
+        # a row seatAttCd. Real dsOutput1 rows omit seatAttCd, so we default to "015" and
+        # let a caller pass the seat-attribute code they searched with. Do NOT read
+        # train.seat_attr_code here (that field is not carried by genuine responses).
+        "seatAttCd": _required_digits(seat_attr_code, "seat_attr_code", length=3),
         "dptStnRunOrdr": _required_digits(
             train.departure_run_order,
             "departure_run_order",
