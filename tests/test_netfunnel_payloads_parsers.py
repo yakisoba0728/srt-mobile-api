@@ -404,23 +404,37 @@ def test_hydrated_ajax_payload_overlays_only_caller_fields(load_text_fixture):
     assert payload["trnGpCd"] == "300"
 
 
-def test_passenger_fields_use_protocol_codes_and_preserve_nonempty_hydrated_code():
+def test_passenger_fields_compact_nonzero_types_and_preserve_nonempty_hydrated_code():
+    # The app packs only count>0 types into contiguous psgTpCd slots in canonical psgTpCd
+    # order (senior=code 4 before child=code 5), leaving the trailing slots empty over
+    # exactly 5 slots, and sends no psgTpCd6 / infantCnt (ara0101v.js:808-836;
+    # commCode.js psgTpCd 1..5). infant is not a psgTpCd type and never appears.
     query = TrainSearchQuery(
         "0551",
         "0020",
         "20260710",
-        passengers=PassengerCounts(adult=0, child=1, senior=1, infant=1),
+        passengers=PassengerCounts(adult=0, child=1, senior=2, infant=1),
     )
     payload = search_ajax_payload(
         query,
         "NF",
-        hydrated_fields={"psgTpCd1": "hydrated-adult", "psgTpCd2": "hydrated-child"},
+        hydrated_fields={"psgTpCd1": "hydrated-senior"},
     )
-    assert payload["psgTpCd1"] == ""
-    assert payload["psgTpCd2"] == "hydrated-child"
-    assert payload["psgTpCd3"] == "4"
-    assert payload["psgTpCd6"] == "6"
-    assert payload["infantCnt"] == "1"
+    # senior compacts to slot 1, child to slot 2; a non-empty hydrated code overrides the
+    # computed type code at the filled slot.
+    assert payload["psgTpCd1"] == "hydrated-senior"
+    assert payload["psgInfoPerPrnb1"] == "2"
+    assert payload["psgTpCd2"] == "5"
+    assert payload["psgInfoPerPrnb2"] == "1"
+    # Trailing slots are SENT empty (psgTpCd="" / psgInfoPerPrnb="0"), not omitted.
+    assert payload["psgTpCd3"] == ""
+    assert payload["psgInfoPerPrnb3"] == "0"
+    assert payload["psgTpCd5"] == ""
+    assert payload["psgInfoPerPrnb5"] == "0"
+    # No infant / type-6 slot and no infantCnt exist in the SRT protocol.
+    assert "psgTpCd6" not in payload
+    assert "psgInfoPerPrnb6" not in payload
+    assert "infantCnt" not in payload
 
 
 def test_parse_train_search_response_normalizes_list_and_object_result(load_json_fixture):
@@ -716,8 +730,10 @@ def test_fare_payload_uses_canonical_passenger_slots_and_row_train_class():
         "trnNo": "00303",
     }
     assert payload["trnSort"] == "07"
-    # passenger1=adult, passenger2=disability_1_to_3, passenger3=disability_4_to_6,
-    # passenger4=senior, passenger5=child (ara1001l.js:1219-1223).
+    # passenger1..5 are the COMPACTED psgInfoPerPrnb1..5 in canonical psgTpCd order
+    # (ara1001l.js:1219-1223 + compaction ara0101v.js:824-836). All five types are filled
+    # here, so the compacted order is the full canonical order: adult(1), dis1-3(4),
+    # dis4-6(5), senior(3), child(2). infant is not a psgTpCd type and never appears.
     assert [payload[f"passenger{index}"] for index in range(1, 6)] == [
         "1",
         "4",
@@ -735,3 +751,15 @@ def test_fare_payload_uses_canonical_passenger_slots_and_row_train_class():
     assert payload["arvRsStnCd2"] == ""
     assert payload["runDt2"] == ""
     assert payload["trnNo2"] == ""
+
+    # Gap case that distinguishes COMPACTED from positional: 1 adult + 1 child. The app
+    # compacts to passenger1=1, passenger2=1, passenger3..5=0 (child's count moves up into
+    # the second contiguous slot), NOT positional passenger1=1, passenger5=1.
+    gap_payload = fare_payload(train, PassengerCounts(adult=1, child=1))
+    assert [gap_payload[f"passenger{index}"] for index in range(1, 6)] == [
+        "1",
+        "1",
+        "0",
+        "0",
+        "0",
+    ]

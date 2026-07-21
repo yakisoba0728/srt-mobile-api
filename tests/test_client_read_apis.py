@@ -1017,8 +1017,11 @@ def test_timetable_and_fare(load_text_fixture):
     assert "12,340원" in fare.text
     assert captured["/ara/selectListAra12009_n.do"]["stnCourseNm"] == ["수서-부산"]
     fare_form = captured["/ara/selectListAra13010_n.do"]
-    # adult=1 -> passenger1, child=1 -> passenger5 (canonical type codes).
+    # passenger1..5 are COMPACTED (ara1001l.js:1219 + ara0101v.js:824-836): adult and child
+    # pack into the first two contiguous slots, so passenger1=1, passenger2=1, rest "0" —
+    # NOT positional passenger1=1 / passenger5=1.
     assert fare_form["passenger1"] == ["1"]
-    assert fare_form["passenger5"] == ["1"]
+    assert fare_form["passenger2"] == ["1"]
+    assert fare_form["passenger5"] == ["0"]
     assert "psgTpCd2" not in fare_form
     assert fare_form["dptRsStnCd2"] == [""]

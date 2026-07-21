@@ -8,13 +8,16 @@ TRAIN_GROUP_OPTIONS = {
     "900": ("KTX+SRT", "00"),
     "109": ("전체", "05"),
 }
-PASSENGER_SLOTS = (
+# The five SRT passenger types in positional psgTpCd order (commCode.js:55-88 lists
+# psgTpCd 1..5 only; the picker object seeds psgTpCd1..5 = "1".."5" at
+# ara0101v.js:795-804). There is NO infant / psgTpCd "6": SRT has no infant type and
+# the string `infantCnt` appears nowhere in the app.
+PASSENGER_TYPE_CODES = (
     ("adult", "1"),
-    ("child", "5"),
-    ("senior", "4"),
     ("disability_1_to_3", "2"),
     ("disability_4_to_6", "3"),
-    ("infant", "6"),
+    ("senior", "4"),
+    ("child", "5"),
 )
 
 
@@ -106,31 +109,52 @@ def train_group_selector_payload(
     }
 
 
+def _compact_passenger_slots(passengers: PassengerCounts) -> list[tuple[str, int]]:
+    # The app packs only the count>0 passenger types into contiguous slots, in
+    # canonical psgTpCd order (ara0101v.js:824-836):
+    #   idx=1; for i in 1..5: if psgInfoPerPrnb[i] > 0: psgTpCd[idx]=code[i];
+    #                                                    psgInfoPerPrnb[idx]=count[i]; idx++
+    # Returns the (psgTpCd, count) pairs for the filled slots, in order. Infant is not a
+    # psgTpCd type and is never emitted. Shared by the search psgTpCd builder (B1) and
+    # the fare passenger1..5 builder (B3) so they stay consistent.
+    return [
+        (type_code, getattr(passengers, attribute))
+        for attribute, type_code in PASSENGER_TYPE_CODES
+        if getattr(passengers, attribute) > 0
+    ]
+
+
 def _passenger_fields(
     passengers: PassengerCounts,
     hydrated_fields: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    # Emit the COMPACTED psgTpCd1..N / psgInfoPerPrnb1..N, then leave the trailing slots
+    # empty over exactly 5 slots. The app seeds all five as psgTpCd="" / psgInfoPerPrnb="0"
+    # and overwrites only the first N filled ones (ara0101v.js:808-836), so the trailing
+    # slots are SENT (psgTpCd="", psgInfoPerPrnb="0"), not omitted. No psgTpCd6 / infantCnt
+    # (SRT has no infant type; commCode.js psgTpCd is 1..5 only).
     hydrated_fields = hydrated_fields or {}
+    slots = _compact_passenger_slots(passengers)
     fields: dict[str, str] = {}
-    for index, (attribute, type_code) in enumerate(PASSENGER_SLOTS, start=1):
-        count = getattr(passengers, attribute)
-        hydrated_code = hydrated_fields.get(f"psgTpCd{index}", "")
-        fields[f"psgTpCd{index}"] = (hydrated_code or type_code) if count else ""
-        fields[f"psgInfoPerPrnb{index}"] = str(count)
-    fields["infantCnt"] = str(passengers.infant)
+    for index in range(1, len(PASSENGER_TYPE_CODES) + 1):
+        if index <= len(slots):
+            type_code, count = slots[index - 1]
+            hydrated_code = hydrated_fields.get(f"psgTpCd{index}", "")
+            fields[f"psgTpCd{index}"] = hydrated_code or type_code
+            fields[f"psgInfoPerPrnb{index}"] = str(count)
+        else:
+            fields[f"psgTpCd{index}"] = ""
+            fields[f"psgInfoPerPrnb{index}"] = "0"
     return fields
 
 
 def _distinct_passenger_type_count(passengers: PassengerCounts) -> int:
     # psgGridcnt is the number of distinct passenger TYPES with count>0, NOT the head
     # count: the app sets psgGridcnt=idx-1 (occupied type count, ara0101v.js:826-836)
-    # and srtgo uses len(combined_passengers) (srt.py:191). Infant is not a psgTpCd
-    # picker type, so it is excluded from the count.
-    return sum(
-        1
-        for attribute, _type_code in PASSENGER_SLOTS
-        if attribute != "infant" and getattr(passengers, attribute) > 0
-    )
+    # and srtgo uses len(combined_passengers) (srt.py:191). Reuse the compaction helper
+    # so psgGridcnt always equals the number of filled psgTpCd slots (B1). Infant is not
+    # a psgTpCd type, so it is excluded.
+    return len(_compact_passenger_slots(passengers))
 
 
 def search_page_payload(query: TrainSearchQuery, netfunnel_key: str) -> dict[str, str]:
@@ -352,12 +376,14 @@ def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, 
         "runDt2": "",
         "trnNo2": "",
     }
-    # Ara13010 carries counts under passenger1..passenger5 (= psgInfoPerPrnb1..5),
-    # keyed by the same canonical type codes as the selector (ara1001l.js:1219-1223).
-    # It does NOT take psgTpCd*/psgInfoPerPrnb*/infantCnt.
-    payload["passenger1"] = str(passengers.adult)
-    payload["passenger2"] = str(passengers.disability_1_to_3)
-    payload["passenger3"] = str(passengers.disability_4_to_6)
-    payload["passenger4"] = str(passengers.senior)
-    payload["passenger5"] = str(passengers.child)
+    # Ara13010 sends passenger1..5 = lfn_getRsv("psgInfoPerPrnb1..5"), i.e. the COMPACTED
+    # gds_rsv counts (ara1001l.js:1219-1223): only count>0 types packed contiguously in
+    # canonical psgTpCd order, with the trailing slots padded "0" (compaction at
+    # ara0101v.js:824-836). NOT one fixed slot per type. Example (1 adult + 1 child):
+    # passenger1=1, passenger2=1, passenger3=0, passenger4=0, passenger5=0. It carries no
+    # psgTpCd*/psgInfoPerPrnb*/infantCnt.
+    compacted = [count for _type_code, count in _compact_passenger_slots(passengers)]
+    for index in range(1, len(PASSENGER_TYPE_CODES) + 1):
+        count = compacted[index - 1] if index <= len(compacted) else 0
+        payload[f"passenger{index}"] = str(count)
     return payload

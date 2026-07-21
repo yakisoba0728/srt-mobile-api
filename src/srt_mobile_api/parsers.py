@@ -428,7 +428,10 @@ def parse_mutual_verification_response(
         raise SrtProtocolError(
             "SRT mutual verification message must be a string"
         )
-    if code != "IRZ000008" or status != "SUCC":
+    # The app treats Ara10130 as success whenever strResult != "FAIL" and simply reads
+    # mutMrkVrfCd; it never inspects msgCd (ara1001l.js:234-241). Match that: fail only on
+    # strResult == "FAIL" (or a missing verification code); msgCd is informational.
+    if status == "FAIL":
         raise SrtAppError(
             code or None,
             "SRT mutual verification failed",

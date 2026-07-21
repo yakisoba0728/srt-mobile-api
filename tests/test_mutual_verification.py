@@ -89,8 +89,10 @@ def test_mutual_parser_classifies_wrapper_failure():
 @pytest.mark.parametrize(
     ("message_code", "message", "status"),
     [
-        ("OTHER", "wrong code", "SUCC"),
+        # The app fails only on strResult == "FAIL" (ara1001l.js:234); it never gates on
+        # msgCd, so a FAIL is a business failure regardless of the code carried.
         ("IRZ000008", "wrong status", "FAIL"),
+        ("SOME_OTHER_CODE", "business fail", "FAIL"),
     ],
 )
 def test_mutual_parser_classifies_business_failures_without_leaking_raw_values(
@@ -122,6 +124,32 @@ def test_mutual_parser_classifies_business_failures_without_leaking_raw_values(
     for exception_text in (str(exc_info.value), repr(exc_info.value)):
         assert verification_secret not in exception_text
         assert raw_only_marker not in exception_text
+
+
+def test_mutual_parser_accepts_success_under_non_irz_msg_code():
+    # The app reads mutMrkVrfCd whenever strResult != "FAIL" and never inspects msgCd
+    # (ara1001l.js:234-241). A SUCC row with a populated mutMrkVrfCd under any msgCd must
+    # be accepted, not mis-classified as an app error on the msgCd alone.
+    payload = {
+        "ErrorCode": "0",
+        "outDataSets": {
+            "dsOutput0": [
+                {
+                    "msgCd": "OTHER",
+                    "msgTxt": "ok",
+                    "strResult": "SUCC",
+                    "mutMrkVrfCd": "fixture-mutual-code",
+                }
+            ]
+        },
+    }
+
+    result = parse_mutual_verification_response(payload)
+
+    assert result.status == "SUCC"
+    assert result.message_code == "OTHER"
+    assert result.verification_code == "fixture-mutual-code"
+    assert "fixture-mutual-code" not in repr(result)
 
 
 def test_client_sends_exact_empty_mutual_form_headers_and_referer(
