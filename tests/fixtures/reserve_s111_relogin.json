@@ -1,0 +1,9 @@
+{
+  "resultMap": [
+    {
+      "strResult": "FAIL",
+      "msgCd": "S111",
+      "msgTxt": "synthetic re-login required"
+    }
+  ]
+}

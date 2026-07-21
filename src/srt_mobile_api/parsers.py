@@ -535,6 +535,14 @@ def parse_reservation_attempt_response(
         raw=data,
         allow_empty=True,
     )
+    if status != "SUCC" and code == "S111":
+        # Bundled JS treats FAIL + msgCd "S111" as a session-expiry / re-login
+        # signal (ara1001l.js:1562-1571; cross-validation-2026-07-21.md §2),
+        # not a generic business error.
+        raise SrtSessionExpiredError(
+            message or "SRT reservation attempt session expired",
+            raw=data,
+        )
     if code == "WRP011002" or status != "SUCC":
         raise SrtAppError(code, message or status, raw=data)
 

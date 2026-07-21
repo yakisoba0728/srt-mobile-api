@@ -4,7 +4,11 @@ from dataclasses import FrozenInstanceError, is_dataclass
 import pytest
 
 import srt_mobile_api
-from srt_mobile_api.errors import SrtAppError, SrtProtocolError
+from srt_mobile_api.errors import (
+    SrtAppError,
+    SrtProtocolError,
+    SrtSessionExpiredError,
+)
 from srt_mobile_api.models import (
     ReservationAttemptResult,
     ReservationRecord,
@@ -103,6 +107,24 @@ def test_parse_reservation_attempt_surfaces_observed_input_validation_failure():
 
     assert exc_info.value.code == "WRR000100"
     assert exc_info.value.raw is payload
+
+
+def test_parse_reservation_attempt_maps_s111_to_session_expired(load_json_fixture):
+    payload = load_json_fixture("reserve_s111_relogin.json")
+
+    with pytest.raises(SrtSessionExpiredError) as exc_info:
+        parse_reservation_attempt_response(payload)
+
+    assert exc_info.value.raw is payload
+
+
+def test_parse_reservation_attempt_s111_is_not_a_generic_app_error(load_json_fixture):
+    payload = load_json_fixture("reserve_s111_relogin.json")
+
+    with pytest.raises(SrtSessionExpiredError):
+        parse_reservation_attempt_response(payload)
+
+    assert not issubclass(SrtSessionExpiredError, SrtAppError)
 
 
 def test_parse_reservation_attempt_accepts_empty_success_message(load_json_fixture):
