@@ -13,9 +13,18 @@ RESULT_ASSIGNMENT_RE = re.compile(
 )
 # NetFunnel.RetVal parses the wire token as RRRR:CCC:params (4-digit response
 # type at offset 0, 3-digit status code at offset 5, params from offset 9).
-# Success is keyed off the 3-digit status code (kSuccess=200,
-# kTsErrorAComplete=502), never off the echoed response type.
-SUCCESS_CODES = frozenset({"200", "502"})
+# Success is keyed off the 3-digit status code, never off the echoed response type.
+#
+# We only issue getTidChkEnter (opcode 5101 = act_10). The app dispatches that
+# reply through _showResultChkEnter (netfunnel.js:60477), whose switch proceeds
+# (sets the pass cookie) only for kSuccess=200 (onSuccess) and kTsBypass=300
+# (onBypass, no queue needed). kContinue=201/kContinueDebug=202 mean keep-polling
+# (onContinued); this parser is single-shot and does not model a polling loop, so
+# 201/202 are treated as non-success. kTsErrorAComplete=502 falls to the switch
+# default -> onError for chkEnter; 502-as-success only holds for setComplete (5004,
+# _showResultSetComplete), which our read-only client never issues, so 502 must NOT
+# be accepted here (netfunnel.js:84 code table).
+SUCCESS_CODES = frozenset({"200", "300"})
 
 
 def build_act10_url(netfunnel_url: str, *, timestamp_ms: int) -> str:

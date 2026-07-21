@@ -51,12 +51,13 @@ def test_parse_netfunnel_response_accepts_plan_evidenced_three_part_success():
 def test_parse_netfunnel_response_tolerates_echoed_grtype_prefix_and_status_success():
     # The real app response leads with the echoed sent opcode
     # (NetFunnel.gRtype=5101;) and reports success via the 3-digit status code.
+    # kTsBypass=300 is a chkEnter pass (onBypass, no queue) alongside kSuccess=200.
     token = parse_netfunnel_response(
-        "NetFunnel.gRtype=5101;NetFunnel.gControl.result='5101:502:key=NF';",
+        "NetFunnel.gRtype=5101;NetFunnel.gControl.result='5101:300:key=NF';",
         action="act_10",
     )
     assert token.raw_type == "5101"
-    assert token.code == "502"
+    assert token.code == "300"
     assert token.key == "NF"
 
 
@@ -127,6 +128,13 @@ def test_netfunnel_parser_requires_exact_result_assignment(body):
         ("NetFunnel.gControl.result='5002:FAIL:key=key-secret';", "FAIL"),
         ("NetFunnel.gControl.result='5002:5101:key=key-secret';", "5101"),
         ("NetFunnel.gControl.result='2002:5101:key=key-secret';", "5101"),
+        # kTsErrorAComplete=502 is a setComplete(5004)-only success; for a chkEnter
+        # (5002/5101) parse it hits the switch default -> onError, so it is NOT a
+        # success here (netfunnel.js:84 code table + _showResultChkEnter default).
+        ("NetFunnel.gControl.result='5002:502:key=key-secret';", "502"),
+        # kContinue=201 means keep-polling (onContinued); this single-shot parser does
+        # not model a polling loop, so 201 is a documented non-success.
+        ("NetFunnel.gControl.result='5002:201:key=key-secret';", "201"),
         ("NetFunnel.gControl.result='NetFunnel.gRtype=5002;5101:key=key-secret';", None),
         ("NetFunnel.gControl.result='invalid:5101:key=key-secret';", None),
     ],

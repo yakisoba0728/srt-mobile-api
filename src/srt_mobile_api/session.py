@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .errors import SrtAuthError, SrtProtocolError
+from .errors import SrtAuthError
 from .http import SrtHttpClient
 from .models import SrtSession
 from .parsers import parse_html_page
@@ -50,7 +50,12 @@ class SrtSessionClient:
                     "auto": "",
                     "login_referer": "",
                     "hmpgPwdCphd": password,
-                    "deviceKey": self.http.config.device_key,
+                    # The login deviceKey is the server-rendered constant "-", not an
+                    # ANDROID_ID. Both wire refs agree: srtgo srt.py:704 (data["deviceKey"]
+                    # = "-") and ref-srtgo_plus.md:112,120-121. The real ANDROID_ID-shaped
+                    # config.device_key belongs only on /main/main.do?deviceId= below
+                    # (SRWebActivity.java:1582-1584), not on this login field.
+                    "deviceKey": "-",
                     "page": "",
                     "customerYn": "",
                     "ciUptYn": "",
@@ -60,10 +65,18 @@ class SrtSessionClient:
                 referer=f"{self.http.config.base_url}/login/login.do",
             )
             user_map = response.get("userMap")
-            if not isinstance(user_map, dict):
-                raise SrtProtocolError("SRT login response missing userMap")
-            if user_map.get("RTNCD") != "Y":
-                raise SrtAuthError(str(user_map.get("MSG") or "SRT login failed"))
+            authenticated = isinstance(user_map, dict) and user_map.get("RTNCD") == "Y"
+            if not authenticated:
+                # On a failed login the app reads the TOP-LEVEL MSG and treats it as an
+                # auth failure (srtgo srt.py:716,718 -> raise SRTLoginError(r.json()["MSG"])
+                # for both non-existent-member and wrong-password cases; MSG is sibling to
+                # userMap, which the failure path never touches). Read top-level MSG first,
+                # fall back to userMap.MSG, and always raise SrtAuthError -- never
+                # SrtProtocolError -- even when userMap is absent.
+                message = response.get("MSG")
+                if not message and isinstance(user_map, dict):
+                    message = user_map.get("MSG")
+                raise SrtAuthError(str(message or "SRT login failed"))
             parse_html_page(
                 self.http.get_text("/main/main.do", params={"deviceId": self.http.config.device_key}),
                 context="main page",

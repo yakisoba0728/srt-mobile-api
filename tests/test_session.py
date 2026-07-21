@@ -9,7 +9,9 @@ def test_login_flow_posts_expected_fields(load_json_fixture):
     captured = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured.append((request.method, request.url.path, request.content.decode()))
+        captured.append(
+            (request.method, request.url.path, request.content.decode(), request.url.query.decode())
+        )
         if request.url.path == "/login/login.do":
             return httpx.Response(200, text="<html>login</html>")
         if request.url.path == "/apb/selectListApb01080_n.do":
@@ -29,6 +31,13 @@ def test_login_flow_posts_expected_fields(load_json_fixture):
     assert "srchDvCd=1" in login_body
     assert "srchDvNm=login-id" in login_body
     assert "hmpgPwdCphd=pw" in login_body
+    # The login deviceKey is the server-rendered constant "-" (srtgo srt.py:704),
+    # never the ANDROID_ID-shaped config.device_key.
+    assert "deviceKey=-" in login_body
+    assert f"deviceKey={SrtConfig().device_key}" not in login_body
+    # config.device_key still carries the ANDROID_ID-shaped value on /main/main.do.
+    main_query = next(query for _m, path, _b, query in captured if path == "/main/main.do")
+    assert f"deviceId={SrtConfig().device_key}" in main_query
 
 
 @pytest.mark.parametrize(
@@ -97,6 +106,23 @@ def test_login_failure_raises_auth_error(load_json_fixture):
         assert "로그인 실패" in str(exc)
     else:
         raise AssertionError("SrtAuthError was not raised")
+
+
+def test_login_failure_reads_top_level_msg_without_user_map(load_json_fixture):
+    # srtgo's failure path reads the TOP-LEVEL MSG (r.json()["MSG"], srt.py:716,718)
+    # and raises an auth error; userMap is absent on a wrong-password attempt. We must
+    # surface that Korean message as SrtAuthError, NOT raise SrtProtocolError.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/login/login.do":
+            return httpx.Response(200, text="<html>login</html>")
+        return httpx.Response(200, json=load_json_fixture("login_failure_toplevel.json"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    with pytest.raises(SrtAuthError) as exc_info:
+        client.login("login-id", "bad")
+    assert "비밀번호 오류입니다." in str(exc_info.value)
+    assert client.session.current is None
+    assert "JSESSIONID" not in client.http.cookies
 
 
 def test_failed_relogin_clears_existing_session_and_cookies(load_json_fixture):
