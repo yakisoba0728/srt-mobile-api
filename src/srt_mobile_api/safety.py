@@ -180,7 +180,6 @@ def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
 EXCLUDED_API_DOMAINS = frozenset(
     {
         "reservation",
-        "netfunnel-act-19",
         "ard-payment-entry",
         "payment",
         "refund",

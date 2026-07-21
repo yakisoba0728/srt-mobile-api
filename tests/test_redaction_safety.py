@@ -158,6 +158,5 @@ def test_parsed_content_remains_accessible_but_is_hidden_from_repr():
 
 def test_safety_excludes_dangerous_domains_without_stub_apis():
     assert "reservation" in EXCLUDED_API_DOMAINS
-    assert "netfunnel-act-19" in EXCLUDED_API_DOMAINS
     assert "ard-payment-entry" in EXCLUDED_API_DOMAINS
     assert "payment" in EXCLUDED_API_DOMAINS

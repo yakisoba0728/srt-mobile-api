@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 DEFAULT_UA = (
     "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Version/4.0 Chrome/126.0.0.0 Mobile Safari/537.36 "
+    "(KHTML, like Gecko) Version/4.0 Chrome/126.0.0.0 Mobile Safari/537.36"
     "SRT-APP-Android V.2.0.41"
 )
 APP_ORIGIN = "https://app.srail.or.kr"
