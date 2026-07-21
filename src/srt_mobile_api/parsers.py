@@ -860,6 +860,7 @@ def parse_train_search_response(
                 train_no=train_no,
                 train_group_code=_optional_row_string(row, "trnGpCd"),
                 service_class_code=_optional_row_string(row, "stlbTrnClsfCd"),
+                train_class_code=_optional_row_string(row, "trnClsfCd"),
                 run_date=_optional_row_string(row, "runDt"),
                 departure_date=_optional_row_string(row, "dptDt"),
                 departure_time=_optional_row_string(row, "dptTm"),

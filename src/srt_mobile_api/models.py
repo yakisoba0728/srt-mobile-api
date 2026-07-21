@@ -107,6 +107,9 @@ class TrainSummary:
     discount_rate: str | None = None
     received_fare: str | None = None
     train_composition_codes: tuple[str, ...] = ()
+    # 열차종별코드 (trnClsfCd) from the dsOutput1 search row — the app's trnSort
+    # value for timetable/fare; distinct from service_class_code (stlbTrnClsfCd).
+    train_class_code: str | None = None
 
 
 @dataclass(frozen=True)

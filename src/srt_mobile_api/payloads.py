@@ -70,15 +70,18 @@ def date_selector_payload(date: str, hour: str = "06") -> dict[str, str]:
 
 
 def passenger_selector_payload(passengers: PassengerCounts) -> dict[str, str]:
+    # passengerN is keyed by SRT passenger type code N (commCode.js psgTpCd:
+    # 1=adult, 2=disability_1_to_3, 3=disability_4_to_6, 4=senior, 5=child).
+    # See ara0101v.js:213-238 (request) and :795-804 (callback). There is no
+    # passenger6 slot; infant is not a picker type.
     return {
         "reqCode": "6",
         "isOrg": "2",
         "passenger1": str(passengers.adult),
-        "passenger2": str(passengers.child),
-        "passenger3": str(passengers.senior),
-        "passenger4": str(passengers.disability_1_to_3),
-        "passenger5": str(passengers.disability_4_to_6),
-        "passenger6": str(passengers.infant),
+        "passenger2": str(passengers.disability_1_to_3),
+        "passenger3": str(passengers.disability_4_to_6),
+        "passenger4": str(passengers.senior),
+        "passenger5": str(passengers.child),
         "totalPessnger": str(passengers.total),
     }
 
@@ -262,9 +265,11 @@ def _required_digits(
     return value
 
 
-def seat_page_payload(train: TrainSummary) -> dict[str, str]:
+def seat_page_payload(train: TrainSummary, cabin_class: str = "1") -> dict[str, str]:
     if train.train_group_code != "300":
         raise ValueError("train_group_code must be 300 for an SRT seat page")
+    if cabin_class not in {"1", "2"}:
+        raise ValueError("cabin_class must be '1' (일반실) or '2' (특실)")
     train_no = _required_digits(train.train_no, "train_no", max_length=5).zfill(5)
     return {
         "reqCode": "9",
@@ -283,7 +288,7 @@ def seat_page_payload(train: TrainSummary) -> dict[str, str]:
             "arrival_station_code",
             length=4,
         ),
-        "psrmClCd": "1",
+        "psrmClCd": cabin_class,
         "seatAttCd": _required_digits(train.seat_attr_code, "seat_attr_code", length=3),
         "dptStnRunOrdr": _required_digits(
             train.departure_run_order,
@@ -298,7 +303,9 @@ def seat_page_payload(train: TrainSummary) -> dict[str, str]:
 
 
 def _train_sort(train: TrainSummary) -> str:
-    return "SRT" if train.service_class_code == "17" else str(train.service_class_code or "")
+    # The app sends trnSort = item.trnClsfCd (열차종별코드) from the search row,
+    # distinct from stlbTrnClsfCd/service_class_code (ara1001l.js:1184 & :1217).
+    return str(train.train_class_code or "")
 
 
 def _station_course(train: TrainSummary) -> str:
@@ -333,5 +340,12 @@ def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, 
         "runDt2": "",
         "trnNo2": "",
     }
-    payload.update(_passenger_fields(passengers))
+    # Ara13010 carries counts under passenger1..passenger5 (= psgInfoPerPrnb1..5),
+    # keyed by the same canonical type codes as the selector (ara1001l.js:1219-1223).
+    # It does NOT take psgTpCd*/psgInfoPerPrnb*/infantCnt.
+    payload["passenger1"] = str(passengers.adult)
+    payload["passenger2"] = str(passengers.disability_1_to_3)
+    payload["passenger3"] = str(passengers.disability_4_to_6)
+    payload["passenger4"] = str(passengers.senior)
+    payload["passenger5"] = str(passengers.child)
     return payload

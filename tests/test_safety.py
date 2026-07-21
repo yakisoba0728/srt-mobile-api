@@ -186,6 +186,14 @@ def test_exact_seat_page_form_is_allowed():
     assert_read_only_request(_seat_request(), SrtConfig())
 
 
+def test_seat_page_first_class_cabin_is_allowed():
+    # psrmClCd is now dynamic-but-validated ({'1','2'}); 특실 (2) must pass.
+    assert_read_only_request(
+        _seat_request(body=urlencode({**_seat_form(), "psrmClCd": "2"})),
+        SrtConfig(),
+    )
+
+
 def test_seat_page_rejects_bare_query_delimiter():
     with pytest.raises(SrtProtocolError):
         assert_read_only_request(_seat_request(query="?"), SrtConfig())
@@ -211,7 +219,9 @@ def test_seat_page_rejects_bare_query_delimiter():
         ),
         _seat_request(body=urlencode({**_seat_form(), "seatNo1_1": ""})),
         _seat_request(body=urlencode({**_seat_form(), "choiceSeatCount": "2"})),
-        _seat_request(body=urlencode({**_seat_form(), "psrmClCd": "2"})),
+        _seat_request(body=urlencode({**_seat_form(), "psrmClCd": "3"})),
+        _seat_request(body=urlencode({**_seat_form(), "psrmClCd": "0"})),
+        _seat_request(body=urlencode({**_seat_form(), "psrmClCd": ""})),
         _seat_request(body=urlencode({**_seat_form(), "trnGpCd": "900"})),
         _seat_request(body=urlencode({**_seat_form(), "trnNo": "303"})),
         _seat_request(content_type="application/json"),

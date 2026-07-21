@@ -132,6 +132,7 @@ def test_seat_page_method_type_and_export_are_stable():
     from srt_mobile_api import SeatSelectionPage
 
     signature = inspect.signature(SrtClient.get_seat_page)
-    assert list(signature.parameters) == ["self", "train"]
+    assert list(signature.parameters) == ["self", "train", "cabin_class"]
+    assert signature.parameters["cabin_class"].default == "1"
     assert get_type_hints(SrtClient.get_seat_page)["return"] is SeatSelectionPage
     assert srt_mobile_api.SeatSelectionPage is SeatSelectionPage

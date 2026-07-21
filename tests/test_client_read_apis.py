@@ -189,11 +189,10 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
                 "reqCode": "6",
                 "isOrg": "2",
                 "passenger1": "1",
-                "passenger2": "1",
+                "passenger2": "0",
                 "passenger3": "0",
                 "passenger4": "0",
-                "passenger5": "0",
-                "passenger6": "0",
+                "passenger5": "1",
                 "totalPessnger": "2",
             },
         ),
@@ -1024,5 +1023,9 @@ def test_timetable_and_fare(load_text_fixture):
     assert isinstance(fare, FarePage)
     assert "12,340원" in fare.text
     assert captured["/ara/selectListAra12009_n.do"]["stnCourseNm"] == ["수서-부산"]
-    assert captured["/ara/selectListAra13010_n.do"]["psgTpCd2"] == ["5"]
-    assert captured["/ara/selectListAra13010_n.do"]["dptRsStnCd2"] == [""]
+    fare_form = captured["/ara/selectListAra13010_n.do"]
+    # adult=1 -> passenger1, child=1 -> passenger5 (canonical type codes).
+    assert fare_form["passenger1"] == ["1"]
+    assert fare_form["passenger5"] == ["1"]
+    assert "psgTpCd2" not in fare_form
+    assert fare_form["dptRsStnCd2"] == [""]

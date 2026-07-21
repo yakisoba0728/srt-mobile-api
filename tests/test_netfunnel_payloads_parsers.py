@@ -293,25 +293,29 @@ def test_date_selector_payload_is_exact():
     }
 
 
-def test_passenger_selector_payload_keeps_six_slots_and_server_typo():
+def test_passenger_selector_payload_uses_canonical_type_codes_and_server_typo():
+    # Distinct counts per type so the code->slot mapping is unambiguous.
+    # Canonical (commCode.js psgTpCd / ara0101v.js:213-238,795-804):
+    #   passenger1=adult(1), passenger2=disability_1_to_3(2),
+    #   passenger3=disability_4_to_6(3), passenger4=senior(4), passenger5=child(5).
+    # No passenger6 slot (infant is not a picker type).
     passengers = PassengerCounts(
         adult=1,
         child=2,
         senior=3,
         disability_1_to_3=4,
         disability_4_to_6=5,
-        infant=6,
+        infant=0,
     )
     assert passenger_selector_payload(passengers) == {
         "reqCode": "6",
         "isOrg": "2",
         "passenger1": "1",
-        "passenger2": "2",
-        "passenger3": "3",
-        "passenger4": "4",
-        "passenger5": "5",
-        "passenger6": "6",
-        "totalPessnger": "21",
+        "passenger2": "4",
+        "passenger3": "5",
+        "passenger4": "3",
+        "passenger5": "2",
+        "totalPessnger": "15",
     }
 
 
@@ -444,6 +448,39 @@ def test_search_parser_preserves_seat_page_fields(load_json_fixture):
     assert train.seat_attr_code == "015"
 
 
+def test_search_parser_captures_train_class_code_when_present():
+    # trnClsfCd (열차종별코드) is read from the dsOutput1 row by the app
+    # (ara1001l.js:1184,1217); distinct from stlbTrnClsfCd/service_class_code.
+    def _response(row: dict[str, str]) -> dict:
+        return {
+            "ErrorCode": "0",
+            "ErrorMsg": "",
+            "outDataSets": {
+                "dsOutput0": [
+                    {
+                        "msgCd": "IRG000000",
+                        "strResult": "SUCC",
+                        "msgTxt": "",
+                        "qryCnqeCnt": 1,
+                        "fllwPgExt": "N",
+                    }
+                ],
+                "dsOutput1": [row],
+            },
+        }
+
+    with_code = parse_train_search_response(
+        _response({"trnNo": "303", "stlbTrnClsfCd": "17", "trnClsfCd": "07"})
+    ).trains[0]
+    assert with_code.service_class_code == "17"
+    assert with_code.train_class_code == "07"
+
+    without_code = parse_train_search_response(
+        _response({"trnNo": "303", "stlbTrnClsfCd": "17"})
+    ).trains[0]
+    assert without_code.train_class_code is None
+
+
 def test_seat_page_payload_is_the_exact_fixed_contract():
     assert seat_page_payload(_complete_seat_page_train()) == {
         "reqCode": "9",
@@ -460,6 +497,20 @@ def test_seat_page_payload_is_the_exact_fixed_contract():
         "arvStnRunOrdr": "000010",
         "choiceSeatCount": "1",
     }
+
+
+def test_seat_page_payload_first_class_sends_psrmClCd_2():
+    payload = seat_page_payload(_complete_seat_page_train(), "2")
+    assert payload["psrmClCd"] == "2"
+    # Everything else stays the fixed read-only contract.
+    assert payload["trnGpCd"] == "300"
+    assert payload["choiceSeatCount"] == "1"
+
+
+@pytest.mark.parametrize("cabin_class", ["0", "3", "", "12", "١"])
+def test_seat_page_payload_rejects_unknown_cabin_class(cabin_class):
+    with pytest.raises(ValueError, match="cabin_class"):
+        seat_page_payload(_complete_seat_page_train(), cabin_class)
 
 
 @pytest.mark.parametrize(
@@ -599,10 +650,13 @@ def test_detail_parsers_reject_pages_without_required_structure():
         parse_fare_page("<html><body>no fare</body></html>")
 
 
-def test_fare_payload_contains_all_six_passenger_slots():
+def test_fare_payload_uses_canonical_passenger_slots_and_row_train_class():
+    # Distinct counts so passengerN<->type mapping is unambiguous. trnSort must be
+    # the search row's trnClsfCd (열차종별코드), NOT literal 'SRT' or stlbTrnClsfCd.
     train = TrainSummary(
         train_no="303",
         service_class_code="17",
+        train_class_code="07",
         run_date="20260710",
         departure_station_code="0551",
         arrival_station_code="0020",
@@ -611,23 +665,34 @@ def test_fare_payload_contains_all_six_passenger_slots():
     )
     passengers = PassengerCounts(
         adult=1,
-        child=1,
-        senior=1,
-        disability_1_to_3=1,
-        disability_4_to_6=1,
-        infant=1,
+        child=2,
+        senior=3,
+        disability_1_to_3=4,
+        disability_4_to_6=5,
+        infant=6,
     )
     timetable = timetable_payload(train)
     payload = fare_payload(train, passengers)
     assert timetable == {
         "stnCourseNm": "수서-부산",
-        "trnSort": "SRT",
+        "trnSort": "07",
         "runDt": "20260710",
         "trnNo": "00303",
     }
-    assert [payload[f"psgTpCd{index}"] for index in range(1, 7)] == ["1", "5", "4", "2", "3", "6"]
-    assert [payload[f"psgInfoPerPrnb{index}"] for index in range(1, 7)] == ["1"] * 6
-    assert payload["psgTpCd6"] == "6"
+    assert payload["trnSort"] == "07"
+    # passenger1=adult, passenger2=disability_1_to_3, passenger3=disability_4_to_6,
+    # passenger4=senior, passenger5=child (ara1001l.js:1219-1223).
+    assert [payload[f"passenger{index}"] for index in range(1, 6)] == [
+        "1",
+        "4",
+        "5",
+        "3",
+        "2",
+    ]
+    # Ara13010 does not carry psgTpCd*/psgInfoPerPrnb*/infantCnt.
+    assert not any(key.startswith("psgTpCd") for key in payload)
+    assert not any(key.startswith("psgInfoPerPrnb") for key in payload)
+    assert "infantCnt" not in payload
     assert payload["trnNo"] == "00303"
     assert payload["stnCourseNm"] == "수서-부산"
     assert payload["dptRsStnCd2"] == ""

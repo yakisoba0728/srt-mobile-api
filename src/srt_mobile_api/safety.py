@@ -37,7 +37,6 @@ SEAT_PAGE_FIELDS = frozenset(
 SEAT_PAGE_FIXED_VALUES = {
     "reqCode": "9",
     "trnGpCd": "300",
-    "psrmClCd": "1",
     "choiceSeatCount": "1",
 }
 SEAT_PAGE_VALUE_PATTERNS = {
@@ -47,6 +46,10 @@ SEAT_PAGE_VALUE_PATTERNS = {
     "dptTm": r"[0-9]{6}",
     "dptRsStnCd": r"[0-9]{4}",
     "arvRsStnCd": r"[0-9]{4}",
+    # psrmClCd is the cabin-class code sent dynamically by the app
+    # (arc02012: psrmClCd = lfn_getRsv("psrmClCd1"); 1=일반실, 2=특실).
+    # Validated as a member of {1, 2} rather than pinned to a fixed value.
+    "psrmClCd": r"[12]",
     "seatAttCd": r"[0-9]{3}",
     "dptStnRunOrdr": r"[0-9]+",
     "arvStnRunOrdr": r"[0-9]+",

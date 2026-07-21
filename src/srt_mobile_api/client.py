@@ -384,11 +384,15 @@ class SrtClient:
             max_pages=max_pages,
         )
 
-    def get_seat_page(self, train: TrainSummary) -> SeatSelectionPage:
+    def get_seat_page(
+        self,
+        train: TrainSummary,
+        cabin_class: str = "1",
+    ) -> SeatSelectionPage:
         with self._session_guard():
             raw = self.http.post_html_form(
                 "/arc/selectListArc02012_n.do",
-                seat_page_payload(train),
+                seat_page_payload(train, cabin_class),
                 referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
             )
             return parse_seat_selection_page(raw)
