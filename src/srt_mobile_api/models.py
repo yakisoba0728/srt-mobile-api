@@ -10,12 +10,16 @@ class SrtSession:
 
 @dataclass(frozen=True)
 class PassengerCounts:
+    # SRT has exactly five passenger types (psgTpCd 1..5, commCode.js:55-88); there is
+    # NO infant type (`infantCnt` appears nowhere in the app). Every head-count field
+    # (totPrnb/totalPessnger/psgNum) must equal sum(psgInfoPerPrnb1..5), the invariant
+    # getPsgTotCnt() guarantees (ara0101v.js:35), so no field outside the five types may
+    # feed `total`.
     adult: int = 1
     child: int = 0
     senior: int = 0
     disability_1_to_3: int = 0
     disability_4_to_6: int = 0
-    infant: int = 0
 
     def __post_init__(self) -> None:
         values = (
@@ -24,7 +28,6 @@ class PassengerCounts:
             self.senior,
             self.disability_1_to_3,
             self.disability_4_to_6,
-            self.infant,
         )
         if any(type(value) is not int or value < 0 for value in values):
             raise ValueError("passenger counts must be non-negative integers")
@@ -39,7 +42,6 @@ class PassengerCounts:
             + self.senior
             + self.disability_1_to_3
             + self.disability_4_to_6
-            + self.infant
         )
 
 

@@ -1,6 +1,7 @@
 import re
 
 from .models import PassengerCounts, TrainSearchQuery, TrainSummary
+from .stations import station_name_by_code
 
 
 TRAIN_GROUP_OPTIONS = {
@@ -345,8 +346,20 @@ def _train_sort(train: TrainSummary) -> str:
 
 
 def _station_course(train: TrainSummary) -> str:
-    names = [train.departure_station_name or "", train.arrival_station_name or ""]
-    return "-".join(name for name in names if name)
+    # The app always builds stnCourseNm = getStnNameByCd(dptRsStnCd) + "-" +
+    # getStnNameByCd(arvRsStnCd) (ara1001l.js:1176-1185 timetable, :1203-1218 fare): a
+    # dash-joined pair of station NAMES resolved from the codes, so the "-" and both
+    # segments are always present. Prefer a name already carried on the search
+    # row/context; otherwise resolve it from the code via the static getStnNameByCd table
+    # (stations.py), which yields "" for an unknown code — matching the app — rather than
+    # dropping the segment or its separator.
+    departure = train.departure_station_name or station_name_by_code(
+        train.departure_station_code
+    )
+    arrival = train.arrival_station_name or station_name_by_code(
+        train.arrival_station_code
+    )
+    return f"{departure}-{arrival}"
 
 
 def timetable_payload(train: TrainSummary) -> dict[str, str]:

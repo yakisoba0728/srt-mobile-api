@@ -406,6 +406,7 @@ class SrtClient:
                 "/ara/selectListAra12009_n.do",
                 timetable_payload(train),
                 accept="text/html, */*; q=0.01",
+                referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
             )["html"]
             return parse_timetable_page(raw)
 
@@ -419,5 +420,6 @@ class SrtClient:
                 "/ara/selectListAra13010_n.do",
                 fare_payload(train, passengers or PassengerCounts()),
                 accept="text/html, */*; q=0.01",
+                referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
             )["html"]
             return parse_fare_page(raw)

@@ -193,6 +193,30 @@ def test_search_page_psg_gridcnt_counts_distinct_types_not_head_count():
     assert mixed_payload["psgGridcnt"] == "3"
 
 
+def test_search_page_tot_prnb_equals_sum_of_psg_slots():
+    # B2: the app guarantees totPrnb == sum(psgInfoPerPrnb1..5) via getPsgTotCnt()
+    # (ara0101v.js:35). With the (protocol-less) infant field removed, every head-count
+    # field must equal the sum of the five emitted psgInfoPerPrnb slots.
+    query = TrainSearchQuery(
+        "0551",
+        "0020",
+        "20260710",
+        passengers=PassengerCounts(
+            adult=1, child=2, senior=3, disability_1_to_3=4, disability_4_to_6=5
+        ),
+        train_group_code="300",
+    )
+    payload = search_page_payload(query, "NF")
+    slot_sum = sum(int(payload[f"psgInfoPerPrnb{i}"]) for i in range(1, 6))
+    assert int(payload["totPrnb"]) == slot_sum == 15
+    assert payload["totPrnbNm"] == "15명"
+
+    ajax = search_ajax_payload(query, "NF", hydrated_fields={})
+    assert int(ajax["psgNum"]) == sum(
+        int(ajax[f"psgInfoPerPrnb{i}"]) for i in range(1, 6)
+    )
+
+
 def test_search_continuation_payload_preserves_hydrated_state_and_changes_cursor_only():
     base = {
         "dptTm": "060000",
@@ -328,7 +352,6 @@ def test_passenger_selector_payload_uses_canonical_type_codes_and_server_typo():
         senior=3,
         disability_1_to_3=4,
         disability_4_to_6=5,
-        infant=0,
     )
     assert passenger_selector_payload(passengers) == {
         "reqCode": "6",
@@ -413,7 +436,7 @@ def test_passenger_fields_compact_nonzero_types_and_preserve_nonempty_hydrated_c
         "0551",
         "0020",
         "20260710",
-        passengers=PassengerCounts(adult=0, child=1, senior=2, infant=1),
+        passengers=PassengerCounts(adult=0, child=1, senior=2),
     )
     payload = search_ajax_payload(
         query,
@@ -456,6 +479,44 @@ def test_parse_train_search_response_normalizes_list_and_object_result(load_json
     assert result.trains[0].arrival_station_name == "Synthetic Arrival"
     assert group.trains[0].train_no == "301"
     assert empty.trains == []
+
+
+def _search_response(msg_cd: str, str_result: str) -> dict:
+    return {
+        "ErrorCode": "0",
+        "ErrorMsg": "",
+        "outDataSets": {
+            "dsOutput0": [
+                {
+                    "msgCd": msg_cd,
+                    "strResult": str_result,
+                    "msgTxt": "",
+                    "qryCnqeCnt": 1,
+                    "fllwPgExt": "N",
+                }
+            ],
+            "dsOutput1": [{"trnNo": "303", "stlbTrnClsfCd": "17"}],
+        },
+    }
+
+
+def test_search_success_gated_on_str_result_not_exact_msg_cd():
+    # B1: the app classifies purely on dsOutput0.strResult and never inspects msgCd
+    # (ara1001l.js:206; srtgo srt.py:391-401). A non-FAIL response carrying any other
+    # success/warning msgCd must still parse and keep its dsOutput1 rows — requiring the
+    # exact "IRG000000" would discard them.
+    result = parse_train_search_response(_search_response("IRG099999", "SUCC"))
+    assert result.trains[0].train_no == "303"
+    assert result.metadata is not None
+    assert result.metadata.message_code == "IRG099999"  # kept as informational metadata
+
+    # strResult == "FAIL" still fails, regardless of a success-looking msgCd.
+    with pytest.raises(SrtAppError):
+        parse_train_search_response(_search_response("IRG000000", "FAIL"))
+
+    # The NET000001 NetFunnel-retry special-case is preserved.
+    with pytest.raises(SrtNetFunnelError):
+        parse_train_search_response(_search_response("NET000001", "FAIL"))
 
 
 def _complete_seat_page_train() -> TrainSummary:
@@ -719,7 +780,6 @@ def test_fare_payload_uses_canonical_passenger_slots_and_row_train_class():
         senior=3,
         disability_1_to_3=4,
         disability_4_to_6=5,
-        infant=6,
     )
     timetable = timetable_payload(train)
     payload = fare_payload(train, passengers)

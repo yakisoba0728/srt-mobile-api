@@ -839,7 +839,11 @@ def parse_train_search_response(
         raise SrtProtocolError("SRT search metadata msgTxt must be a string")
     if code == "NET000001":
         raise SrtNetFunnelError(code, message or "NetFunnel key required", raw=data)
-    if code != "IRG000000" or status != "SUCC":
+    # The app classifies a search purely on dsOutput0.strResult (== "FAIL" fails, anything
+    # else succeeds) and never inspects msgCd (ara1001l.js:206); srtgo agrees (srt.py:391-401).
+    # msgCd is kept as informational metadata (and drives the NET000001 NetFunnel-retry signal
+    # above) but is NOT required to equal "IRG000000".
+    if status == "FAIL":
         raise SrtAppError(code or None, message or status or None, raw=data)
     metadata = _parse_search_metadata(result)
     rows = out.get("dsOutput1")

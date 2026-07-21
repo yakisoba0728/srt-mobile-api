@@ -986,9 +986,11 @@ def test_get_seat_page_rejects_incomplete_train_before_transport():
 
 def test_timetable_and_fare(load_text_fixture):
     captured: dict[str, dict[str, list[str]]] = {}
+    headers: dict[str, httpx.Headers] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured[request.url.path] = parse_qs(request.content.decode(), keep_blank_values=True)
+        headers[request.url.path] = request.headers
         if request.url.path == "/ara/selectListAra12009_n.do":
             return httpx.Response(200, text=load_text_fixture("timetable.html"))
         if request.url.path == "/ara/selectListAra13010_n.do":
@@ -1025,3 +1027,48 @@ def test_timetable_and_fare(load_text_fixture):
     assert fare_form["passenger5"] == ["0"]
     assert "psgTpCd2" not in fare_form
     assert fare_form["dptRsStnCd2"] == [""]
+    # B4: both requests originate from the search-results page, so the app sends
+    # /ara/selectListAra10007_n.do as Referer (ara1001l.js:1188-1194 & :1228-1234),
+    # mirroring get_seat_page / get_mutual_verification.
+    assert (
+        headers["/ara/selectListAra12009_n.do"]["referer"]
+        == "https://app.srail.or.kr/ara/selectListAra10007_n.do"
+    )
+    assert (
+        headers["/ara/selectListAra13010_n.do"]["referer"]
+        == "https://app.srail.or.kr/ara/selectListAra10007_n.do"
+    )
+
+
+def test_timetable_and_fare_stn_course_resolved_from_codes_only(load_text_fixture):
+    # B3: on a code-only search the TrainSummary carries no station names; the app resolves
+    # stnCourseNm from the codes via getStnNameByCd (ara1001l.js:1176-1185 / :1203-1218),
+    # always producing "name-name" with the dash. Our builder must do the same rather than
+    # emitting an empty / dash-less value.
+    captured: dict[str, dict[str, list[str]]] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured[request.url.path] = parse_qs(request.content.decode(), keep_blank_values=True)
+        if request.url.path == "/ara/selectListAra12009_n.do":
+            return httpx.Response(200, text=load_text_fixture("timetable.html"))
+        if request.url.path == "/ara/selectListAra13010_n.do":
+            return httpx.Response(200, text=load_text_fixture("fare.html"))
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    train = TrainSummary(
+        train_no="303",
+        train_group_code="300",
+        service_class_code="17",
+        run_date="20260710",
+        departure_date="20260710",
+        departure_time="060000",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+        departure_station_name=None,
+        arrival_station_name=None,
+    )
+    client.get_timetable(train)
+    client.get_fare(train, PassengerCounts(adult=1))
+    assert captured["/ara/selectListAra12009_n.do"]["stnCourseNm"] == ["수서-부산"]
+    assert captured["/ara/selectListAra13010_n.do"]["stnCourseNm"] == ["수서-부산"]

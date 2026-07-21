@@ -125,6 +125,18 @@ def test_passenger_counts_reject_empty_or_negative_totals():
         PassengerCounts(adult=-1)
 
 
+def test_passenger_counts_has_no_infant_type():
+    # B2: SRT has exactly five passenger types (psgTpCd 1..5); there is no infant type
+    # (`infantCnt` appears nowhere in the app). `.total` must equal the sum of the five
+    # types so totPrnb == sum(psgInfoPerPrnb1..5) holds everywhere.
+    with pytest.raises(TypeError):
+        PassengerCounts(adult=1, infant=1)  # type: ignore[call-arg]
+    counts = PassengerCounts(
+        adult=1, child=2, senior=3, disability_1_to_3=4, disability_4_to_6=5
+    )
+    assert counts.total == 15
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -191,7 +203,6 @@ def test_preexisting_dataclass_field_order_matches_baseline():
             "senior",
             "disability_1_to_3",
             "disability_4_to_6",
-            "infant",
         ],
         NetFunnelToken: ["action", "key", "raw_type", "code", "params"],
         TrainSearchQuery: [

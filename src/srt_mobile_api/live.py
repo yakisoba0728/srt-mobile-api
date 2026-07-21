@@ -162,7 +162,6 @@ def run_live_smoke_from_env() -> dict[str, Any]:
         senior=int(os.environ.get("SRT_SENIOR_COUNT", "0")),
         disability_1_to_3=int(os.environ.get("SRT_DISABILITY_1_TO_3_COUNT", "0")),
         disability_4_to_6=int(os.environ.get("SRT_DISABILITY_4_TO_6_COUNT", "0")),
-        infant=int(os.environ.get("SRT_INFANT_COUNT", "0")),
     )
     query = TrainSearchQuery(
         departure_station_code=os.environ.get("SRT_DEPARTURE_STATION_CODE", "0551"),
