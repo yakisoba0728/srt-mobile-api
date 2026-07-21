@@ -64,7 +64,7 @@ def _seat_request(
         ("POST", "/ara/selectListAra13010_n.do"),
         ("POST", "/common/ARA/ARA0501P/view.do"),
         ("POST", "/common/ARA/ARA0502P/view.do"),
-        ("POST", "/common/ARA/ARA0403P/view.do"),
+        ("POST", "/common/ARA/ARA0401P/view.do"),
         ("POST", "/common/ARA/ARA0901P/view.do"),
         ("POST", "/common/ARA/ARA0701P/view.do"),
         ("POST", "/common/ARA/ARA0201V/view.do"),
@@ -80,14 +80,14 @@ def test_only_exact_act10_netfunnel_url_is_allowed():
     allowed = httpx.URL(
         config.netfunnel_url
         + "/ts.wseq?opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B"
-        + "&sid=service_1&aid=act_10&js=true&1712345678901"
+        + "&sid=service_1&aid=act_10&js=yes&1712345678901"
     )
     assert_read_only_request(_request("GET", allowed), config)
     rejected_queries = (
-        "opcode=5101&sid=service_1&aid=act_19&js=true",
-        "opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B&sid=service_1&aid=act_10&js=true",
-        "opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B&sid=service_1&aid=act_10&js=true&1712345678901&extra=1",
-        "opcode=5101&opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B&sid=service_1&aid=act_10&js=true&1712345678901",
+        "opcode=5101&sid=service_1&aid=act_19&js=yes",
+        "opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B&sid=service_1&aid=act_10&js=yes",
+        "opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B&sid=service_1&aid=act_10&js=yes&1712345678901&extra=1",
+        "opcode=5101&opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B&sid=service_1&aid=act_10&js=yes&1712345678901",
     )
     for query in rejected_queries:
         with pytest.raises(SrtProtocolError):
@@ -134,7 +134,7 @@ def test_named_adjacent_and_external_seat_routes_are_rejected(method, url):
     ("method", "path"),
     [
         ("GET", "/common/ARA/ARA0501P/view.do"),
-        ("POST", "/common/ARA/ARA0401P/view.do"),
+        ("POST", "/common/ARA/ARA0403P/view.do"),
         ("POST", "/common/ARA/ARA0501P/view.do/extra"),
     ],
 )

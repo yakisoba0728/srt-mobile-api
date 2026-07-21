@@ -69,7 +69,7 @@ READ_ONLY_ROUTES = frozenset(
         ReadOnlyRoute("POST", "app", "/ara/selectListAra13010_n.do"),
         ReadOnlyRoute("POST", "app", "/common/ARA/ARA0501P/view.do"),
         ReadOnlyRoute("POST", "app", "/common/ARA/ARA0502P/view.do"),
-        ReadOnlyRoute("POST", "app", "/common/ARA/ARA0403P/view.do"),
+        ReadOnlyRoute("POST", "app", "/common/ARA/ARA0401P/view.do"),
         ReadOnlyRoute("POST", "app", "/common/ARA/ARA0901P/view.do"),
         ReadOnlyRoute("POST", "app", "/common/ARA/ARA0701P/view.do"),
         ReadOnlyRoute("POST", "app", "/common/ARA/ARA0201V/view.do"),
@@ -161,7 +161,7 @@ def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
         "prefix": "NetFunnel.gRtype=5101;",
         "sid": "service_1",
         "aid": "act_10",
-        "js": "true",
+        "js": "yes",
     }
     if (
         any(params.get(name) != value for name, value in required.items())

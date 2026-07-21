@@ -33,17 +33,30 @@ from srt_mobile_api.payloads import (
 def test_parse_netfunnel_response_extracts_key(load_text_fixture):
     token = parse_netfunnel_response(load_text_fixture("netfunnel_act10.js"), action="act_10")
     assert token.action == "act_10"
-    assert token.code == "5101"
+    assert token.raw_type == "5101"
+    assert token.code == "200"
     assert token.key == "ABC123"
 
 
 def test_parse_netfunnel_response_accepts_plan_evidenced_three_part_success():
     token = parse_netfunnel_response(
-        "NetFunnel.gControl.result='5101:5101:key=NF';",
+        "NetFunnel.gControl.result='5101:200:key=NF';",
         action="act_10",
     )
     assert token.raw_type == "5101"
-    assert token.code == "5101"
+    assert token.code == "200"
+    assert token.key == "NF"
+
+
+def test_parse_netfunnel_response_tolerates_echoed_grtype_prefix_and_status_success():
+    # The real app response leads with the echoed sent opcode
+    # (NetFunnel.gRtype=5101;) and reports success via the 3-digit status code.
+    token = parse_netfunnel_response(
+        "NetFunnel.gRtype=5101;NetFunnel.gControl.result='5101:502:key=NF';",
+        action="act_10",
+    )
+    assert token.raw_type == "5101"
+    assert token.code == "502"
     assert token.key == "NF"
 
 
@@ -61,7 +74,7 @@ def test_parse_netfunnel_response_accepts_evidenced_5002_wrapper(load_text_fixtu
 
 
 def test_parse_netfunnel_response_requires_key():
-    body = "NetFunnel.gControl.result='5101:5101:opcode=5002&nwait=0&ip=127.0.0.1';"
+    body = "NetFunnel.gControl.result='5101:200:opcode=5002&nwait=0&ip=127.0.0.1';"
 
     with pytest.raises(SrtNetFunnelError, match="key"):
         parse_netfunnel_response(body, action="act_10")
@@ -89,7 +102,7 @@ def test_missing_netfunnel_token_is_classified_with_fields():
         "NetFunnel.gControl.resultText='5101:5101:key=key-secret';",
         "var before=1; NetFunnel.gControl.result='5101:5101:key=key-secret';",
         "NetFunnel.gControl.result='5101:5101:key=key-secret'; trailing();",
-        "NetFunnel.gRtype=4000;NetFunnel.gControl.result='5002:200:key=key-secret';",
+        "NetFunnel.gRtype=5101;NetFunnel.gControl.result='5002:200:key=key-secret'; trailing();",
         "NetFunnel.gControl.result='5002:200:key=key-secret'; Other._showResult();",
         "NetFunnel.gControl.result='5002:200:key=key-secret'; "
         "NetFunnel.gControl._showResult(); trailing();",
@@ -113,7 +126,6 @@ def test_netfunnel_parser_requires_exact_result_assignment(body):
         ("NetFunnel.gControl.result='5101:FAIL:key=key-secret';", "FAIL"),
         ("NetFunnel.gControl.result='5002:FAIL:key=key-secret';", "FAIL"),
         ("NetFunnel.gControl.result='5002:5101:key=key-secret';", "5101"),
-        ("NetFunnel.gControl.result='5101:200:key=key-secret';", "200"),
         ("NetFunnel.gControl.result='2002:5101:key=key-secret';", "5101"),
         ("NetFunnel.gControl.result='NetFunnel.gRtype=5002;5101:key=key-secret';", None),
         ("NetFunnel.gControl.result='invalid:5101:key=key-secret';", None),

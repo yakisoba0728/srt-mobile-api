@@ -178,7 +178,7 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
             },
         ),
         (
-            "/common/ARA/ARA0403P/view.do",
+            "/common/ARA/ARA0401P/view.do",
             "selector_date.html",
             {"reqCode": "3", "selectDay": "", "selectDt": "20260714", "selectTime": "06"},
         ),
@@ -435,7 +435,7 @@ def test_iter_train_search_pages_reuses_personal_hydration_key_and_cursor(load_t
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         return httpx.Response(200, json=next(responses))
@@ -478,7 +478,7 @@ def test_iter_train_search_pages_stops_after_first_n_page(load_text_fixture):
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         return httpx.Response(200, json=_paginated_search_response(["060000"], "N"))
@@ -502,7 +502,7 @@ def test_iter_train_search_pages_yields_empty_continuation_once_then_stops(load_
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         return httpx.Response(200, json=next(responses))
@@ -529,7 +529,7 @@ def test_iter_snapshots_empty_state_and_cursor_before_yield(load_text_fixture):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         posted_cursors.append(
@@ -562,7 +562,7 @@ def test_iter_group_train_search_pages_keeps_group_route_and_state(load_text_fix
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         return httpx.Response(200, json=next(responses))
@@ -614,7 +614,7 @@ def test_iter_first_page_net000001_repeats_full_flow_once(
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
             key = "FIRST" if sum(call.url.path == "/ts.wseq" for call in calls) == 1 else "SECOND"
-            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:5101:key={key}';")
+            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:200:key={key}';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         post_count += 1
@@ -647,7 +647,7 @@ def test_iter_continuation_net000001_refreshes_only_failing_cursor_once(
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
             key = "FIRST" if sum(call.url.path == "/ts.wseq" for call in calls) == 1 else "SECOND"
-            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:5101:key={key}';")
+            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:200:key={key}';")
         if request.method == "GET":
             key = "FIRST" if sum(call.method == "GET" and call.url.path != "/ts.wseq" for call in calls) == 1 else "SECOND"
             return httpx.Response(
@@ -697,7 +697,7 @@ def test_iter_continuation_second_net000001_raises_without_replaying_first_page(
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal post_count
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text='<form><input name="unknownField" value="keep-me"></form>')
         post_count += 1
@@ -738,7 +738,7 @@ def test_iter_rejects_bad_or_nonprogress_cursor_without_another_post(
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal post_count
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         post_count += 1
@@ -769,7 +769,7 @@ def test_iter_rejects_missing_or_invalid_following_flag_without_another_post(
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal post_count
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         post_count += 1
@@ -794,7 +794,7 @@ def test_iter_max_pages_is_exact_and_stops_without_extra_post(load_text_fixture)
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal post_count
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         post_count += 1
@@ -841,7 +841,7 @@ def test_net000001_repeats_full_flow_once_with_fresh_keys(load_json_fixture, loa
         calls.append((request.method, request.url.path))
         if request.url.host == "nf.letskorail.com":
             key = "FIRST" if sum(path == "/ts.wseq" for _, path in calls) == 1 else "SECOND"
-            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:5101:key={key}';")
+            return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:200:key={key}';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         post_count += 1
@@ -865,7 +865,7 @@ def test_net000001_is_not_retried_more_than_once(load_json_fixture, load_text_fi
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal post_count
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         post_count += 1
@@ -884,7 +884,7 @@ def test_ordinary_app_failure_is_not_retried(load_text_fixture):
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal post_count
         if request.url.host == "nf.letskorail.com":
-            return httpx.Response(200, text="NetFunnel.gControl.result='5101:5101:key=NF';")
+            return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
         post_count += 1

@@ -159,7 +159,7 @@ class SrtClient:
     def get_date_selector(self, date: str, *, hour: str = "06") -> HtmlPage:
         with self._session_guard():
             return self._get_selector_page(
-                "/common/ARA/ARA0403P/view.do",
+                "/common/ARA/ARA0401P/view.do",
                 date_selector_payload(date, hour),
                 context="date selector",
             )

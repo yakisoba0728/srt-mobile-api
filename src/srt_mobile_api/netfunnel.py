@@ -6,20 +6,23 @@ from .models import NetFunnelToken
 
 RESULT_ASSIGNMENT_RE = re.compile(
     r"\s*"
-    r"(?:NetFunnel\.gRtype\s*=\s*4999\s*;\s*)?"
+    r"(?:NetFunnel\.gRtype\s*=\s*\d+\s*;\s*)?"
     r"NetFunnel\.gControl\.result\s*=\s*"
     r"(?P<quote>['\"])(?P<value>[^'\"]*)(?P=quote)"
     r"(?:\s*;\s*(?:NetFunnel\.gControl\._showResult\(\)\s*;\s*)?|\s*)"
 )
-RESULT_PREFIX = "NetFunnel.gRtype=5101"
-SUCCESS_PAIRS = frozenset({("5101", "5101"), ("5002", "200")})
+# NetFunnel.RetVal parses the wire token as RRRR:CCC:params (4-digit response
+# type at offset 0, 3-digit status code at offset 5, params from offset 9).
+# Success is keyed off the 3-digit status code (kSuccess=200,
+# kTsErrorAComplete=502), never off the echoed response type.
+SUCCESS_CODES = frozenset({"200", "502"})
 
 
 def build_act10_url(netfunnel_url: str, *, timestamp_ms: int) -> str:
     return (
         f"{netfunnel_url.rstrip('/')}/ts.wseq"
         "?opcode=5101&nfid=0&prefix=NetFunnel.gRtype%3D5101%3B"
-        f"&sid=service_1&aid=act_10&js=true&{timestamp_ms}"
+        f"&sid=service_1&aid=act_10&js=yes&{timestamp_ms}"
     )
 
 
@@ -32,25 +35,13 @@ def parse_netfunnel_response(body: str, *, action: str) -> NetFunnelToken:
             raw=body,
         )
     value = match.group("value")
-    if ";" in value:
-        prefix, token_part = value.split(";", 1)
-        if prefix != RESULT_PREFIX or ";" in token_part:
-            raise SrtNetFunnelError(None, "NetFunnel response used an invalid result prefix", raw=body)
-    else:
-        token_part = value
-    parts = token_part.split(":", 2)
-    raw_type = parts[0] if parts else ""
-    if len(parts) == 2:
-        code = raw_type
-        param_text = parts[1]
-    elif len(parts) >= 3:
-        code = parts[1]
-        param_text = parts[2]
-    else:
+    parts = value.split(":", 2)
+    if len(parts) < 3:
         raise SrtNetFunnelError(None, "NetFunnel response used an invalid result token", raw=body)
+    raw_type, code, param_text = parts
     if not raw_type.isdigit():
         raise SrtNetFunnelError(None, "NetFunnel response used an invalid result type", raw=body)
-    if (raw_type, code) not in SUCCESS_PAIRS:
+    if code not in SUCCESS_CODES:
         raise SrtNetFunnelError(code or None, "NetFunnel response did not report success", raw=body)
     params: dict[str, str] = {}
     for item in param_text.split("&"):
