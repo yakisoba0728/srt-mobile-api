@@ -46,6 +46,7 @@ def test_login_flow_posts_expected_fields(load_json_fixture):
         # Auto-detected from the identifier (srtgo srt.py:691-698):
         ("user@example.com", "2", "user%40example.com"),  # email → 2
         ("010-1234-5678", "3", "01012345678"),  # phone → 3, dashes stripped
+        ("01012345678", "3", "01012345678"),  # dashless Korean mobile → 3
         ("1234567890", "1", "1234567890"),  # all-digit membership number → 1
     ],
 )

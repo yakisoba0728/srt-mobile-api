@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Sequence
+from dataclasses import replace
 from html.parser import HTMLParser
 from typing import Any
 
@@ -124,7 +125,11 @@ def run_live_smoke(
     seat_train = _first_complete_srt_seat_train(personal.trains)
     seat_page = client.get_seat_page(seat_train) if seat_train is not None else None
     mutual = client.get_mutual_verification()
-    group = client.search_group_trains(query)
+    # Group search requires >= 10 passengers (the app blocks smaller groups
+    # client-side, ara0101v.js:551-554); the individual query above may carry a
+    # single passenger, so exercise the group leg with a valid group-sized query.
+    group_query = replace(query, passengers=PassengerCounts(adult=10))
+    group = client.search_group_trains(group_query)
     timetable = client.get_timetable(personal.trains[0]) if personal.trains else None
     fare = client.get_fare(personal.trains[0], query.passengers) if personal.trains else None
     return {

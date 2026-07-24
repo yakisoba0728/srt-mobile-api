@@ -11,11 +11,14 @@ from .parsers import parse_html_page
 # login.do's srchDvCd (login-tab) selection is server-rendered and absent from the
 # offline bundle, so the ground truth is srtgo (srt.py:691-698): the identifier is
 # auto-detected as email → "2", phone → "3", else membership number → "1". A phone
-# id requires dashes to be distinguished from an all-digit membership number (srtgo
-# uses the same dash-requiring regex); when the resolved type is "3" the dashes are
-# stripped from the transmitted srchDvNm (srt.py:697-698).
+# A Korean mobile number (01X prefix, with or without dashes) resolves to a phone
+# login ("3"); the leading "01X" distinguishes it from an all-digit membership number
+# ("1"). srtgo used a dash-requiring regex, but real credentials are commonly entered
+# without dashes -- a real stored dashless phone id must resolve to a phone and not
+# fall through to membership. When the resolved type is "3" the dashes are stripped
+# from the transmitted srchDvNm (srt.py:697-698).
 _EMAIL_LOGIN_RE = re.compile(r"[^@]+@[^@]+\.[^@]+")
-_PHONE_LOGIN_RE = re.compile(r"\d{3}-\d{3,4}-\d{4}")
+_PHONE_LOGIN_RE = re.compile(r"01[0-9]-?\d{3,4}-?\d{4}")
 
 
 def _detect_login_type(login_id: str) -> str:
