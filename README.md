@@ -1,13 +1,15 @@
 # srt-mobile-api
 
 This repository provides an installable read-only-by-default Python package for
-the evidenced SRT Android app WebView API surface. Unless a caller passes an
-explicit non-dry-run `MutationConsent`, the client transmits only login/read
-requests. A single consent-gated mutation method (`reserve`) exists;
-it builds and (with `dry_run=False`) sends a reservation via the dedicated
-`post_mutation_form` gate, while the read-only send path still refuses every
-mutation route. The retained APK specification and smoke tooling remain the
-evidence context for that package.
+the evidenced SRT Android app WebView API surface. The client transmits only
+login/read requests. A single consent-gated mutation method (`reserve`) exists,
+but it is **preview-only**: it validates its inputs and returns a redacted
+`MutationPreview` of the exact reservation form; live sending (`dry_run=False`)
+is deliberately refused because SRT has no callable cancel method yet to release
+a created hold and the live NetFunnel/referer wiring is unverified. The
+mutation-route send gate (`post_mutation_form`) and the read-only send path both
+refuse to transmit any mutation route accordingly. The retained APK
+specification and smoke tooling remain the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected`; after the additive reservation-attempt
@@ -282,4 +284,4 @@ and the raw mapping are excluded from `repr()`. It adds no reservation route,
 request builder, NetFunnel `act_19` flow, client method, or live call, so the
 reviewed 20-route read-only boundary is unchanged.
 
-A single consent-gated, dry-run-by-default reservation method (`reserve`, `arc/selectListArc05013_n.do`) is implemented (offline-verified; not yet live-run). Payment, refund, cancellation, and native bridge flows are not implemented in this package version — their routes are tiered but not callable and need live response capture (see docs/MUTATION_HANDOFF.md in the korail repo).
+A single consent-gated, preview-only reservation method (`reserve`, `arc/selectListArc05013_n.do`) is implemented and offline-verified; its live send is refused (no cancel method yet, unverified wiring). Payment, refund, cancellation, and native bridge flows are not implemented in this package version — their routes are tiered but not callable and need live response capture (see docs/MUTATION_HANDOFF.md in the korail repo).

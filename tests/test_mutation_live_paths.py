@@ -193,26 +193,18 @@ def test_reserve_form_compacts_multiple_passenger_types_in_canonical_order():
 # --- reserve(dry_run=False) live send (offline via MockTransport) -----------
 
 
-def test_reserve_live_posts_to_reserve_route_and_returns_hold(load_json_fixture):
-    client, recorder = _client_with(
-        {RESERVE_ROUTE: load_json_fixture("reservation_attempt_success.json")}
-    )
-    hold = client.reserve(
-        _eligible_train(),
-        consent=_live(allow_reserve=True),
-        netfunnel_key=SYNTHETIC_NF,
-    )
-    assert isinstance(hold, SrtReservationHold)
-    assert hold.pnr_no == "NOT-A-REAL-PNR"
-    assert hold.journey_list_key == "SYNTHETIC-JOURNEY-KEY"
-    # Exactly one request, and it went to the reserve route via POST carrying the
-    # NetFunnel key in the body.
-    assert len(recorder.requests) == 1
-    assert recorder.requests[0].method == "POST"
-    assert recorder.requests[0].url.path == RESERVE_ROUTE
-    assert f"netfunnelKey={SYNTHETIC_NF}" in recorder.requests[0].content.decode()
-    # The hold hides the PNR from repr.
-    assert "NOT-A-REAL-PNR" not in repr(hold)
+def test_reserve_refuses_live_send_until_cancel_and_verification():
+    # Live SRT reserve is deliberately disabled: there is no callable cancel to
+    # release a created hold and the live wiring is unverified. Even with full
+    # consent (dry_run=False + allow_reserve) reserve must refuse and send nothing.
+    client, recorder = _client_with({RESERVE_ROUTE: {}})
+    with pytest.raises(SrtMutationNotAllowedError):
+        client.reserve(
+            _eligible_train(),
+            consent=_live(allow_reserve=True),
+            netfunnel_key=SYNTHETIC_NF,
+        )
+    assert recorder.requests == []
 
 
 def test_reserve_live_still_requires_matching_consent():
@@ -227,10 +219,15 @@ def test_reserve_live_still_requires_matching_consent():
     assert recorder.requests == []
 
 
-def test_reserve_live_raises_app_error_on_fail_envelope():
-    client, recorder = _client_with(
-        {
-            RESERVE_ROUTE: {
+def test_reservation_hold_parser_raises_app_error_on_fail_envelope():
+    # The reserve-response parser (wired for the future live path) still surfaces
+    # a FAIL envelope as SrtAppError, exercised directly since the live path is
+    # not callable yet.
+    from srt_mobile_api import parse_reservation_hold_response
+
+    with pytest.raises(SrtAppError):
+        parse_reservation_hold_response(
+            {
                 "resultMap": [
                     {
                         "strResult": "FAIL",
@@ -239,15 +236,7 @@ def test_reserve_live_raises_app_error_on_fail_envelope():
                     }
                 ]
             }
-        }
-    )
-    with pytest.raises(SrtAppError):
-        client.reserve(
-            _eligible_train(),
-            consent=_live(allow_reserve=True),
-            netfunnel_key=SYNTHETIC_NF,
         )
-    assert len(recorder.requests) == 1
 
 
 # --- reserve dry-run sends nothing even with a recording transport ----------
