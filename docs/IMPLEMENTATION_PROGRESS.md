@@ -141,14 +141,16 @@ their own category. See the next section.
   `SrtReservationHold` or a bare PNR string (a caller recovering from a partial
   failure may have only the PNR), requires `allow_cancel=True` and an
   authenticated session, and with the default `dry_run=True` returns a redacted
-  `MutationPreview` and performs no I/O. It is implemented and offline-tested
-  only: **the route, its `pnrNo`/`jrnyCnt`/`rsvChgTno` body and its
-  `strResult == "SUCC"` success rule are srtgo-attested and UNCONFIRMED against
-  v2.0.41** (0 hits across all 21,673 files of the offline bundle; only the
-  `jrnyCnt="1"` value is partially corroborated, at `ara0101v.js:92`). With
-  `dry_run=False` it now transmits and returns a parsed `SrtCancelResult`; the
-  shape it puts on the wire is still the srtgo-attested one, and no live run has
-  confirmed it. `jrnyCnt` defaults to `"1"` rather than being derived from the hold
+  `MutationPreview` and performs no I/O. With `dry_run=False` it transmits and
+  returns a parsed `SrtCancelResult`. **The route, its `pnrNo`/`jrnyCnt`/
+  `rsvChgTno` body and its `strResult == "SUCC"` success rule were verified
+  against the live server on 2026-07-25** — one round trip released a real hold
+  and answered `SUCC` / `msgCd=IRG000000` / `정상처리되었습니다`. Their origin is
+  unchanged: the shape came from srtgo and is 0-hit across all 21,673 files of
+  the v2.0.41 offline bundle (only the `jrnyCnt="1"` value is partially
+  corroborated, at `ara0101v.js:92`), so that one run is its only corroboration
+  and it covered a **single journey, one adult** only.
+  `jrnyCnt` defaults to `"1"` rather than being derived from the hold
   (the reserve response carries a seat count, not a journey count) and any
   supplied journey count is compared numerically, tolerating zero-padding, so a
   formatting difference can never make a hold uncancellable.
@@ -168,21 +170,50 @@ their own category. See the next section.
   payment or refund either.
 - `reserve` and `cancel` were live-enabled **as a pair**, because they are the
   two halves of one reversible operation and enabling reserve without a
-  transmittable cancel would strand a real hold on a crash. That is a decision
-  about recoverability, not about evidence: the `cancel`/`payment`/`refund` wire
-  formats remain 0-hit across all 21,673 files of the v2.0.41 offline evidence
-  bundle and srtgo-attested only, and **the reserve->cancel round trip has not
-  been run yet.** Opening the gate is what makes running it possible.
+  transmittable cancel would strand a real hold on a crash. That was a decision
+  about recoverability, not about evidence — opening the gate is what made
+  running the round trip possible, and **it was run once, on 2026-07-25, and
+  both halves succeeded** (see the section below). The `cancel`/`payment`/
+  `refund` wire formats are still 0-hit across all 21,673 files of the v2.0.41
+  offline evidence bundle and still came from srtgo; for cancel, one live run now
+  corroborates the shape, and for payment and refund nothing does.
 - Adding `payment` or `refund` is a two-part job, not a one-line edit: each must
   first be implemented (neither has a client method) and then live-verified on
   its own wire format. A payment additionally transmits a PAN in the clear and
   keeps a separate `fake_card_only` gate behind the live-enablement one.
 
-## Live Reserve->Cancel Verification (NOT YET RUN)
+## Live Reserve->Cancel Verification (RUN ONCE, 2026-07-25 — PASSED)
 
 - `scripts/verify_reserve_cancel_roundtrip.py` is the operator-run verification
-  that would confirm reserve's live NetFunnel/referer wiring and cancel's
-  srtgo-attested body. **It has not been run, so neither is confirmed.**
+  of reserve's live NetFunnel/referer wiring and of cancel's body (which came
+  from srtgo and is 0-hit in our v2.0.41 bundle). **It was run once, on
+  2026-07-25, and exited 0.**
+- What the run did: 수서 (0551) → 부산 (0020), departure date `20260805`, train
+  `303` at 06:00, one adult, general seat.
+  - `reserve` (`arc/selectListArc05013_n.do`): `strResult=SUCC`,
+    `msgCd=IRR000018`, `msgTxt="결제하지 않으면 예약이 취소됩니다."`, PNR issued.
+  - `cancel` (`ard/selectListArd02045_n.do`, body `pnrNo` / `jrnyCnt="1"` /
+    `rsvChgTno="0"`): `strResult=SUCC`, `msgCd=IRG000000`,
+    `msgTxt="정상처리되었습니다"`.
+  - The ticket list re-read afterwards contained no trace of the PNR, and a
+    separate later session independently re-confirmed that the account carries
+    no PNR-like token from it. The hold was never paid, so nothing was charged.
+    The PNR itself is deliberately not recorded in this repository.
+- What it confirms: the cancel route and its exact three-field body work against
+  the live server for our app version — until this run its shape was attested
+  only by srtgo and had zero hits in our v2.0.41 offline decompile. It also
+  confirms reserve's live wiring: the NetFunnel `act_10` key flow (the same one
+  train search uses, *not* `act_19`) and the referer the client sends were both
+  accepted by the server.
+- What it does **not** confirm: only one single-journey, one-adult, general-seat
+  round trip was exercised. Multi-leg (`jrnyCnt` > 1), group and standby
+  reservations were not, so `jrnyCnt="1"` is confirmed for the single-journey
+  case only. `payment` and `refund` stay unimplemented and outside
+  `SRT_LIVE_MUTATION_CATEGORIES`; nothing was learned about their shapes.
+- Observation worth recording: both confirmation codes match the sibling korail
+  app's live-verified ones (reserve `IRR000018`, cancel `IRG000000`), suggesting
+  the two operators share a reservation platform. Recorded as an observation
+  about the code space, not as a proven claim about the backend.
 - It requires two explicit opt-ins, `SRT_MOBILE_API_LIVE=1` **and**
   `SRT_LIVE_MUTATION=1`. The second exists because the first only means "live
   reads are acceptable", which is not consent to create a reservation.
@@ -450,10 +481,11 @@ Typed physical-seat layout and selection remain a future candidate requiring
 separately authorized Arc02011 response evidence that proves a stable iterable
 source, availability vocabulary, and closed parser. The unallowlisted Arc02011
 handoff, external seat-map call, callback, and native bridge remain excluded.
-Every mutation endpoint remains excluded from transmission: none is
-live-enabled, so nothing state-changing is sent (see "Consent-gated Mutation
-Surface"). Making one sendable requires implementing it, capturing its live
-response, and — for reserve — a verified reserve->cancel round trip first. The
-implemented cancel does not satisfy that: its shape has never been confirmed
-against our app version or the live server. The implemented personal and group
-continuation contract has bounded live evidence.
+`payment` and `refund` remain excluded from transmission: neither has a client
+method and neither is in `SRT_LIVE_MUTATION_CATEGORIES`, so nothing
+state-changing is sent for them (see "Consent-gated Mutation Surface"). Making
+one sendable requires implementing it and capturing its live response; the
+2026-07-25 round trip captured nothing about either, since the hold it created
+was never paid. `reserve` and `cancel` are the exception — both are implemented,
+live-enabled and verified in that one round trip. The implemented personal and
+group continuation contract has bounded live evidence.

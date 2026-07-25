@@ -912,25 +912,49 @@ def test_repository_truth_and_full_mutation_policy() -> None:
         assert requirement in policy
 
 
-# The cancel surface is the only documented method whose WIRE SHAPE this
-# repository has never seen: it comes from srtgo's live runs, and its route is
-# 0-hit across all 21,673 files of the v2.0.41 offline bundle. That caveat IS
-# the honesty of the cancel documentation, and nothing pinned it, so a later
-# edit could quietly promote "srtgo says so" into "verified".
+# Two separate facts about the cancel wire shape have to stay documented
+# together, and each is easy to lose by writing only the other:
+#
+#   * ORIGIN (history, still true). The shape came from srtgo's live runs, and
+#     the route is 0-hit across all 21,673 files of the v2.0.41 offline bundle.
+#     One live success does not make it statically corroborated, and a reader
+#     who is told only "it works" cannot tell how much evidence stands behind
+#     the fields the run never exercised.
+#   * VERIFICATION (2026-07-25). One operator-run reserve->cancel round trip
+#     released a real hold against the live server: SUCC, msgCd IRG000000, and
+#     no trace of the reservation left in the ticket list.
+#
+# Until that run this test pinned "srtgo-attested AND unconfirmed". The
+# unconfirmed half is now obsolete, but simply deleting the pin would let the
+# origin disappear with it, so the pin is inverted rather than dropped: the
+# documents must now carry the verification AND keep the origin as history.
 CANCEL_ROUTE_TOKEN = "ard02045"
-# Substance, not a sentence: each element may be reworded, but all three have to
-# stay attached to the route. "unverified" is deliberately NOT accepted as the
-# not-confirmed claim -- the surrounding prose already calls reserve's NetFunnel
-# wiring unverified, so accepting it would let the cancel caveat be deleted
-# without failing.
-CANCEL_NOT_CONFIRMED_PHRASES = (
-    "unconfirmed",
-    "not confirmed",
-    "never been confirmed",
-    "not been confirmed",
+# Substance, not sentences: every element may be reworded, but all of them have
+# to stay attached to the route rather than merely coexist in the same file.
+CANCEL_LIVE_VERIFICATION_DATE = "2026-07-25"
+CANCEL_LIVE_VERIFICATION_PHRASES = (
+    "live server",
+    "live-verified",
+    "live verified",
+    "verified live",
+    "live round trip",
+    "live reserve->cancel round trip",
 )
+# The server's own confirmation code for a successful cancel, and the reserve
+# code from the same run. Codes rather than prose: they are the observation, and
+# a document that states them is a document that records a real response.
+CANCEL_SUCCESS_CODE = "irg000000"
+RESERVE_SUCCESS_CODE = "irr000018"
 CANCEL_ZERO_EVIDENCE_PHRASES = ("0-hit", "0 hits", "zero hits", "zero-hit")
-CANCEL_PROVENANCE_WINDOW = 700
+# One run, one journey, one adult. Without this the codes above read as a
+# general "cancel is verified", which is exactly the over-claim to prevent.
+CANCEL_VERIFICATION_SCOPE_PHRASES = (
+    "single journey",
+    "single-journey",
+    "one adult",
+    "one-adult",
+)
+CANCEL_PROVENANCE_WINDOW = 900
 CANCEL_PROVENANCE_DOCUMENTS = (
     "README.md",
     "docs/IMPLEMENTATION_PROGRESS.md",
@@ -938,23 +962,31 @@ CANCEL_PROVENANCE_DOCUMENTS = (
 )
 
 
-def test_cancel_provenance_stays_documented_as_srtgo_attested_and_unconfirmed() -> None:
+def test_cancel_documentation_records_the_live_verification_and_its_srtgo_origin() -> None:
     for document in CANCEL_PROVENANCE_DOCUMENTS:
         flat = " ".join((ROOT / document).read_text().casefold().split())
         assert CANCEL_ROUTE_TOKEN in flat, document
-        # A window around each mention of the cancel route, so the caveat has to
-        # stay ATTACHED to it rather than merely coexist in the same file:
-        # "srtgo" and "2.0.41" are named all over these documents for other
-        # reasons.
+        # The other half of the same round trip: a document describing the
+        # verification without reserve's code describes only half of it.
+        assert RESERVE_SUCCESS_CODE in flat, document
+        # A window around each mention of the cancel route, so the record has to
+        # stay ATTACHED to it: "srtgo", "2.0.41" and the date are all named
+        # elsewhere in these documents for unrelated reasons.
         windows = [
             flat[max(0, offset - CANCEL_PROVENANCE_WINDOW) : offset + CANCEL_PROVENANCE_WINDOW]
             for offset in range(len(flat))
             if flat.startswith(CANCEL_ROUTE_TOKEN, offset)
         ]
         assert any(
-            "srtgo" in window
+            # The verification, with the response the server actually gave.
+            CANCEL_LIVE_VERIFICATION_DATE in window
+            and any(phrase in window for phrase in CANCEL_LIVE_VERIFICATION_PHRASES)
+            and CANCEL_SUCCESS_CODE in window
+            # and its limits, so one round trip cannot read as a general proof.
+            and any(phrase in window for phrase in CANCEL_VERIFICATION_SCOPE_PHRASES)
+            # and the origin, unchanged by the run and still worth knowing.
+            and "srtgo" in window
             and "2.0.41" in window
-            and any(phrase in window for phrase in CANCEL_NOT_CONFIRMED_PHRASES)
             and any(phrase in window for phrase in CANCEL_ZERO_EVIDENCE_PHRASES)
             for window in windows
         ), document

@@ -2,8 +2,35 @@
 
 ## Unreleased
 
+- **The live reserve->cancel round trip was performed on 2026-07-25 and both
+  halves succeeded.** One operator run of
+  `scripts/verify_reserve_cancel_roundtrip.py` against the real server (수서 →
+  부산, one adult, general seat, a single train) exited 0: `reserve` returned
+  `strResult=SUCC`, `msgCd=IRR000018` ("결제하지 않으면 예약이 취소됩니다.") and a
+  PNR, `cancel` (`ard/selectListArd02045_n.do`, body `pnrNo` / `jrnyCnt="1"` /
+  `rsvChgTno="0"`) returned `strResult=SUCC`, `msgCd=IRG000000`
+  ("정상처리되었습니다"), and the ticket list re-read afterwards held no trace of
+  the reservation — re-verified independently in a later session. The hold was
+  never paid, so nothing was charged.
+  This confirms, **against the live server and for our app version**, the cancel
+  route and its exact three-field body, plus reserve's live wiring: the
+  NetFunnel `act_10` key flow (the same one train search uses, *not* `act_19`)
+  and the referer the client sends were both accepted. It does not change where
+  the cancel shape came from: it was taken from srtgo and is still 0-hit across
+  all 21,673 files of our v2.0.41 offline decompile, so this single run is its
+  only corroboration.
+  **Scope.** ONE single-journey, one-adult, general-seat reservation. Multi-leg
+  (`jrnyCnt` > 1), group and standby reservations were not exercised, so
+  `jrnyCnt="1"` is confirmed only for the single-journey case. `payment` and
+  `refund` remain unimplemented, stay out of `SRT_LIVE_MUTATION_CATEGORIES`, and
+  nothing was learned about their shapes.
+  Worth recording: both confirmation codes are identical to the sibling korail
+  app's live-verified ones (reserve `IRR000018`, cancel `IRG000000`), which
+  suggests the two operators run on a shared reservation platform. That is an
+  observation about the codes, not a proven claim about the backend.
 - Added `scripts/verify_reserve_cancel_roundtrip.py`, the operator-run live
-  reserve->cancel verification. **It has not been run.** It logs in, searches,
+  reserve->cancel verification. **It has since been run once, successfully — see
+  the entry at the top of this section.** It logs in, searches,
   selects ONE train that actually has a bookable seat (refusing to proceed if
   none does), reserves one adult in the cheapest class, prints the PNR
   immediately, cancels it, and re-reads the ticket list to confirm nothing
@@ -52,9 +79,10 @@
   against: if strict parsing trips over a field unrelated to the PNR *after* the
   server has created the hold, a degraded but **cancelable** hold is returned
   instead of raising, while a server-declared failure still raises rather than
-  inventing a hold that does not exist. The live NetFunnel/referer wiring is
-  still unverified, and `scripts/recover_hold.py` cancels a stranded hold from
-  nothing but its PNR string.
+  inventing a hold that does not exist. The live NetFunnel/referer wiring was
+  unverified when this landed and **has since been exercised successfully** (see
+  the 2026-07-25 entry at the top of this section); `scripts/recover_hold.py`
+  cancels a stranded hold from nothing but its PNR string.
 - **Live-enabled exactly two mutation categories, `reserve` and `cancel`.**
   `safety.SRT_LIVE_MUTATION_CATEGORIES` was an empty frozenset and is now
   `{"reserve", "cancel"}`, so a consented `dry_run=False` call in either
@@ -66,12 +94,14 @@
   either requires implementing it (neither has a client method) and
   live-verifying its own wire format, and a payment keeps a separate
   `fake_card_only` gate behind the live-enablement one.
-  This is a decision about **recoverability, not evidence**. It does not assert
-  that anything has been verified: the cancel route `ard02045` is still
-  srtgo-attested only and UNCONFIRMED against our v2.0.41 app (0 hits across all
-  21,673 files of the offline evidence bundle), and **the live reserve->cancel
-  round trip has not been performed.** Opening the gate is what makes performing
-  it possible.
+  This was a decision about **recoverability, not evidence**, and asserted
+  nothing about verification: when it landed, the cancel route `ard02045` was
+  srtgo-sourced and unconfirmed against our v2.0.41 app (0 hits across all
+  21,673 files of the offline evidence bundle) and the live reserve->cancel round
+  trip had not been performed. Opening the gate is what made performing it
+  possible — **and it was performed on 2026-07-25**, confirming both halves
+  against the live server (see the entry at the top of this section). The 0-hit
+  fact is unchanged; what changed is that a live run now corroborates the shape.
 - Ported the consent-gated mutation model from the verified korail surface. The
   package stays read-only **by default**: `MutationConsent` grants nothing on
   construction (every `allow_*` flag defaults to `False`), `dry_run` defaults to
@@ -118,16 +148,19 @@
   `SrtReservationHold` or a bare PNR string (a caller recovering from a partial
   failure may have only the PNR), requires an authenticated session, is gated by
   `require_mutation_consent(consent, "cancel")`, and with the default
-  `dry_run=True` returns a redacted `MutationPreview` and performs no I/O. It is
-  implemented and offline-tested only. **Its wire shape is srtgo-attested and
-  UNCONFIRMED against our v2.0.41 app**: the route is 0-hit across all 21,673
-  files of the offline evidence bundle, and only the `jrnyCnt="1"` value is
-  partially corroborated by our own app (`ara0101v.js:92`). As first added it
-  could not transmit at all, the gate being empty. **Superseded within this same
-  unreleased range**: `cancel` was subsequently live-enabled (see the top of
-  this section), so `dry_run=False` now reaches the wire. The provenance caveat
-  above is NOT superseded — the shape remains srtgo-attested and unconfirmed,
-  and no live run has yet exercised it.
+  `dry_run=True` returns a redacted `MutationPreview` and performs no I/O. As
+  first added it was implemented and offline-tested only, its wire shape taken
+  from srtgo and unconfirmed against our v2.0.41 app: the route is 0-hit across
+  all 21,673 files of the offline evidence bundle, and only the `jrnyCnt="1"`
+  value is partially corroborated by our own app (`ara0101v.js:92`). It could
+  not transmit at all, the gate being empty. **Superseded twice within this same
+  unreleased range**: `cancel` was live-enabled (see the top of this section) so
+  `dry_run=False` reaches the wire, and the "unconfirmed" half of the provenance
+  caveat fell on **2026-07-25**, when a live round trip released a real hold
+  through this exact form (`SUCC` / `IRG000000`). What is NOT superseded is the
+  shape's origin: it still comes from srtgo, is still 0-hit in the v2.0.41
+  bundle, and is now corroborated by exactly one live run of one single-journey,
+  one-adult hold.
 - `jrnyCnt` is defaulted to `"1"`, not derived from the hold: the reserve
   response carries `totSeatNum` (a SEAT count) and no journey count, so
   `SrtReservationHold` has nothing to derive from, and every hold this library
@@ -176,13 +209,16 @@
 - Supersedes the 0.2.0 entry's statement that no reservation route, request
   builder, or client method was added, and the 0.1.0 entry's statement that
   mutation operations are excluded. Both were accurate at their release; as of
-  this section a reservation route, builder, and preview-only client method
-  exist, and so do a cancel route, builder and preview-by-default method. What
-  remains true, and is now enforced one layer lower, is that no state-changing
-  request is transmitted. Payment, refund, external seat-map, and native-bridge
-  flows remain unimplemented, and cancel — though implemented — remains
-  unverified: those wire formats are 0-hit across all 21,673 files of the
-  v2.0.41 offline evidence bundle and need live capture.
+  this section a reservation route, builder, and client method exist, and so do
+  a cancel route, builder and preview-by-default method. **This entry's own "no
+  state-changing request is transmitted" is itself superseded within this
+  range**: reserve and cancel were live-enabled and both now transmit under an
+  explicit non-dry-run consent (see the top of this section). Payment, refund,
+  external seat-map, and native-bridge flows remain unimplemented, and the
+  payment and refund wire formats are 0-hit across all 21,673 files of the
+  v2.0.41 offline evidence bundle and still need live capture. Cancel's format
+  is 0-hit in that bundle too, but is no longer unverified — a live round trip
+  exercised it on 2026-07-25.
 
 ## 0.2.0 - 2026-07-15
 
