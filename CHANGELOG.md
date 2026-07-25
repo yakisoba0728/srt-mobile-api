@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `personal_reservation_payload` now sends `arvDt1` (도착일자), which it omitted
+  entirely. The app writes it in the same block as the `dptDt1`/`dptTm1`/
+  `arvTm1` we already sent (`ara1001l.js:1464`), and srtgo omits it only because
+  `SRTTrain` has no arrival date — a divergence
+  `docs/analysis/cross-validation-2026-07-21.md` had already recorded as an open
+  one. Reserve is the only mutation route whose shape can be checked statically,
+  so it is closed rather than left unverified. The value comes from
+  `TrainSummary.arrival_date`, in the app's own field position (between `dptTm1`
+  and `arvTm1`), and is blank when the row omits `arvDt` — matching the app's
+  `#rsvForm` seed, and because a form that cannot be built is a reservation that
+  cannot be made. The srtgo wire-fidelity test was changed deliberately, not
+  weakened: it now pins srtgo's field set PLUS this one field, with the reason
+  recorded in place.
 - `personal_reservation_payload` now sends the OPERATING date in `runDt1`
   (`TrainSummary.run_date`), not the departure date. The app writes the two from
   different search-row fields in the same block — `ara1001l.js:1460`

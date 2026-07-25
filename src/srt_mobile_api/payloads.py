@@ -540,6 +540,23 @@ def personal_reservation_payload(
         if train.run_date
         else departure_date
     )
+    # 도착일자. The app writes it in the same block as dptDt1/dptTm1/arvTm1
+    # (ara1001l.js:1464 `"arvDt1": item.arvDt`), and srtgo omits it only because
+    # SRTTrain has no arrival date to send -- cross-validation-2026-07-21.md
+    # §"srtgo posts a trimmed body" already records that divergence explicitly.
+    # This is the one mutation route whose shape can be checked statically, so
+    # the field is closed rather than left as an unverified omission.
+    #
+    # Blank when the row omits arvDt, NOT an error: the app's own #rsvForm seed
+    # ships arvDt1="" (ara0101v.js, mirrored by search_payload above), the server
+    # demonstrably accepts a body without the key at all (the 2026-07-25 live
+    # round trip sent srtgo's trimmed form), and refusing to build the form would
+    # mean a reservation that cannot be made. Validated when present.
+    arrival_date = (
+        _required_digits(train.arrival_date, "arrival_date", length=8)
+        if train.arrival_date
+        else ""
+    )
     departure_station_code = _required_digits(
         train.departure_station_code, "departure_station_code", length=4
     )
@@ -584,6 +601,9 @@ def personal_reservation_payload(
         "arvRsStnCdNm1": arrival_station_name,
         "dptDt1": departure_date,
         "dptTm1": departure_time,
+        # arvDt1 sits between dptTm1 and arvTm1, the app's own field position
+        # (ara1001l.js:1462-1465).
+        "arvDt1": arrival_date,
         "arvTm1": arrival_time,
         "trnNo1": train_no,
         "runDt1": run_date,

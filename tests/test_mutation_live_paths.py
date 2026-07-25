@@ -118,7 +118,7 @@ def _live(**allow: bool) -> MutationConsent:
     return MutationConsent(dry_run=False, **allow)
 
 
-# --- the reserve form matches the srtgo _reserve wire exactly ---------------
+# --- the reserve form is the srtgo _reserve wire, plus the app's arvDt1 ------
 
 
 def test_reserve_form_matches_the_srtgo_personal_reserve_wire():
@@ -131,6 +131,14 @@ def test_reserve_form_matches_the_srtgo_personal_reserve_wire():
     # adult personal reservation with a general seat available and no window
     # preference. mblPhone is intentionally ABSENT (srtgo passes None, which
     # requests drops from the wire).
+    #
+    # ONE deliberate addition to srtgo's field set: arvDt1. srtgo omits it (it
+    # sends only arvTm1) purely because SRTTrain has no arrival date; OUR app
+    # writes it, in the same block as the fields srtgo does send
+    # (ara1001l.js:1464), and cross-validation-2026-07-21.md already recorded
+    # that specific divergence. The value here is "" because this fixture train
+    # carries no arrival_date, matching the app's own #rsvForm seed
+    # (arvDt1=""); a train that has one sends it, pinned below.
     assert form == {
         "jobId": "1101",
         "jrnyCnt": "1",
@@ -148,6 +156,7 @@ def test_reserve_form_matches_the_srtgo_personal_reserve_wire():
         "arvRsStnCdNm1": "부산",
         "dptDt1": "20990101",
         "dptTm1": "060000",
+        "arvDt1": "",
         "arvTm1": "083000",
         "trnNo1": "00303",
         "runDt1": "20990101",
@@ -169,6 +178,49 @@ def test_reserve_form_matches_the_srtgo_personal_reserve_wire():
         "psgInfoPerPrnb1": "1",
     }
     assert "mblPhone" not in form
+
+
+def test_reserve_form_sends_the_arrival_date_in_arv_dt1():
+    # ara1001l.js:1464 `"arvDt1": item.arvDt` -- written in the same block as
+    # dptDt1/dptTm1/arvTm1, all of which we already sent. This is the only
+    # mutation route whose shape can be checked statically, so the omission is
+    # closed rather than left unverified. arvDt1 sits between dptTm1 and arvTm1,
+    # the app's own field position (:1462-1465).
+    arriving = dataclasses.replace(_eligible_train(), arrival_date="20990102")
+
+    form = personal_reservation_payload(
+        arriving,
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+    )
+
+    assert form["arvDt1"] == "20990102"
+    assert list(form).index("arvDt1") == list(form).index("dptTm1") + 1
+    assert list(form).index("arvTm1") == list(form).index("arvDt1") + 1
+
+
+def test_reserve_form_sends_a_blank_arv_dt1_without_an_arrival_date():
+    # Blank, not an error. The app's own #rsvForm seed ships arvDt1="" and the
+    # server accepts a body without the key at all (srtgo's trimmed form is what
+    # the 2026-07-25 live round trip sent), so a row that omits arvDt must still
+    # produce a buildable reservation form.
+    for missing in (None, ""):
+        form = personal_reservation_payload(
+            dataclasses.replace(_eligible_train(), arrival_date=missing),
+            PassengerCounts(adult=1),
+            netfunnel_key=SYNTHETIC_NF,
+        )
+        assert form["arvDt1"] == ""
+
+
+def test_reserve_form_rejects_a_malformed_arrival_date():
+    for bad in ("2099010", "20990102x", "abcdefgh"):
+        with pytest.raises(ValueError):
+            personal_reservation_payload(
+                dataclasses.replace(_eligible_train(), arrival_date=bad),
+                PassengerCounts(adult=1),
+                netfunnel_key=SYNTHETIC_NF,
+            )
 
 
 def test_reserve_form_sends_the_operating_date_in_run_dt1():
