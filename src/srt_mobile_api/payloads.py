@@ -1,6 +1,12 @@
 import re
 
-from .models import PassengerCounts, SeatType, TrainSearchQuery, TrainSummary
+from .models import (
+    PassengerCounts,
+    SeatType,
+    SrtReservationHold,
+    TrainSearchQuery,
+    TrainSummary,
+)
 from .stations import station_name_by_code
 
 
@@ -583,3 +589,93 @@ def personal_reservation_payload(
         )
     )
     return payload
+
+
+# Reservation-change number on the cancel form. srtgo sends the constant "0"
+# (srt.py:1138). UNVERIFIED here: `rsvChgTno` has 0 hits across all 21,673 files
+# of our v2.0.41 offline bundle (docs/analysis/cross-validation-2026-07-21.md),
+# so nothing in our own app corroborates either the field or its value.
+CANCEL_RESERVATION_CHANGE_NUMBER = "0"
+
+# The jrnyCnt (여정건수) our cancel form defaults to. See
+# unpaid_reservation_cancel_payload for why it is a default and not derived.
+_SINGLE_JOURNEY_COUNT = "1"
+
+
+def _cancel_journey_count(journey_count: str | None) -> str:
+    """Normalize a journey count for the cancel form; never refuse.
+
+    Applies the korail lesson (korail commit 3d7e8a5): there, the analogous
+    field came back from a live reserve zero-padded (``h_jrny_cnt="0001"``)
+    while the cancel builder demanded exactly ``"1"``. It refused, the
+    auto-cancel never ran, and a real unpaid hold was left dangling. So compare
+    NUMERICALLY, tolerate zero-padding and surrounding whitespace, and fall back
+    to the single-journey default for anything unusable rather than raising: a
+    cancel form that cannot be built means a hold that cannot be released, which
+    is strictly worse than sending the value srtgo attests works.
+    """
+    if type(journey_count) is not str:
+        return _SINGLE_JOURNEY_COUNT
+    candidate = journey_count.strip()
+    if not candidate or any(
+        character < "0" or character > "9" for character in candidate
+    ):
+        return _SINGLE_JOURNEY_COUNT
+    count = int(candidate)
+    # str(int(...)) drops the zero padding: "0001" -> "1", "0002" -> "2".
+    return str(count) if count > 0 else _SINGLE_JOURNEY_COUNT
+
+
+def unpaid_reservation_cancel_payload(
+    reservation: SrtReservationHold | str,
+    *,
+    journey_count: str | None = None,
+) -> dict[str, str]:
+    """Build the cancel (예약취소) form for a created-but-unpaid reservation.
+
+    **Provenance — the wire shape below is UNCONFIRMED for our app version.**
+    ``/ard/selectListArd02045_n.do`` and its body are attested only by srtgo's
+    live runs (``srt.py:1138``; our notes at
+    ``docs/analysis/ref-srtgo_plus.md`` §7.1). The route has ZERO hits across
+    all 21,673 files of our v2.0.41 offline decompile
+    (``docs/analysis/cross-validation-2026-07-21.md``), so this reproduces
+    srtgo's three fields without any corroboration from our own bundle. The one
+    partial exception is ``jrnyCnt``: our app hard-codes ``"jrnyCnt":"1"``
+    (여정건수) at ``ara0101v.js:92``, which corroborates the VALUE but not this
+    route's use of it. ``rsvChgTno`` is 0-hit in our bundle entirely.
+
+    ``reservation`` accepts an :class:`~srt_mobile_api.models.SrtReservationHold`
+    or a bare PNR string: a caller recovering from a partial failure may have
+    nothing but the PNR, and that path must work or the reservation cannot be
+    released. Only the PNR is mandatory — with none there is nothing to cancel.
+
+    ``jrnyCnt`` DEFAULTS to ``"1"`` rather than being derived from the hold,
+    because the hold has no journey count to derive from. The reserve response
+    our parser validates carries ``reservListMap[0].totSeatNum`` — a SEAT count
+    — and no journey-count field at all (see
+    :func:`~srt_mobile_api.parsers.parse_reservation_attempt_response`), so
+    :class:`SrtReservationHold` exposes ``total_seat_count`` and nothing else
+    countable; deriving ``jrnyCnt`` from it would be a category error (two seats
+    on one journey is still one journey). Defaulting to ``"1"`` is also what
+    every hold this library can create actually is: ``personal_reservation_payload``
+    only ever sends ``jrnyCnt="1"``. ``journey_count`` remains as the override
+    for the day a live SRT response does carry one — it is normalized
+    numerically and never refused (see :func:`_cancel_journey_count`).
+    """
+    if type(reservation) is SrtReservationHold:
+        pnr_no = reservation.pnr_no
+    elif type(reservation) is str:
+        pnr_no = reservation
+    else:
+        raise ValueError(
+            "cancel requires an exact SrtReservationHold or a PNR string"
+        )
+    if type(pnr_no) is not str or not pnr_no.strip():
+        raise ValueError("cancel requires a non-empty PNR")
+    return {
+        # Surrounding whitespace is stripped rather than transmitted; a PNR is
+        # never itself whitespace-delimited.
+        "pnrNo": pnr_no.strip(),
+        "jrnyCnt": _cancel_journey_count(journey_count),
+        "rsvChgTno": CANCEL_RESERVATION_CHANGE_NUMBER,
+    }
