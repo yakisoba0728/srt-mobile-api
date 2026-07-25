@@ -128,8 +128,25 @@ class TrainSummary:
     expected_delay: str | None = None
     general_seat_availability: str | None = None
     special_seat_availability: str | None = None
+    # NOTE the asymmetry, which is the server's and not ours. The two fields
+    # above carry gnrmRsvPsbStr/sprmRsvPsbStr, which really are availability
+    # STRINGS ("예약가능" / "매진"). The two below carry rsvWaitPsbCd and
+    # stmpRsvPsbFlgCd, which are CODES: the live capture of 2026-07-26 saw
+    # rsvWaitPsbCd=" 0" (leading space included, as sent) and
+    # stmpRsvPsbFlgCd="YY". Their human-readable counterparts are the *_name
+    # fields below; a caller asking "can I join the waitlist?" wants
+    # reservation_wait_availability_name ("신청하기" / "매진"), not " 0".
     reservation_wait_availability: str | None = None
     standing_availability: str | None = None
+    # The 상태명 columns of the same four availabilities. Present in every live
+    # dsOutput1 row and previously dropped outright, which left the waitlist and
+    # standing states readable only as opaque codes. The group search
+    # (Ara10082) omits rsvWaitPsbCdNm and stndRsvPsbCdNm entirely, so all four
+    # stay optional.
+    general_seat_availability_name: str | None = None
+    special_seat_availability_name: str | None = None
+    reservation_wait_availability_name: str | None = None
+    standing_availability_name: str | None = None
     received_amount: str | None = None
     discount_rate: str | None = None
     received_fare: str | None = None

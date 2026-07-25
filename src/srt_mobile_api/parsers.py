@@ -1540,6 +1540,22 @@ def parse_train_search_response(
                     "stmpRsvPsbFlgCd",
                     "stndFlg",
                 ),
+                general_seat_availability_name=_optional_row_string(
+                    row,
+                    "gnrmRsvPsbCdNm",
+                ),
+                special_seat_availability_name=_optional_row_string(
+                    row,
+                    "sprmRsvPsbCdNm",
+                ),
+                reservation_wait_availability_name=_optional_row_string(
+                    row,
+                    "rsvWaitPsbCdNm",
+                ),
+                standing_availability_name=_optional_row_string(
+                    row,
+                    "stndRsvPsbCdNm",
+                ),
                 received_amount=_optional_row_string(row, "rcvdAmt"),
                 discount_rate=_optional_row_string(row, "trainDiscGenRt"),
                 received_fare=_optional_row_string(row, "rcvdFare"),

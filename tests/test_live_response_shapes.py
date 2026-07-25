@@ -434,3 +434,52 @@ def test_a_non_null_wrong_type_still_rejects(wrong_value):
             _live_shape_search_response({"gnrmRsvPsbStr": wrong_value})
         )
     assert "gnrmRsvPsbStr" in str(excinfo.value)
+
+
+def test_search_row_exposes_the_availability_names_not_only_the_codes():
+    """The four *CdNm columns every live row carries, previously dropped.
+
+    ``reservation_wait_availability`` and ``standing_availability`` hold CODES
+    (" 0" and "YY" as sent), which is not what their names suggest and not what
+    a caller can act on. The readable state lived in the sibling columns.
+    """
+    train = parse_train_search_response(_live_shape_search_response()).trains[0]
+
+    assert train.general_seat_availability == "예약가능"
+    assert train.general_seat_availability_name == "좌석있음"
+    assert train.special_seat_availability_name == "좌석매진"
+    assert train.reservation_wait_availability == " 0"
+    assert train.reservation_wait_availability_name == "신청하기"
+    assert train.standing_availability == "YY"
+    assert train.standing_availability_name == "예약하기"
+
+
+def test_group_search_rows_omit_the_wait_and_standing_names():
+    """Ara10082 sends a narrower row; the new fields must stay optional.
+
+    Live capture 2026-07-26: the ten group rows carried neither rsvWaitPsbCdNm
+    nor stndRsvPsbCdNm (nor rsvWaitPsbCd, stmpRsvPsbFlgCd, expnDptDlayTnum,
+    dlaySaleFlg, etcRsvPsbCdNm, fresOprCno, fresRsvPsbCdNm or trnNstpLeadInfo),
+    while adding chtnTrnOrdrNo and stlbCarTpCd that the personal row lacks.
+    """
+    payload = _live_shape_search_response()
+    row = payload["outDataSets"]["dsOutput1"][0]
+    for absent in (
+        "rsvWaitPsbCd",
+        "rsvWaitPsbCdNm",
+        "stmpRsvPsbFlgCd",
+        "stndRsvPsbCdNm",
+        "expnDptDlayTnum",
+        "fresRsvPsbCdNm",
+    ):
+        row.pop(absent)
+    row["chtnTrnOrdrNo"] = "1"
+    row["stlbCarTpCd"] = "1"
+
+    train = parse_train_search_response(payload).trains[0]
+
+    assert train.reservation_wait_availability is None
+    assert train.reservation_wait_availability_name is None
+    assert train.standing_availability is None
+    assert train.standing_availability_name is None
+    assert train.general_seat_availability_name == "좌석있음"
