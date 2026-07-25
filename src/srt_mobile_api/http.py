@@ -16,6 +16,7 @@ from .errors import (
 )
 from .parsers import is_login_form
 from .safety import (
+    SRT_LIVE_MUTATION_CATEGORIES,
     assert_mutation_route,
     assert_mutation_route_category,
     assert_read_only_request,
@@ -217,12 +218,27 @@ class SrtHttpClient:
         self,
         path: str,
         *,
+        category: str,
         data: Mapping[str, Any],
         headers: Mapping[str, str],
     ) -> httpx.Response:
         # Mirrors _request's transport/redirect/error handling, but WITHOUT
         # assert_read_only_request (which would reject a mutation route). The
-        # mutation gating happens in post_mutation_form before we reach here.
+        # consent/route gating happens in post_mutation_form before we reach
+        # here.
+        #
+        # Defense in depth: this is the function that actually calls
+        # self._client.send, i.e. the true send boundary, so it re-asserts the
+        # live-enablement invariant itself rather than trusting its caller. With
+        # SRT_LIVE_MUTATION_CATEGORIES empty this refuses everything, so no
+        # future refactor of post_mutation_form can accidentally open a send
+        # path.
+        if category not in SRT_LIVE_MUTATION_CATEGORIES:
+            raise SrtMutationNotAllowedError(
+                f"SRT mutation category {category!r} is not live-enabled; no "
+                "state-changing request may be transmitted (see "
+                "safety.SRT_LIVE_MUTATION_CATEGORIES)"
+            )
         request = self._client.build_request(
             "POST", path, data=dict(data), headers=headers
         )
@@ -255,25 +271,64 @@ class SrtHttpClient:
         referer: str | None = None,
         accept: str = "application/json, text/javascript, */*; q=0.01",
     ) -> dict[str, Any]:
-        """Send a state-changing form to an evidenced SRT mutation route.
+        """The sole send path for a state-changing form — currently always refused.
 
-        This is the ONLY method that transmits to a mutation route, and it is
-        triple-gated: ``require_mutation_consent`` must pass for ``category``,
-        ``consent.dry_run`` must be ``False`` (a dry-run preview never reaches
-        the network), and ``assert_mutation_route`` + ``assert_mutation_route_category``
-        restrict the target to :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES`
-        for exactly that category. The read-only path
-        (:meth:`assert_read_only_request`) still refuses these routes, so a
-        mutation can only leave the process through this gate. ``data`` (which
-        includes the reserve payload's ``netfunnelKey``) is sent verbatim via the
-        same request mechanics as :meth:`post_form`; no read-only field allowlist
-        applies. Returns the parsed JSON object response.
+        This is the only method that could transmit to a mutation route. Gates
+        are applied in this order, and a call must clear all of them:
+
+        1. ``require_mutation_consent(consent, category)`` — a
+           :class:`~srt_mobile_api.consent.MutationConsent` with the matching
+           per-category opt-in must be supplied.
+        2. ``consent.dry_run`` must be ``False`` — a dry-run preview must never
+           be transmitted.
+        3. ``category`` must be a member of
+           :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` — the
+           live-enablement block.
+        4. a ``payment`` also requires ``consent.fake_card_only``.
+        5. the client config must use the canonical origins, and
+           ``assert_mutation_route`` + ``assert_mutation_route_category``
+           restrict the target to
+           :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES` for exactly that
+           category.
+
+        Gate 3 is the decisive one today: ``SRT_LIVE_MUTATION_CATEGORIES`` is
+        empty, so **this method never transmits** — every category (reserve,
+        cancel, payment, refund) is refused with
+        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError`, no matter how
+        permissive the consent is. ``_send_mutation_request``, the function that
+        actually calls ``send``, re-asserts the same membership, so the invariant
+        also holds at the true send boundary. Meanwhile the read-only path
+        (:func:`~srt_mobile_api.safety.assert_read_only_request`) refuses these
+        routes by allowlist. Net effect: the library transmits no mutation at
+        all, enforced at the transport layer rather than only at the client
+        methods.
+
+        The remaining behaviour is described for the day a category is
+        live-enabled: ``data`` (which includes the reserve payload's
+        ``netfunnelKey``) would be sent verbatim via the same request mechanics
+        as :meth:`post_form`, with no read-only field allowlist applied,
+        returning the parsed JSON object response.
         """
         require_mutation_consent(consent, category)
         if consent.dry_run:
             raise SrtMutationNotAllowedError(
                 "post_mutation_form requires consent.dry_run=False; a dry-run "
                 "preview must never be transmitted"
+            )
+        # Live-enablement block. Placed after the consent and dry-run gates (so
+        # those keep their meaning and their error messages) but before every
+        # check below, because from here on a call would otherwise actually
+        # transmit. SRT_LIVE_MUTATION_CATEGORIES is empty, so this refuses all
+        # four categories: the "SRT transmits no mutation" invariant is enforced
+        # here at the transport layer, not only by SrtClient.reserve.
+        if category not in SRT_LIVE_MUTATION_CATEGORIES:
+            raise SrtMutationNotAllowedError(
+                f"SRT mutation category {category!r} is not live-enabled: no "
+                "SRT mutation category may be transmitted yet. The blocker is "
+                "the missing cancel method — without it a live reserve would "
+                "create an uncancellable hold — and the cancel/payment/refund "
+                "wire formats are unverified. Use dry_run=True for a preview "
+                "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
         # Defense-in-depth at the transmit boundary: a payment carries the PAN in
         # the clear (srtgo pay_with_card), so the send gate itself refuses to
@@ -305,7 +360,9 @@ class SrtHttpClient:
         }
         if referer:
             headers["Referer"] = referer
-        response = self._send_mutation_request(path, data=data, headers=headers)
+        response = self._send_mutation_request(
+            path, category=category, data=data, headers=headers
+        )
         return self._parse_json_object(response)
 
     def post_html_form(
