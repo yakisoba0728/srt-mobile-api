@@ -572,3 +572,155 @@ def test_roundtrip_main_reports_a_failure_without_a_traceback(
     assert "synthetic boom" in err
     assert SECRET_PASSWORD not in err
     assert client.closed is True
+
+
+# --- end-to-end against a REAL SrtClient (mock transport) -------------------
+#
+# The tests above drive run_roundtrip with a fake client, which proves the
+# script's control flow but not that it integrates with the real client. These
+# run the whole script against a genuine SrtClient whose transport is mocked,
+# so the actual login/NetFunnel/search/reserve/cancel/ticket-list wiring is
+# exercised and the exact bytes the operator's live run would send are
+# asserted. Still fully offline: httpx.MockTransport answers everything.
+
+
+def _roundtrip_transport(
+    *, pnr: str, cancel_status: str = "SUCC", load_json_fixture, load_text_fixture
+):
+    row = {
+        "trnNo": "303",
+        "trnGpCd": "300",
+        "stlbTrnClsfCd": "17",
+        "runDt": "20990101",
+        "dptDt": "20990101",
+        "dptTm": "060000",
+        "arvDt": "20990101",
+        "arvTm": "083000",
+        "dptRsStnCd": "0551",
+        "arvRsStnCd": "0020",
+        "dptStnRunOrdr": "000001",
+        "arvStnRunOrdr": "000010",
+        "dptStnConsOrdr": "000001",
+        "arvStnConsOrdr": "000002",
+        "gnrmRsvPsbStr": "예약가능",
+        "sprmRsvPsbStr": "매진",
+        "seatAttCd": "015",
+    }
+    search = load_json_fixture("search_success.json")
+    search["outDataSets"]["dsOutput1"] = [row]
+    reserve_reply = load_json_fixture("reservation_attempt_success.json")
+    reserve_reply["reservListMap"][0]["pnrNo"] = pnr
+
+    sent: dict = {"paths": [], "reserve": None, "cancel": []}
+    state = {"cancelled": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        sent["paths"].append(f"{request.method} {path}")
+        if path == "/ts.wseq":
+            return httpx.Response(200, text=load_text_fixture("netfunnel_act10.js"))
+        if path in {"/login/login.do", "/main/main.do", "/ara/ara0101v.do"}:
+            return httpx.Response(200, text="<html><body>로그아웃</body></html>")
+        if path == "/apb/selectListApb01080_n.do":
+            return httpx.Response(200, json=load_json_fixture("login_success.json"))
+        if path == "/ara/selectListAra10007_n.do":
+            if request.method == "GET":
+                return httpx.Response(200, text=load_text_fixture("search_page.html"))
+            return httpx.Response(200, json=search)
+        if path == "/arc/selectListArc05013_n.do":
+            sent["reserve"] = dict(httpx.QueryParams(request.content.decode()))
+            return httpx.Response(200, json=reserve_reply)
+        if path == "/ard/selectListArd02045_n.do":
+            sent["cancel"].append(dict(httpx.QueryParams(request.content.decode())))
+            if cancel_status == "SUCC":
+                state["cancelled"] = True
+            return httpx.Response(
+                200,
+                json={"resultMap": [{"strResult": cancel_status, "msgCd": "CXL-CODE"}]},
+            )
+        if path == "/atc/selectListAtc14017_n.do":
+            trace = "" if state["cancelled"] else pnr
+            return httpx.Response(200, text=f"<html><body>로그아웃 {trace}</body></html>")
+        raise AssertionError(f"unexpected {request.method} {path}")
+
+    return handler, sent
+
+
+def test_roundtrip_end_to_end_against_a_real_client(
+    roundtrip, monkeypatch, capsys, load_json_fixture, load_text_fixture
+):
+    pnr = "SYNTHETIC-E2E-PNR"
+    handler, sent = _roundtrip_transport(
+        pnr=pnr,
+        load_json_fixture=load_json_fixture,
+        load_text_fixture=load_text_fixture,
+    )
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    monkeypatch.setenv("SRT_TEST_DATE", "20990101")
+    monkeypatch.setenv("SRT_DEPARTURE_TIME", "060000")
+
+    assert (
+        roundtrip.run_roundtrip(
+            client, login_id=SECRET_LOGIN_ID, password=SECRET_PASSWORD
+        )
+        == 0
+    )
+
+    # The exact wire the operator's live run will produce.
+    assert sent["paths"] == [
+        "GET /login/login.do",
+        "POST /apb/selectListApb01080_n.do",
+        "GET /main/main.do",
+        "GET /ara/ara0101v.do",
+        "GET /ts.wseq",  # search's act_10
+        "GET /ara/selectListAra10007_n.do",
+        "POST /ara/selectListAra10007_n.do",
+        "GET /ts.wseq",  # reserve's act_10 -- the SAME flow, not act_19
+        "POST /arc/selectListArc05013_n.do",
+        "POST /ard/selectListArd02045_n.do",
+        "GET /atc/selectListAtc14017_n.do",
+    ]
+    # ABC123 is the key in the netfunnel_act10 fixture: the reserve really did
+    # carry a freshly acquired act_10 key.
+    assert sent["reserve"]["netfunnelKey"] == "ABC123"
+    assert sent["reserve"]["jobId"] == "1101"
+    assert sent["reserve"]["totPrnb"] == "1"
+    assert sent["reserve"]["psrmClCd1"] == "1"  # general seat was available
+    assert sent["cancel"] == [{"pnrNo": pnr, "jrnyCnt": "1", "rsvChgTno": "0"}]
+
+    out = capsys.readouterr().out
+    assert pnr in out
+    assert "CXL-CODE" in out
+    assert SECRET_PASSWORD not in out
+
+
+def test_roundtrip_end_to_end_strands_loudly_when_the_server_refuses(
+    roundtrip, monkeypatch, capsys, load_json_fixture, load_text_fixture
+):
+    # Same real client, but the server refuses every cancel. A real hold would
+    # now exist, so the PNR and the recovery command must be unmissable and the
+    # finally-block retry must have been attempted.
+    pnr = "SYNTHETIC-E2E-STRANDED"
+    handler, sent = _roundtrip_transport(
+        pnr=pnr,
+        cancel_status="FAIL",
+        load_json_fixture=load_json_fixture,
+        load_text_fixture=load_text_fixture,
+    )
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    monkeypatch.setenv("SRT_TEST_DATE", "20990101")
+
+    assert (
+        roundtrip.run_roundtrip(
+            client, login_id=SECRET_LOGIN_ID, password=SECRET_PASSWORD
+        )
+        == 1
+    )
+
+    out = capsys.readouterr().out
+    assert "STRANDED" in out.upper()
+    assert pnr in out
+    assert f"recover_hold.py {pnr}" in out
+    # Tried once, then once more from the finally block.
+    assert len(sent["cancel"]) == 2
+    assert SECRET_PASSWORD not in out

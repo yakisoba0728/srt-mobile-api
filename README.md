@@ -44,7 +44,7 @@ recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated preview-only reserve
 mutation surface, the transport-layer live-mutation gate, and the consent-gated
 cancel surface landed, the current offline suite at HEAD is
-`873 passed, 1 deselected`. The deselected case is the
+`875 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
