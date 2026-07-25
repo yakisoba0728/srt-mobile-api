@@ -10,10 +10,12 @@ layer rather than by the presence or absence of a client method:
 * **payment and refund transmit nothing, ever.** ``post_mutation_form`` — the
   only method that can send a state-changing request — refuses every category
   outside ``safety.SRT_LIVE_MUTATION_CATEGORIES``, and the true send boundary
-  (``_send_mutation_request``) re-asserts the same membership. The tests below
-  pin that refusal for both under a fully permissive consent (including one
-  that drops ``fake_card_only``) and confirm a recording transport saw ZERO
-  requests each time.
+  (``_send_mutation_request``) re-asserts the same membership AND the
+  route/category binding, so an enabled category cannot be aimed at the payment
+  or refund path either. The tests below pin that refusal for both under a fully
+  permissive consent (including one that drops ``fake_card_only``), pin it for
+  direct calls to the send boundary in both forms, and confirm a recording
+  transport saw ZERO requests each time.
 * **reserve and cancel may transmit**, under an explicit per-category consent
   with ``dry_run=False``, so that the operator-run reserve->cancel round trip
   is possible. The tests pin that they now clear the live-enablement block and
@@ -513,6 +515,67 @@ def test_send_mutation_request_asserts_live_enablement_itself():
             )
         assert "not live-enabled" in str(excinfo.value)
     assert recorder.requests == []
+
+
+@pytest.mark.parametrize("category", ("reserve", "cancel"))
+@pytest.mark.parametrize("route_category", REFUSED_CATEGORIES)
+def test_send_mutation_request_refuses_an_enabled_category_on_a_foreign_route(
+    category, route_category
+):
+    # The half the membership check alone does NOT cover, and the case the test
+    # above never exercised because it only ever passed refused categories: a
+    # category that IS live-enabled, aimed at a route belonging to a different
+    # category. Membership passes here by construction, so if the route/category
+    # binding lived only in post_mutation_form a direct call would build and
+    # send a POST to the payment or refund endpoint carrying whatever `data`
+    # held — for a payment, a PAN in the clear. The send boundary must apply
+    # assert_mutation_route_category itself.
+    client, recorder = _client_with(_all_routes_reply())
+    with pytest.raises(SrtProtocolError) as excinfo:
+        client.http._send_mutation_request(
+            ROUTE_BY_CATEGORY[route_category],
+            category=category,
+            data={"stlCrCrdNo1": "4111111111111111"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    assert "does not match route" in str(excinfo.value)
+    assert recorder.requests == []
+
+
+@pytest.mark.parametrize("category", ("reserve", "cancel"))
+def test_send_mutation_request_refuses_an_unregistered_route(category):
+    # The route allowlist half, likewise re-asserted at the send boundary: an
+    # enabled category cannot be used to POST an endpoint that is not one of the
+    # four registered mutation routes at all, including a read-only route.
+    client, recorder = _client_with(_all_routes_reply())
+    for path in (READ_ROUTE, "/ara/madeUpRoute.do"):
+        with pytest.raises(SrtProtocolError) as excinfo:
+            client.http._send_mutation_request(
+                path,
+                category=category,
+                data=_reserve_form(),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+        assert "not allowed" in str(excinfo.value)
+    assert recorder.requests == []
+
+
+@pytest.mark.parametrize("category", ("reserve", "cancel"))
+def test_send_mutation_request_transmits_its_own_category_route(category):
+    # The positive control for the two tests above: the binding refuses foreign
+    # routes without also blocking the pair the gate exists to allow. Called
+    # directly with its OWN route, an enabled category still reaches the wire.
+    client, recorder = _client_with(_all_routes_reply())
+    response = client.http._send_mutation_request(
+        ROUTE_BY_CATEGORY[category],
+        category=category,
+        data=_reserve_form(),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 200
+    assert [request.url.path for request in recorder.requests] == [
+        ROUTE_BY_CATEGORY[category]
+    ]
 
 
 @pytest.mark.parametrize("category", ("reserve", "cancel"))

@@ -224,22 +224,37 @@ class SrtHttpClient:
     ) -> httpx.Response:
         # Mirrors _request's transport/redirect/error handling, but WITHOUT
         # assert_read_only_request (which would reject a mutation route). The
-        # consent/route gating happens in post_mutation_form before we reach
-        # here.
+        # consent and dry-run gating happens in post_mutation_form before we
+        # reach here.
         #
         # Defense in depth: this is the function that actually calls
         # self._client.send, i.e. the true send boundary, so it re-asserts the
-        # live-enablement invariant itself rather than trusting its caller.
-        # SRT_LIVE_MUTATION_CATEGORIES holds exactly {"reserve", "cancel"}, so
-        # this refuses payment and refund outright and no future refactor of
-        # post_mutation_form can accidentally widen the set of categories that
-        # reach the wire.
+        # WHOLE route invariant itself rather than trusting its caller — not
+        # just the category half. Three checks, and all three must hold:
+        #
+        #   * the category is live-enabled. SRT_LIVE_MUTATION_CATEGORIES holds
+        #     exactly {"reserve", "cancel"}, so this refuses payment and refund
+        #     outright.
+        #   * the path is one of the four registered mutation routes, so this
+        #     function cannot be repurposed to POST an arbitrary endpoint.
+        #   * the path BELONGS to that category. Without this one the first
+        #     check is not sufficient: category="reserve" (live-enabled) paired
+        #     with the payment route would build and send a POST to
+        #     /ata/selectListAta09036_n.do, carrying whatever `data` held —
+        #     which for a payment is a PAN in the clear. The route/category
+        #     binding used to live only in post_mutation_form, so a direct call
+        #     here bypassed it entirely.
+        #
+        # No future refactor of post_mutation_form can therefore widen either
+        # the categories or the routes that reach the wire.
         if category not in SRT_LIVE_MUTATION_CATEGORIES:
             raise SrtMutationNotAllowedError(
                 f"SRT mutation category {category!r} is not live-enabled; only "
                 "reserve and cancel may be transmitted (see "
                 "safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
+        assert_mutation_route("POST", path)
+        assert_mutation_route_category(path, category)
         request = self._client.build_request(
             "POST", path, data=dict(data), headers=headers
         )
@@ -298,9 +313,12 @@ class SrtHttpClient:
         :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError`, no matter how
         permissive the consent is, while a consented, non-dry-run ``reserve`` or
         ``cancel`` proceeds to the wire. ``_send_mutation_request``, the function
-        that actually calls ``send``, re-asserts the same membership, so the
-        payment/refund refusal also holds at the true send boundary. Meanwhile
-        the read-only path
+        that actually calls ``send``, independently re-asserts all of gate 3 and
+        gate 5 — membership, ``assert_mutation_route`` and
+        ``assert_mutation_route_category`` — so both the payment/refund refusal
+        and the route/category binding hold at the true send boundary, and an
+        enabled category cannot be pointed at another category's route there.
+        Meanwhile the read-only path
         (:func:`~srt_mobile_api.safety.assert_read_only_request`) refuses all
         four routes by allowlist, so a mutation can only ever travel this
         method.
