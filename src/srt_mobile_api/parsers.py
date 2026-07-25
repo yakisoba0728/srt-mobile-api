@@ -783,10 +783,26 @@ def parse_mutual_verification_response(
     message = row.get("msgTxt", "")
     verification_code = row.get("mutMrkVrfCd")
     # The app never reads msgCd for Ara10130 -- fn_searchMutMrkVrfCd only checks
-    # dsOutput0.strResult == "FAIL" then reads dsOutput0.mutMrkVrfCd (ara1001l.js:234-241),
-    # and the documented dsOutput0 schema is {strResult, msgTxt, mutMrkVrfCd} with no
-    # msgCd. Treat msgCd as informational/optional so a valid response lacking it is not
-    # rejected; gate solely on strResult (+ a present mutMrkVrfCd).
+    # dsOutput0.strResult == "FAIL" then reads dsOutput0.mutMrkVrfCd (ara1001l.js:234-241).
+    # Treat msgCd as informational/optional; gate solely on strResult (+ a present
+    # mutMrkVrfCd). Keeping it optional is still right, and the live response is
+    # why the reasoning behind it is restated rather than the old one repeated.
+    #
+    # CORRECTION, live capture 2026-07-26. The old comment added that "the
+    # documented dsOutput0 schema is {strResult, msgTxt, mutMrkVrfCd} with no
+    # msgCd". The real row has SEVEN keys and msgCd is one of them:
+    #
+    #   {"msgCd":"IRZ000008", "wctNo":"81301", "strResult":"SUCC",
+    #    "msgTxt":"정상적으로 처리 되었습니다.", "mutMrkVrfCd":"<30 chars>",
+    #    "uuid":"APP...", "cgPsId":"korail"}
+    #
+    # So optional-and-usually-present, not optional-because-absent. wctNo, uuid
+    # and cgPsId are not modelled and stay reachable through
+    # MutualVerificationResult.raw.
+    #
+    # The same capture also showed this route answering SUCC with a fresh
+    # mutMrkVrfCd when called with NO session cookie at all: Ara10130 is public,
+    # unlike every other read behind SrtClient's session guard.
     message_code = code if isinstance(code, str) else None
     if not isinstance(status, str):
         raise SrtProtocolError(

@@ -364,9 +364,16 @@ def seat_page_payload(
         # app sends seatAttCd = lfn_getRsv("rqSeatAttCd1"), which is seeded to the
         # constant "015" (ara1001l.js:1508; ara0101v.js:132). srtgo confirms the design
         # -- it hardcodes rqSeatAttCd1="015" (srt.py:193) and its row parser never reads
-        # a row seatAttCd. Real dsOutput1 rows omit seatAttCd, so we default to "015" and
-        # let a caller pass the seat-attribute code they searched with. Do NOT read
-        # train.seat_attr_code here (that field is not carried by genuine responses).
+        # a row seatAttCd. So we default to "015" and let a caller pass the
+        # seat-attribute code they searched with.
+        #
+        # CORRECTION, live capture 2026-07-26: this comment used to add that "real
+        # dsOutput1 rows omit seatAttCd" and that the field "is not carried by
+        # genuine responses". That is FALSE. Every one of the 40 live rows
+        # carried seatAttCd, and every one carried "015" -- the value the request
+        # had just sent. The row is echoing our own request back, which is why
+        # reading it would be circular and why the request-side sourcing above is
+        # still the right design. The claim was wrong; the behaviour was not.
         "seatAttCd": _required_digits(seat_attr_code, "seat_attr_code", length=3),
         "dptStnRunOrdr": _required_digits(
             train.departure_run_order,
@@ -836,18 +843,37 @@ def unpaid_reservation_cancel_payload(
 ) -> dict[str, str]:
     """Build the cancel (예약취소) form for a created-but-unpaid reservation.
 
-    **Provenance — this exact body was accepted live on 2026-07-25.** The three
-    fields came from srtgo (``srt.py:1138``; our notes at
-    ``docs/analysis/ref-srtgo_plus.md`` §7.1) and have ZERO hits across all
-    21,673 files of our v2.0.41 offline decompile
-    (``docs/analysis/cross-validation-2026-07-21.md``) — nothing in our own
-    bundle corroborates them, apart from ``jrnyCnt``: our app hard-codes
-    ``"jrnyCnt":"1"`` (여정건수) at ``ara0101v.js:92``, which corroborates the
-    VALUE but not this route's use of it, and ``rsvChgTno`` which is 0-hit
-    entirely. One operator-run round trip then POSTed exactly this form to the
-    real server and released a real unpaid hold (``SUCC`` / ``IRG000000``). That
-    covered a SINGLE-journey, one-adult hold, so ``jrnyCnt="1"`` is confirmed
-    for that case and the multi-leg value remains uncaptured.
+    **Provenance — the SERVER's own page now corroborates this body, and that is
+    new as of 2026-07-26.** The three fields came from srtgo (``srt.py:1138``;
+    our notes at ``docs/analysis/ref-srtgo_plus.md`` §7.1) and have ZERO hits
+    across all 21,673 files of our v2.0.41 offline decompile
+    (``docs/analysis/cross-validation-2026-07-21.md``). Our long-standing note
+    that "nothing in our own bundle corroborates them" was true of the BUNDLE and
+    is no longer the whole story: the ticket-list page the live server renders
+    (GET ``/atc/selectListAtc14017_n.do``) ships this, inline, on both the
+    authenticated and the signed-out response::
+
+        //예약대기 취소 버튼
+        function cncConfirm(v_pnrNo, v_rsvChgTno, v_jrnyCnt) {
+            var params = { pnrNo: v_pnrNo, rsvChgTno: v_rsvChgTno, jrnyCnt: v_jrnyCnt };
+            $.ajax({ type: "POST", url: "/ard/selectListArd02045_n.do",
+                     data: params, dataType: "json",
+                     success: function (data) {
+                         var msg = data.resultMap[0].msgTxt;
+                         if (data.resultMap[0].strResult == "SUCC") { ... }
+
+    That is the route, all three field names, and the response envelope
+    (``resultMap[0].strResult`` / ``msgTxt``) attested by the app itself rather
+    than by srtgo alone. Note the honest caveat the comment carries: it labels
+    the button 예약대기 취소 (cancelling a WAITLIST entry), not specifically an
+    unpaid hold, so it corroborates the wire shape rather than the exact use.
+
+    On top of that, one operator-run round trip POSTed exactly this form on
+    2026-07-25 and released a real unpaid hold (``SUCC`` / ``IRG000000``). That
+    covered a SINGLE-journey, one-adult hold, so ``jrnyCnt="1"`` is confirmed for
+    that case and the multi-leg value remains uncaptured. ``ara0101v.js:92``
+    hard-codes ``"jrnyCnt":"1"`` (여정건수), corroborating the VALUE
+    independently.
 
     ``reservation`` accepts an :class:`~srt_mobile_api.models.SrtReservationHold`
     or a bare PNR string: a caller recovering from a partial failure may have

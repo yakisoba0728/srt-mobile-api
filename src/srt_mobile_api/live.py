@@ -35,10 +35,15 @@ def _first_complete_srt_seat_train(
     trains: Sequence[TrainSummary],
 ) -> TrainSummary | None:
     for train in trains:
-        # seatAttCd is NOT a search-response-row field: the app/srtgo source it from the
-        # request side (rqSeatAttCd1="015"), so a genuine captured row omits it and
-        # seat_page_payload defaults it to "015" rather than reading train.seat_attr_code.
-        # Requiring train.seat_attr_code here would wrongly skip every real train.
+        # seat_attr_code is deliberately NOT required here. The app and srtgo
+        # both source seatAttCd from the request side (rqSeatAttCd1="015"), and
+        # seat_page_payload defaults it rather than reading train.seat_attr_code.
+        #
+        # CORRECTION, live capture 2026-07-26: this comment used to justify that
+        # by claiming "a genuine captured row omits it". It does not -- all 40
+        # live rows carried seatAttCd="015", echoing the request. Requiring it
+        # would in fact NOT skip every real train. The exclusion stands on the
+        # request-side sourcing alone, which is the reason that survives.
         required = (
             train.train_no,
             train.run_date,

@@ -580,3 +580,80 @@ def test_timetable_and_fare_date_is_the_departure_date():
     form = fare_payload(overnight, PassengerCounts(adult=1))
     assert form["runDt"] == "20990102"
     assert form["runDt1"] == "20990102"
+
+
+# --------------------------------------------------------------------------
+# Claims the live server refutes or corroborates.
+# --------------------------------------------------------------------------
+
+
+def test_cancel_form_matches_the_live_pages_own_cancel_ajax():
+    """The ticket-list page the server renders carries the cancel call itself.
+
+    Captured 2026-07-26 from GET /atc/selectListAtc14017_n.do, present on both
+    the authenticated and the signed-out response::
+
+        //예약대기 취소 버튼
+        function cncConfirm(v_pnrNo, v_rsvChgTno, v_jrnyCnt) {
+            var params = { pnrNo: v_pnrNo, rsvChgTno: v_rsvChgTno, jrnyCnt: v_jrnyCnt };
+            $.ajax({ type: "POST", url: "/ard/selectListArd02045_n.do", ... });
+
+    Our body came from srtgo and is 0-hit in the v2.0.41 bundle. This pins that
+    it is exactly the field set the app transmits -- no more, no fewer -- so a
+    later addition to the form has to justify itself against the live page.
+    """
+    from srt_mobile_api.payloads import unpaid_reservation_cancel_payload
+
+    form = unpaid_reservation_cancel_payload("SYNTHETIC-PNR")
+
+    assert set(form) == {"pnrNo", "rsvChgTno", "jrnyCnt"}
+    assert form["pnrNo"] == "SYNTHETIC-PNR"
+    assert form["jrnyCnt"] == "1"
+
+
+def test_mutual_verification_accepts_the_real_seven_key_row():
+    """The live dsOutput0 row has seven keys, msgCd among them.
+
+    Our source used to say the documented schema was
+    {strResult, msgTxt, mutMrkVrfCd} "with no msgCd". Keeping msgCd optional
+    remains right; the reason was wrong.
+    """
+    from srt_mobile_api.parsers import parse_mutual_verification_response
+
+    result = parse_mutual_verification_response(
+        {
+            "ErrorCode": "0",
+            "ErrorMsg": "",
+            "outDataSets": {
+                "dsOutput0": [
+                    {
+                        "msgCd": "IRZ000008",
+                        "wctNo": "81301",
+                        "strResult": "SUCC",
+                        "msgTxt": "정상적으로 처리 되었습니다.",
+                        "mutMrkVrfCd": "SYNTHETIC-VERIFICATION-CODE",
+                        "uuid": "SYNTHETIC-UUID",
+                        "cgPsId": "korail",
+                    }
+                ]
+            },
+        }
+    )
+
+    assert result.message_code == "IRZ000008"
+    assert result.status == "SUCC"
+    assert result.verification_code == "SYNTHETIC-VERIFICATION-CODE"
+    # Unmodelled columns stay reachable rather than lost.
+    assert result.raw["outDataSets"]["dsOutput0"][0]["wctNo"] == "81301"
+    assert result.raw["outDataSets"]["dsOutput0"][0]["cgPsId"] == "korail"
+
+
+def test_search_rows_do_carry_seat_att_cd():
+    """Refutes our own comment, which said genuine rows omit it.
+
+    All 40 live rows carried seatAttCd="015" -- the value the request had just
+    sent. The request-side sourcing in seat_page_payload is still right (reading
+    the row back would be circular); the justification was false.
+    """
+    train = parse_train_search_response(_live_shape_search_response()).trains[0]
+    assert train.seat_attr_code == "015"
