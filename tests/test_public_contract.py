@@ -12,6 +12,7 @@ def test_client_public_method_set_is_stable():
         if not name.startswith("_")
     }
     assert methods == {
+        "cancel",
         "clear_session",
         "close",
         "get_booking_page",
@@ -145,3 +146,24 @@ def test_seat_page_method_type_and_export_are_stable():
     assert signature.parameters["seat_attr_code"].kind is inspect.Parameter.KEYWORD_ONLY
     assert get_type_hints(SrtClient.get_seat_page)["return"] is SeatSelectionPage
     assert srt_mobile_api.SeatSelectionPage is SeatSelectionPage
+
+
+def test_cancel_method_signature_type_and_export_are_stable():
+    from typing import get_type_hints
+
+    from srt_mobile_api import (
+        MutationPreview,
+        SrtCancelResult,
+        SrtReservationHold,
+    )
+
+    signature = inspect.signature(SrtClient.cancel)
+    assert list(signature.parameters) == ["self", "reservation", "consent"]
+    assert signature.parameters["consent"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert signature.parameters["consent"].default is inspect.Parameter.empty
+    # A bare PNR must stay callable: a caller recovering from a partial failure
+    # may have nothing else, and refusing that path orphans the reservation.
+    hints = get_type_hints(SrtClient.cancel)
+    assert hints["reservation"] == SrtReservationHold | str
+    assert hints["return"] == MutationPreview | SrtCancelResult
+    assert srt_mobile_api.SrtCancelResult is SrtCancelResult

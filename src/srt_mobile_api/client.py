@@ -26,6 +26,8 @@ from .models import (
     SearchPageState,
     SeatSelectionPage,
     SeatType,
+    SrtCancelResult,
+    SrtReservationHold,
     SrtSession,
     TimetablePage,
     TrainSearchQuery,
@@ -43,6 +45,7 @@ from .parsers import (
     parse_seat_selection_page,
     parse_timetable_page,
     parse_train_search_response,
+    parse_unpaid_cancel_response,
 )
 from .payloads import (
     date_selector_payload,
@@ -59,6 +62,7 @@ from .payloads import (
     station_selector_payload,
     timetable_payload,
     train_group_selector_payload,
+    unpaid_reservation_cancel_payload,
 )
 from .session import SrtSessionClient
 
@@ -460,30 +464,36 @@ class SrtClient:
         — the NetFunnel key is left as the caller-supplied ``netfunnel_key`` (or
         empty) and is redacted in the preview.
 
-        This method is **preview-only**: ``dry_run=False`` is refused. Unlike
-        korail, SRT has no callable cancel method to release a created hold and
-        the live NetFunnel/referer wiring is unverified, so enabling live sending
-        could strand an uncancellable real hold. Live sending is deferred until a
-        cancel method exists and a reserve->cancel round trip is live-verified.
-        Only ``reserve`` is implemented among the tiered mutation routes;
-        cancel/payment/refund remain classification-only pending live capture.
-        The reserve-response parser (``parse_reservation_hold_response``, →
-        ``SrtReservationHold``) is exported for the future live path.
+        This method is **preview-only**: ``dry_run=False`` is refused. A
+        :meth:`cancel` method now exists, but it cannot transmit either while
+        ``SRT_LIVE_MUTATION_CATEGORIES`` is empty, and its wire shape is
+        srtgo-attested and unconfirmed against our app version — so a live
+        reserve would still create a hold this library could not release, and
+        the live NetFunnel/referer wiring remains unverified. Live sending is
+        deferred until a reserve->cancel round trip is verified against the real
+        server. Of the tiered mutation routes only reserve and cancel have a
+        client method; payment/refund remain classification-only pending live
+        capture. The reserve-response parser (``parse_reservation_hold_response``,
+        → ``SrtReservationHold``) is exported for the future live path and feeds
+        :meth:`cancel`.
         """
         require_mutation_consent(consent, "reserve")
         if self.session.current is None:
             raise SrtAuthError("SRT reservation requires an authenticated session")
         if not consent.dry_run:
-            # Live SRT reserve is deliberately not enabled yet. Unlike korail,
-            # SRT has no callable cancel method to release a created hold, and
-            # the live NetFunnel-key/referer wiring is unverified against the
-            # server. Enabling live sending before a verified reserve->cancel
-            # round trip could strand an uncancellable real hold. dry_run
+            # Live SRT reserve is deliberately not enabled yet. A cancel method
+            # exists now, but no mutation category is live-enabled, so cancel
+            # cannot transmit either: a created hold would still be
+            # unreleasable by this library. Its shape is also srtgo-attested
+            # only, and the live NetFunnel-key/referer wiring is unverified
+            # against the server. Enabling live sending before a verified
+            # reserve->cancel round trip could strand a real hold. dry_run
             # previews the exact form without sending.
             raise SrtMutationNotAllowedError(
-                "live SRT reserve is not enabled: no cancel method exists yet "
-                "to release a created hold and the NetFunnel/referer wiring is "
-                "unverified; use dry_run=True for a preview"
+                "live SRT reserve is not enabled: no mutation category can be "
+                "transmitted yet, so a created hold could not be released even "
+                "though a cancel method exists, and the NetFunnel/referer "
+                "wiring is unverified; use dry_run=True for a preview"
             )
         passengers = passengers or PassengerCounts()
         form = personal_reservation_payload(
@@ -499,3 +509,63 @@ class SrtClient:
             route="/arc/selectListArc05013_n.do",
             payload=form,
         )
+
+    def cancel(
+        self,
+        reservation: SrtReservationHold | str,
+        *,
+        consent: MutationConsent,
+    ) -> MutationPreview | SrtCancelResult:
+        """Cancel a created-but-unpaid SRT reservation (예약취소) under consent.
+
+        **The wire shape is UNVERIFIED for our app version.**
+        ``/ard/selectListArd02045_n.do`` and its ``pnrNo``/``jrnyCnt``/
+        ``rsvChgTno`` body are attested only by srtgo's live runs; the route has
+        zero hits across all 21,673 files of our v2.0.41 offline decompile, so
+        nothing here has been confirmed against the app we analysed, let alone
+        against the live server.
+
+        ``reservation`` is an :class:`~srt_mobile_api.models.SrtReservationHold`
+        or a bare PNR string — a caller recovering from a partial failure may
+        have only the PNR, and that path has to work or the reservation cannot
+        be released. Requires an authenticated session and is gated by
+        ``require_mutation_consent(consent, "cancel")``, so a default
+        :class:`~srt_mobile_api.consent.MutationConsent` (``allow_cancel=False``)
+        or ``None`` is denied before the form is built.
+
+        With the default ``dry_run=True`` it returns a
+        :class:`~srt_mobile_api.consent.MutationPreview` of the exact form that
+        WOULD be POSTed (with the PNR redacted) and performs NO network I/O.
+        With ``dry_run=False`` it goes through
+        :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form` with
+        ``category="cancel"`` and returns the parsed
+        :class:`~srt_mobile_api.models.SrtCancelResult`. **That send path
+        currently always refuses**: ``safety.SRT_LIVE_MUTATION_CATEGORIES`` is
+        empty, so no cancel can be transmitted until a category is added there
+        following a live verification. A refusal raises
+        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` and sends
+        nothing.
+        """
+        require_mutation_consent(consent, "cancel")
+        if self.session.current is None:
+            raise SrtAuthError("SRT cancellation requires an authenticated session")
+        route = "/ard/selectListArd02045_n.do"
+        # Built before the dry-run branch so a preview validates exactly what a
+        # live send would transmit. The builder never refuses over a journey
+        # count formatting problem — see unpaid_reservation_cancel_payload.
+        form = unpaid_reservation_cancel_payload(reservation)
+        if consent.dry_run:
+            return MutationPreview(
+                category="cancel",
+                method="POST",
+                route=route,
+                payload=form,
+            )
+        with self._session_guard():
+            response = self.http.post_mutation_form(
+                route,
+                form,
+                consent=consent,
+                category="cancel",
+            )
+            return parse_unpaid_cancel_response(response)

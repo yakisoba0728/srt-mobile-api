@@ -324,10 +324,11 @@ class SrtHttpClient:
         if category not in SRT_LIVE_MUTATION_CATEGORIES:
             raise SrtMutationNotAllowedError(
                 f"SRT mutation category {category!r} is not live-enabled: no "
-                "SRT mutation category may be transmitted yet. The blocker is "
-                "the missing cancel method — without it a live reserve would "
-                "create an uncancellable hold — and the cancel/payment/refund "
-                "wire formats are unverified. Use dry_run=True for a preview "
+                "SRT mutation category may be transmitted yet. A cancel method "
+                "exists but sends through this same gate, so a live reserve "
+                "would still create a hold this library could not release, and "
+                "the cancel/payment/refund wire formats are unverified against "
+                "v2.0.41. Use dry_run=True for a preview "
                 "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
         # Defense-in-depth at the transmit boundary: a payment carries the PAN in
