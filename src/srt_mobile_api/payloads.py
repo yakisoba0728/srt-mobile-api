@@ -613,6 +613,12 @@ def _cancel_journey_count(journey_count: str | None) -> str:
     to the single-journey default for anything unusable rather than raising: a
     cancel form that cannot be built means a hold that cannot be released, which
     is strictly worse than sending the value srtgo attests works.
+
+    "Never raises" is absolute, including for inputs no server would send. The
+    zero padding is stripped textually before any numeric conversion, so an
+    absurdly padded value normalizes without CPython's int/str conversion limit
+    ever coming into play, and a value still too long to convert falls back
+    instead of propagating the ``ValueError``.
     """
     if type(journey_count) is not str:
         return _SINGLE_JOURNEY_COUNT
@@ -621,9 +627,21 @@ def _cancel_journey_count(journey_count: str | None) -> str:
         character < "0" or character > "9" for character in candidate
     ):
         return _SINGLE_JOURNEY_COUNT
-    count = int(candidate)
-    # str(int(...)) drops the zero padding: "0001" -> "1", "0002" -> "2".
-    return str(count) if count > 0 else _SINGLE_JOURNEY_COUNT
+    # Textual de-padding: "0001" -> "1", "0002" -> "2", "0000" -> "" (no
+    # journey at all, so the default). str(int(...)) would do the same, but
+    # only for inputs int() accepts.
+    significant = candidate.lstrip("0")
+    if not significant:
+        return _SINGLE_JOURNEY_COUNT
+    try:
+        count = int(significant)
+    except ValueError:
+        # int() refuses a decimal string with more than
+        # sys.int_info.str_digits_check_threshold (4300) significant digits.
+        # A journey count that long is not a journey count; refusing to build
+        # the form over it would orphan the hold.
+        return _SINGLE_JOURNEY_COUNT
+    return str(count)
 
 
 def unpaid_reservation_cancel_payload(

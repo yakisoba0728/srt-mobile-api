@@ -61,7 +61,10 @@
   applying the korail regression (korail commit `3d7e8a5`), where a builder that
   demanded exactly `"1"` refused a live `h_jrny_cnt="0001"` and stranded a real
   unpaid hold. A cancel form that cannot be built means a hold that cannot be
-  released.
+  released. "Never raises" is now literally true: the zero padding is stripped
+  textually before any numeric conversion, and a value past CPython's int/str
+  conversion limit (4300 significant digits, on which `int()` raises
+  `ValueError`) falls back instead of propagating.
 - `parse_reservation_hold_response()` no longer discards a reserve response that
   fails strict validation. A live reserve can create a hold before we parse, so
   when strict parsing raises a protocol error and a usable

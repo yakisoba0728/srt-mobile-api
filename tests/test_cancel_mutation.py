@@ -140,6 +140,28 @@ def test_cancel_form_never_refuses_over_a_journey_count_formatting_problem(
     assert form["pnrNo"] == FAKE_PNR
 
 
+@pytest.mark.parametrize(
+    "journey_count",
+    [
+        # Past CPython's int/str conversion limit (4300 significant digits), on
+        # which int() raises ValueError. "Never refuses" has to hold for inputs
+        # no server would ever send too, or the promise is not a promise.
+        "0" * 5000,
+        "1" * 5000,
+        "0" * 5000 + "1" * 5000,
+        # ... and the padding-only variants must still de-pad, not blow up.
+        "0" * 5000 + "2",
+    ],
+)
+def test_cancel_form_never_raises_on_an_unconvertible_journey_count(journey_count):
+    form = unpaid_reservation_cancel_payload(_hold(), journey_count=journey_count)
+
+    assert form["pnrNo"] == FAKE_PNR
+    # Either the de-padded value or the default, but never an exception and
+    # never an absurd number of digits on the wire.
+    assert form["jrnyCnt"] in {"1", "2"}
+
+
 def test_cancel_form_default_journey_count_is_not_derived_from_the_hold():
     # The reserve response carries no journey count at all (reservListMap has
     # totSeatNum, a SEAT count), so SrtReservationHold has nothing to derive
