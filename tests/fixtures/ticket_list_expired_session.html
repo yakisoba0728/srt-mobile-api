@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>SRT</title>
+    <script src="/js/loginCheck_new.js"></script>
+    <script src="/js/common/messages.js"></script>
+    <script type="text/javascript">
+        $(document).ready(function () {
+
+            //console.log("로그인페이지로 이동");
+            	srtAlertBoxDivShow("알림", Sr.msgs.login020, null, "mvLoginPage()");
+
+        });
+
+        function mvLoginPage() {
+            location.href = "/login/login.do?page=menu";
+        }
+    </script>
+</head>
+<body>
+<!--
+  REDACTED excerpt of a REAL response, captured 2026-07-26 from
+  GET /atc/selectListAtc14017_n.do issued with no session cookie.
+
+  The real body was 153161 bytes: the ORDINARY ticket-list page shell, HTTP 200,
+  Content-Type text/html. Everything structurally load-bearing is reproduced
+  here; the account's ticket rows, member id and reservation identifiers are not
+  present at all (the server renders none of them in this state), and the bulk
+  that is omitted is boilerplate menu/footer markup.
+
+  What makes this the hard case, and why it is kept verbatim: the page carries
+  no login-form action, no password input, and no redirect or error status --
+  HTTP 200 throughout. So a login-FORM detector says "not a login page" and
+  passes it through as content. The only signal is the inline Sr.msgs.login020
+  alert above. (The two tokens a form detector looks for are deliberately absent
+  from this file, comment included; a test asserts that.)
+
+  The /login/login.do referer forms below are reproduced because they are
+  present on ordinary AUTHENTICATED pages too -- they are what makes a naive
+  "does the page mention login.do" test useless.
+-->
+<form id="refererForm3" name="refererForm3" method="post" data-ajax="false" action="/login/login.do?page=menu">
+    <input type="hidden" name="login_referer3" id="login_referer3" value=""/>
+</form>
+<form id="refererForm4" name="refererForm4" method="post" data-ajax="false" action="/login/login.do">
+    <input type="hidden" name="login_referer4" id="login_referer4" value=""/>
+</form>
+<div data-role="header" class="type2">
+    <h1 class="ui-title">승차권 확인</h1>
+</div>
+<div class="ui-content" role="main">
+    <ul data-role="listview" id="ticketList"></ul>
+</div>
+</body>
+</html>

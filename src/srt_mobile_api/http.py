@@ -14,7 +14,7 @@ from .errors import (
     SrtSessionExpiredError,
     SrtTransportError,
 )
-from .parsers import is_login_form
+from .parsers import is_unauthenticated_page
 from .safety import (
     SRT_LIVE_MUTATION_CATEGORIES,
     assert_mutation_route,
@@ -71,10 +71,14 @@ class SrtHttpClient:
 
     @staticmethod
     def _is_authenticated_login_form(response: httpx.Response) -> bool:
-        return response.request.url.path not in {LOGIN_PAGE_PATH, LOGIN_API_PATH} and is_login_form(
-            response.text,
-            base_url=APP_ORIGIN,
-        )
+        # is_unauthenticated_page, not is_login_form: the live server answers an
+        # expired authenticated read with the login-REDIRECT page (HTTP 200, no
+        # login form on it at all), which is_login_form cannot see. The two login
+        # paths stay excluded — the login page legitimately IS a login page.
+        return response.request.url.path not in {
+            LOGIN_PAGE_PATH,
+            LOGIN_API_PATH,
+        } and is_unauthenticated_page(response.text, base_url=APP_ORIGIN)
 
     def _parse_json_object(self, response: httpx.Response) -> dict[str, Any]:
         try:

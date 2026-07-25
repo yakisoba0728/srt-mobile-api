@@ -150,6 +150,81 @@ def is_login_form(html: str, *, base_url: str = APP_ORIGIN) -> bool:
     return parser.found
 
 
+# The message key the server puts in the "you are not signed in" alert. Captured
+# live on 2026-07-26: an authenticated read issued with no session cookie
+# (/atc/selectListAtc14017_n.do) answered HTTP 200 with the ORDINARY page shell
+# -- header, footer, every menu form -- and an inline script that pops the alert
+# and leaves:
+#
+#     //console.log("로그인페이지로 이동");
+#     srtAlertBoxDivShow("알림", Sr.msgs.login020, null, "mvLoginPage()");
+#     ...
+#     function mvLoginPage() { location.href = "/login/login.do?page=menu"; }
+#
+# There is no <form action=".../apb/selectListApb01080_n.do">, no hmpgPwdCphd
+# input, no redirect and no error status -- so is_login_form() above, which is
+# specifically a REAL login FORM detector, correctly says False, and every
+# expiry guard keyed on it silently passed the page through as content.
+LOGIN_REDIRECT_MESSAGE_KEY = "Sr.msgs.login020"
+# mvLoginPage() is DEFINED on ordinary authenticated pages too (the ticket list
+# carries the definition whether or not it is called), so the discriminator is
+# the message key, not the function name. Across the 2026-07-26 capture the key
+# appears in exactly two places: the login page itself, and this expired
+# response. It is 0-hit in every authenticated read -- main, booking page, all
+# six selectors, the search hydration page, the seat page, the timetable, the
+# fare page and the AUTHENTICATED ticket list.
+_LOGIN_REDIRECT_CALL = "srtAlertBoxDivShow"
+
+
+class _LoginRedirectParser(HTMLParser):
+    """Detect the server's "sign in again" answer to an authenticated read.
+
+    Looks for the alert INSIDE a ``<script>`` element rather than anywhere in
+    the byte stream, so the same token appearing in visible copy — or in an
+    attribute — cannot be mistaken for the server's instruction to re-login.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.found = False
+        self._in_script = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() == "script":
+            self._in_script = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "script":
+            self._in_script = False
+
+    def handle_data(self, data: str) -> None:
+        if (
+            self._in_script
+            and LOGIN_REDIRECT_MESSAGE_KEY in data
+            and _LOGIN_REDIRECT_CALL in data
+        ):
+            self.found = True
+
+
+def is_login_redirect_page(html: str) -> bool:
+    """Whether the server answered an authenticated read with "sign in again"."""
+    parser = _LoginRedirectParser()
+    parser.feed(html)
+    return parser.found
+
+
+def is_unauthenticated_page(html: str, *, base_url: str = APP_ORIGIN) -> bool:
+    """Whether ``html`` is the server refusing an authenticated read.
+
+    The union of the two shapes the real server actually uses: the login FORM
+    (:func:`is_login_form`) and the login-REDIRECT page
+    (:func:`is_login_redirect_page`). Every expiry guard goes through here so
+    both are caught in one place; keying a guard on ``is_login_form`` alone is
+    what let an expired session read as an empty ticket list.
+    """
+    return is_login_form(html, base_url=base_url) or is_login_redirect_page(html)
+
+
 def extract_text(html: str, *, limit: int | None = None) -> str:
     parser = _TextExtractor()
     parser.feed(html)
@@ -165,8 +240,10 @@ def parse_html_page(
 ) -> HtmlPage:
     if not html.strip():
         raise SrtProtocolError(f"SRT {context} returned an empty HTML body")
-    if require_authenticated and is_login_form(html):
-        raise SrtSessionExpiredError(f"SRT {context} returned the login form", raw=html)
+    if require_authenticated and is_unauthenticated_page(html):
+        raise SrtSessionExpiredError(
+            f"SRT {context} returned the sign-in page", raw=html
+        )
     return HtmlPage(text=extract_text(html), raw=html)
 
 
