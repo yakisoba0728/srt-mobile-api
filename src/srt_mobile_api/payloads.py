@@ -668,16 +668,18 @@ def unpaid_reservation_cancel_payload(
 ) -> dict[str, str]:
     """Build the cancel (예약취소) form for a created-but-unpaid reservation.
 
-    **Provenance — the wire shape below is UNCONFIRMED for our app version.**
-    ``/ard/selectListArd02045_n.do`` and its body are attested only by srtgo's
-    live runs (``srt.py:1138``; our notes at
-    ``docs/analysis/ref-srtgo_plus.md`` §7.1). The route has ZERO hits across
-    all 21,673 files of our v2.0.41 offline decompile
-    (``docs/analysis/cross-validation-2026-07-21.md``), so this reproduces
-    srtgo's three fields without any corroboration from our own bundle. The one
-    partial exception is ``jrnyCnt``: our app hard-codes ``"jrnyCnt":"1"``
-    (여정건수) at ``ara0101v.js:92``, which corroborates the VALUE but not this
-    route's use of it. ``rsvChgTno`` is 0-hit in our bundle entirely.
+    **Provenance — this exact body was accepted live on 2026-07-25.** The three
+    fields came from srtgo (``srt.py:1138``; our notes at
+    ``docs/analysis/ref-srtgo_plus.md`` §7.1) and have ZERO hits across all
+    21,673 files of our v2.0.41 offline decompile
+    (``docs/analysis/cross-validation-2026-07-21.md``) — nothing in our own
+    bundle corroborates them, apart from ``jrnyCnt``: our app hard-codes
+    ``"jrnyCnt":"1"`` (여정건수) at ``ara0101v.js:92``, which corroborates the
+    VALUE but not this route's use of it, and ``rsvChgTno`` which is 0-hit
+    entirely. One operator-run round trip then POSTed exactly this form to the
+    real server and released a real unpaid hold (``SUCC`` / ``IRG000000``). That
+    covered a SINGLE-journey, one-adult hold, so ``jrnyCnt="1"`` is confirmed
+    for that case and the multi-leg value remains uncaptured.
 
     ``reservation`` accepts an :class:`~srt_mobile_api.models.SrtReservationHold`
     or a bare PNR string: a caller recovering from a partial failure may have

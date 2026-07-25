@@ -219,10 +219,12 @@ class SrtCancelResult:
     """The parsed envelope of an unpaid-reservation cancel (예약취소).
 
     The shape is the standard SRT ``resultMap`` envelope, successful when
-    ``strResult == "SUCC"`` — but see
-    :func:`~srt_mobile_api.parsers.parse_unpaid_cancel_response`: this is
-    srtgo-attested only and UNCONFIRMED against our v2.0.41 app, whose offline
-    bundle contains no trace of the cancel route.
+    ``strResult == "SUCC"``. The live server produced exactly that on
+    2026-07-25 (``SUCC`` / ``IRG000000``) for a single-journey unpaid hold — see
+    :func:`~srt_mobile_api.parsers.parse_unpaid_cancel_response`, which also
+    records why the container handling stays permissive: the route came from
+    srtgo and is 0-hit in our v2.0.41 offline bundle, so only that one observed
+    response corroborates it.
 
     A business failure is carried here as data (``succeeded`` False plus the
     server's ``message_code``), not raised: a caller asking "was my hold

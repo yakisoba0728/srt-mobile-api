@@ -10,12 +10,14 @@ consented ``dry_run=False`` call reaches the transport for real — against the
 mock, which is what lets these tests assert the precise bytes a live send would
 put on the wire. A ``dry_run=True`` call must still issue zero requests.
 
-**Provenance.** The cancel wire shape under test is srtgo-attested only and is
-UNCONFIRMED against our v2.0.41 app: ``/ard/selectListArd02045_n.do`` has zero
-hits across all 21,673 files of the offline evidence bundle
-(``docs/analysis/cross-validation-2026-07-21.md``). These tests pin what we
-implemented from srtgo's evidence; they cannot and do not prove the server
-accepts it.
+**Provenance.** The cancel wire shape under test came from srtgo and is 0-hit
+across all 21,673 files of our v2.0.41 offline evidence bundle
+(``docs/analysis/cross-validation-2026-07-21.md``) — nothing static
+corroborates it. What does corroborate it is one operator-run live round trip
+on 2026-07-25, which POSTed this exact form and released a real single-journey
+hold (``SUCC`` / ``IRG000000``). These tests still only pin what we implemented;
+proving the server accepts it is that live run's job, not theirs, and it covered
+the single-journey one-adult case alone.
 """
 
 from __future__ import annotations
@@ -293,9 +295,10 @@ def test_cancel_parser_treats_only_succ_as_success():
 
 
 def test_cancel_parser_accepts_the_dsoutput0_envelope_spelling():
-    # The exact container is unconfirmed for this route, so the shared
-    # normalize_result_row handling (resultMap OR outDataSets.dsOutput0) is
-    # reused rather than one layout being asserted.
+    # Only ONE live response has ever been seen for this route (2026-07-25), so
+    # the container is corroborated by a single observation rather than a
+    # schema. The shared normalize_result_row handling (resultMap OR
+    # outDataSets.dsOutput0) is reused rather than one layout being asserted.
     payload = {"outDataSets": {"dsOutput0": [{"strResult": "SUCC"}]}}
 
     assert parse_unpaid_cancel_response(payload).succeeded is True

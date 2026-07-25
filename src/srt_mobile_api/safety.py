@@ -110,12 +110,13 @@ READ_ONLY_ROUTES = frozenset(
 #     (``SrtHttpClient.post_mutation_form``) refuses every category outside
 #     that set, at both the ``post_mutation_form`` gate and again at the
 #     ``_send_mutation_request`` send boundary.
-#   * "the shape is confirmed" — this is the one that holds for NEITHER of the
-#     enabled pair. A method existing, and a category being transmittable, say
-#     nothing about the form being the one this app version sends. The cancel
-#     route is absent from the offline evidence bundle entirely and is
-#     implemented from srtgo's attestation alone; reserve is present in the
-#     bundle but its live wiring is still unexercised.
+#   * "the shape is confirmed" — a method existing, and a category being
+#     transmittable, still say nothing about the form being the one the server
+#     accepts. For reserve and cancel that question was answered on 2026-07-25 by
+#     one live round trip (SUCC / IRR000018 for reserve, SUCC / IRG000000 for
+#     cancel), for the single-journey one-adult case only. payment and refund
+#     remain unanswered: no method, no live run, and both wire formats are 0-hit
+#     in the offline bundle.
 #
 # So the current invariant is: payment and refund cannot leave the process as a
 # live request no matter how permissive the caller's consent is, while reserve
@@ -127,10 +128,10 @@ READ_ONLY_ROUTES = frozenset(
 SRT_MUTATION_ROUTES = frozenset(
     {
         # reserve (client method exists, preview by default; LIVE-ENABLED;
-        # route present in the v2.0.41 bundle, live wiring not yet exercised)
+        # route present in the v2.0.41 bundle, live wiring verified 2026-07-25)
         MutationRoute("POST", "app", "/arc/selectListArc05013_n.do"),
         # cancel (client method exists, preview by default; LIVE-ENABLED;
-        # srtgo-attested shape, unconfirmed against v2.0.41)
+        # srtgo-sourced shape, 0-hit in v2.0.41, live-verified 2026-07-25)
         MutationRoute("POST", "app", "/ard/selectListArd02045_n.do"),
         # payment (tiered only; no client method; not live-enabled)
         MutationRoute("POST", "app", "/ata/selectListAta09036_n.do"),
@@ -156,14 +157,17 @@ SRT_MUTATION_ROUTES = frozenset(
 # reserve->cancel round trip (``scripts/verify_reserve_cancel_roundtrip.py``,
 # with ``scripts/recover_hold.py`` as its safety net) physically possible.
 #
-# WHAT THIS DOES NOT CLAIM. Opening the gate is a decision about recoverability,
-# not a statement of evidence. The cancel wire shape is still srtgo-attested
-# ONLY: ``/ard/selectListArd02045_n.do`` has ZERO hits across all 21,673 files
-# of our v2.0.41 offline evidence bundle, and no live run has confirmed it yet.
-# The reserve route IS present in that bundle, but its live NetFunnel/referer
-# wiring has not been exercised against the server either. That is precisely
-# what the round trip exists to establish — the gate is open so the
-# verification can be performed, not because it already has been.
+# WHAT OPENING THE GATE DID AND DID NOT CLAIM. It was opened as a decision about
+# recoverability, not evidence — it is what made the verification physically
+# possible. That verification has since happened: on 2026-07-25 one operator-run
+# round trip reserved and cancelled a real hold against the real server
+# (reserve ``SUCC``/``IRR000018``, cancel ``SUCC``/``IRG000000``, and the ticket
+# list afterwards carried no trace of the PNR). So both halves are now confirmed
+# on the live server for the case that was exercised: ONE single-journey,
+# one-adult, general-seat reservation. Multi-leg (``jrnyCnt`` > 1), group and
+# standby were not exercised, and the cancel shape is still 0-hit across all
+# 21,673 files of our v2.0.41 offline bundle — it came from srtgo, and one live
+# success does not make it statically corroborated.
 #
 # payment AND refund STAY OUT, and adding either is a two-part job, not a
 # one-line edit here:

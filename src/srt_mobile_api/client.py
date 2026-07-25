@@ -482,16 +482,19 @@ class SrtClient:
         suppresses the acquisition, which is what lets an operator reuse a key
         already obtained for the search that chose ``train``.
 
-        **Nothing here has been confirmed live.** The route and its ~30-field
-        body ARE present in our v2.0.41 evidence bundle, but the live
-        NetFunnel/referer wiring has never been exercised against the server,
-        and the :meth:`cancel` this method depends on for release is
-        **srtgo-attested only and UNCONFIRMED**: ``/ard/selectListArd02045_n.do``
-        has zero hits across all 21,673 files of that bundle. So the cancel that
-        is supposed to undo a hold created here may itself fail on a shape the
-        server does not accept. Treat a live call as capable of stranding a real
-        reservation, and keep the PNR: ``scripts/recover_hold.py`` exists for
-        exactly that recovery.
+        **Live-verified once, on 2026-07-25.** One operator-run round trip
+        (``scripts/verify_reserve_cancel_roundtrip.py``) reserved and then
+        cancelled a real hold against the real server: this method returned
+        ``strResult='SUCC'`` with ``msgCd='IRR000018'`` and a PNR, so the
+        ``act_10`` key flow above and the referer below were both accepted. That
+        run also confirmed :meth:`cancel` (``msgCd='IRG000000'``), so a hold
+        created here can in fact be released.
+
+        What that single run does NOT cover: one adult, one journey, general
+        seat, one train. Multi-passenger, multi-leg, standby (``jobId=1102``)
+        and group reservations were not exercised. A live call still creates a
+        real unpaid hold on a real account, so keep the PNR —
+        ``scripts/recover_hold.py`` releases one from the PNR string alone.
 
         Losing a PNR is the worst outcome this method can produce, so it is
         designed against: ``parse_reservation_hold_response`` salvages a minimal
@@ -562,12 +565,19 @@ class SrtClient:
     ) -> MutationPreview | SrtCancelResult:
         """Cancel a created-but-unpaid SRT reservation (예약취소) under consent.
 
-        **The wire shape is UNVERIFIED for our app version.**
-        ``/ard/selectListArd02045_n.do`` and its ``pnrNo``/``jrnyCnt``/
-        ``rsvChgTno`` body are attested only by srtgo's live runs; the route has
-        zero hits across all 21,673 files of our v2.0.41 offline decompile, so
-        nothing here has been confirmed against the app we analysed, let alone
-        against the live server.
+        **Live-verified on 2026-07-25.** ``/ard/selectListArd02045_n.do`` with
+        the body ``pnrNo`` / ``jrnyCnt="1"`` / ``rsvChgTno="0"`` released a real
+        unpaid hold against the real server, answering ``strResult='SUCC'``,
+        ``msgCd='IRG000000'``, ``msgTxt='정상처리되었습니다'``; the ticket list
+        re-read afterwards showed no trace of the reservation
+        (``scripts/verify_reserve_cancel_roundtrip.py``, run once).
+
+        Where the shape came from is unchanged and still worth knowing: it was
+        taken from srtgo's live runs, and the route has zero hits across all
+        21,673 files of our v2.0.41 offline decompile. Nothing static
+        corroborates it — the 2026-07-25 run is a *live-server* confirmation, and
+        it covered exactly one single-journey, one-adult hold. ``jrnyCnt="1"`` is
+        therefore confirmed only for the single-journey case.
 
         ``reservation`` is an :class:`~srt_mobile_api.models.SrtReservationHold`
         or a bare PNR string — a caller recovering from a partial failure may
@@ -595,11 +605,11 @@ class SrtClient:
         With ``dry_run=False`` it goes through
         :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form` with
         ``category="cancel"`` and returns the parsed
-        :class:`~srt_mobile_api.models.SrtCancelResult`. **That send path
-        currently always refuses**: ``safety.SRT_LIVE_MUTATION_CATEGORIES`` is
-        empty, so no cancel can be transmitted until a category is added there
-        following a live verification. A refusal raises
-        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` and sends
+        :class:`~srt_mobile_api.models.SrtCancelResult`. That send path is open:
+        ``safety.SRT_LIVE_MUTATION_CATEGORIES`` holds ``{"reserve", "cancel"}``,
+        the pair enabled together so a hold can always be released. A category
+        outside it is refused with
+        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError`, which sends
         nothing.
         """
         require_mutation_consent(consent, "cancel")

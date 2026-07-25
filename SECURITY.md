@@ -13,8 +13,10 @@ per-category `MutationConsent` carrying `dry_run=False`. Payment, refund, and
 seat holding or selection have no client method at all. Reservation (`reserve`)
 and cancellation (`cancel`) each have a consent-gated method that previews by
 default and, under an explicit non-dry-run consent for its own category,
-transmits — a live `reserve` creates a real unpaid hold. `cancel`'s wire shape
-is srtgo-attested and unconfirmed against our app version.
+transmits — a live `reserve` creates a real unpaid hold. Both were exercised
+against the live server once, on 2026-07-25, in a single reserve->cancel round
+trip (one adult, one journey); `cancel`'s wire shape came from srtgo and remains
+0-hit in our v2.0.41 offline bundle, so that one run is its only corroboration.
 
 The mutation send path itself (`post_mutation_form`, and the underlying
 `_send_mutation_request`) refuses every category outside

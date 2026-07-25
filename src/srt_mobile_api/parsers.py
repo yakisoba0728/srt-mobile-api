@@ -756,17 +756,19 @@ def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
 def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
     """Parse the response of an unpaid-reservation cancel (예약취소).
 
-    **Provenance — UNCONFIRMED for our app version.** That
+    **Provenance — live-verified once, on 2026-07-25.** That
     ``/ard/selectListArd02045_n.do`` answers with the standard ``resultMap``
-    envelope, successful on ``strResult == "SUCC"``, comes solely from srtgo's
-    live runs (``docs/analysis/ref-srtgo_plus.md`` §7.1). The route is 0-hit
-    across all 21,673 files of our v2.0.41 offline decompile
-    (``docs/analysis/cross-validation-2026-07-21.md``), so no response of ours
-    has ever been seen. This parser therefore reuses the shared envelope
+    envelope, successful on ``strResult == "SUCC"``, originally came solely from
+    srtgo's live runs (``docs/analysis/ref-srtgo_plus.md`` §7.1); the route is
+    0-hit across all 21,673 files of our v2.0.41 offline decompile
+    (``docs/analysis/cross-validation-2026-07-21.md``). One operator-run round
+    trip has since seen a real response: ``SUCC`` / ``IRG000000`` /
+    ``정상처리되었습니다`` for a single-journey unpaid hold. That is ONE observed
+    envelope, not a schema, so this parser keeps reusing the shared envelope
     handling (:func:`normalize_result_row`, which accepts both the ``resultMap``
     and ``outDataSets.dsOutput0`` spellings, plus the ``ERROR_CODE``/
-    ``ERROR_MSG`` wrapper check) instead of asserting a container layout we
-    cannot corroborate.
+    ``ERROR_MSG`` wrapper check) instead of hard-asserting the container layout
+    that one response happened to use.
 
     A business failure is RETURNED, not raised: ``SrtCancelResult.succeeded`` is
     ``False`` and the server's ``msgCd``/``msgTxt`` are preserved. Raising there

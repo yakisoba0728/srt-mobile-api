@@ -2,18 +2,23 @@
 """Verify one live SRT reserve->cancel round trip against the real server.
 
 **This creates a REAL unpaid reservation on a REAL account and then cancels
-it.** It is the run that turns two unverified wire shapes into confirmed ones:
-reserve's live NetFunnel/referer wiring, and cancel's entire body -- which is
-srtgo-attested only and has zero hits in our v2.0.41 evidence bundle. Until
-this script has been run successfully, neither is confirmed.
+it.** It is the run that turned two unproven wire shapes into confirmed ones:
+reserve's live NetFunnel/referer wiring, and cancel's entire body -- which came
+from srtgo and has zero hits in our v2.0.41 evidence bundle.
 
-Because the cancel shape is exactly what is unproven, the cancel that undoes
-the hold may itself fail. Everything here is therefore arranged around one
-rule: **the PNR must reach the operator no matter what goes wrong.** A stranded
-hold whose PNR nobody knows is the worst outcome available, so the PNR is
-printed the instant it exists, before anything else is attempted, and again in
-an unmissable banner with a ready-to-run recovery command if the cancel does
-not succeed.
+**It has been run once, on 2026-07-25, and exited 0**: reserve answered
+``SUCC``/``IRR000018``, cancel answered ``SUCC``/``IRG000000``, and the ticket
+list re-read afterwards held no trace of the hold. That run covered ONE
+single-journey, one-adult, general-seat reservation -- which is all this script
+ever books -- so it says nothing about multi-leg, group or standby holds.
+
+Re-running it re-verifies the same path against the current server, and every
+run creates a real hold. The cancel that undoes it can still fail (a server
+change, an expired session), so everything here is arranged around one rule:
+**the PNR must reach the operator no matter what goes wrong.** A stranded hold
+whose PNR nobody knows is the worst outcome available, so the PNR is printed the
+instant it exists, before anything else is attempted, and again in an unmissable
+banner with a ready-to-run recovery command if the cancel does not succeed.
 
 Two opt-ins are required, both explicit::
 
