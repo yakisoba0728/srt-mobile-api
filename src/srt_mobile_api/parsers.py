@@ -667,6 +667,9 @@ def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
     Returns ``None`` when no usable ``reservListMap[0].pnrNo`` is present, i.e.
     when there is no hold to lose. Every other field is taken only if it is
     already a string, so one malformed optional value cannot cost us the PNR.
+    The PNR is stripped, matching what the cancel builder puts on the wire, so a
+    caller reading ``hold.pnr_no`` — to log it, or to hand it back later as a
+    bare PNR string — gets the identity itself and not padding around it.
     """
     if not isinstance(data, dict):
         return None
@@ -677,7 +680,7 @@ def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
     journey_list_key = row.get("JRNYLIST_KEY")
     total_seat_count = row.get("totSeatNum")
     return SrtReservationHold(
-        pnr_no=pnr,
+        pnr_no=pnr.strip(),
         journey_list_key=(
             journey_list_key if isinstance(journey_list_key, str) else ""
         ),

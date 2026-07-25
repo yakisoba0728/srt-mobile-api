@@ -392,6 +392,19 @@ def test_hold_parser_fallback_tolerates_a_malformed_optional_field(
     assert hold.total_seat_count == ""
 
 
+def test_hold_parser_fallback_strips_the_salvaged_pnr(load_json_fixture):
+    # Harmless on the wire (the cancel builder strips too), but a caller reading
+    # hold.pnr_no — to log it, or to hand it back later as a bare PNR string —
+    # must get the identity itself, not padding around it.
+    payload = deepcopy(load_json_fixture("reservation_attempt_success.json"))
+    del payload["trainListMap"][0]["seatNo"]
+    payload["reservListMap"][0]["pnrNo"] = "  NOT-A-REAL-PNR\n"
+
+    hold = parse_reservation_hold_response(payload)
+
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
+
+
 def test_hold_parser_reraises_when_there_is_no_pnr_to_lose(load_json_fixture):
     payload = deepcopy(load_json_fixture("reservation_attempt_success.json"))
     del payload["reservListMap"][0]["pnrNo"]
