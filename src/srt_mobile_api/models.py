@@ -288,6 +288,14 @@ class TimetableRow:
     station_name: str
     times: tuple[str, ...]
     raw_text: str = field(repr=False)
+    # 정차역 코드, read from the row's own
+    # `getStationNameByCode('XXXX')` script — the only place the real timetable
+    # page names a stop, since the name cell is rendered empty and filled in
+    # client-side (see parsers.parse_timetable_page). station_name is this code
+    # resolved through stations.station_name_by_code; the code itself is kept
+    # because it is stable machine-readable identity the response carries, and
+    # it was previously discarded.
+    station_code: str = ""
 
 
 @dataclass(frozen=True)

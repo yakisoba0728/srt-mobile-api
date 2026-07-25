@@ -1,0 +1,107 @@
+<!--
+  REDACTED reproduction of a REAL response, captured 2026-07-26 from
+  POST /ara/selectListAra12009_n.do.
+
+  Structure is verbatim, including the quirks that matter:
+    * <td id="stationNm_N"> is EMPTY and UNCLOSED -- the station name is never
+      in the markup; the WebView fills it in from the CODE.
+    * the getStationNameByCode('XXXX') call sits in a <script> INSIDE the <tr>.
+    * the origin's arrival cell and the terminus' departure cell hold "-",
+      which a "first non-time cell" heuristic mistakes for a station name.
+    * a per-stop trailData script follows each row, using the sentinel arrival
+      time "999999" at the origin.
+
+  Station codes are public route data, not personal data, and are the values our
+  own stations.py table already maps, so they are kept real -- the fixture would
+  not demonstrate the resolution otherwise. The train number, date and delay
+  copy are synthetic.
+-->
+<div data-role="header" class="header type2">
+	<h1 id="headerH1" class="ac">2099.01.02</h1>
+</div>
+<div class="ui-content type3" role="main">
+	<div id="trainTimeInfo1">
+		<p class="fs16 fcBl2 ac b b10">
+			999
+			&nbsp;&nbsp;
+			Synthetic Origin<span class="toIcon t05">에서</span>Synthetic Terminus
+		</p>
+
+		<table class="tblType01 type2">
+			<caption>Synthetic timetable header</caption>
+			<thead>
+			<tr>
+				<th scope="col">역명</th>
+				<th scope="col"></th>
+				<th scope="col">도착시간</th>
+				<th scope="col">출발시간</th>
+			</tr>
+			</thead>
+		</table>
+
+		<table class="tblType01 type2">
+			<caption>Synthetic timetable body</caption>
+			<tbody>
+				<tr class="ac">
+					<td id="stationNm_1">
+					<td style="border-left: 2px solid #999;">
+						<img id="stationNow_1" class="hidden" alt="현재 위치" src="/images/sta_WF_TClist_PI.png">
+					</td>
+					<script>$("#stationNm_1").html( getStationNameByCode('0551') );</script>
+					<td>-
+					</td>
+					<td>10:00
+					</td>
+				</tr>
+				<script>
+					var data = {"stopRsStnNm" : getStationNameByCode('0551'),
+							"actArvDlayTnum" : "0",
+							"expnArvDlayTnum" : "0",
+							"expnDptDlayTnum" : "0",
+							"dptTm" : "100000",
+							"arvTm" : "999999"
+					};
+					trailData.push(data);
+				</script>
+
+				<tr class="ac">
+					<td id="stationNm_2">
+					<td style="border-left: 2px solid #999;">
+						<img id="stationNow_2" class="hidden" alt="현재 위치" src="/images/sta_WF_TClist_PI.png">
+					</td>
+					<script>$("#stationNm_2").html( getStationNameByCode('0297') );</script>
+					<td>10:40
+					</td>
+					<td>10:41
+					</td>
+				</tr>
+				<script>
+					var data = {"stopRsStnNm" : getStationNameByCode('0297'),
+							"dptTm" : "104100",
+							"arvTm" : "104000"
+					};
+					trailData.push(data);
+				</script>
+
+				<tr class="ac">
+					<td id="stationNm_3">
+					<td style="border-left: 2px solid #999;">
+						<img id="stationNow_3" class="hidden" alt="현재 위치" src="/images/sta_WF_TClist_PI.png">
+					</td>
+					<script>$("#stationNm_3").html( getStationNameByCode('0020') );</script>
+					<td>12:29
+					</td>
+					<td>-
+					</td>
+				</tr>
+				<script>
+					var data = {"stopRsStnNm" : getStationNameByCode('0020'),
+							"dptTm" : "999999",
+							"arvTm" : "122900"
+					};
+					trailData.push(data);
+				</script>
+			</tbody>
+		</table>
+	</div>
+</div>

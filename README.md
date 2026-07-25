@@ -47,7 +47,7 @@ reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
 surface, the two-category live enablement and the operator scripts landed, the
 current offline suite at HEAD is
-`928 passed, 1 deselected`. The deselected case is the
+`933 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:

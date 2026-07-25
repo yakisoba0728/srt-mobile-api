@@ -20,6 +20,7 @@ from srt_mobile_api.parsers import (
     is_unauthenticated_page,
     parse_fare_page,
     parse_html_page,
+    parse_timetable_page,
 )
 
 
@@ -147,3 +148,83 @@ def test_fare_page_hide_calls_are_not_used_as_the_signal(load_text_fixture):
     assert '$("#trainPayInfo22").hide();' in html
     assert '$("#trainPayInfo1").hide();' in html
     assert parse_fare_page(html).items
+
+
+# --------------------------------------------------------------------------
+# Timetable: the station name is never in the markup. The WebView resolves it
+# from a code carried in a <script> inside the row.
+# --------------------------------------------------------------------------
+
+
+def test_timetable_markup_carries_no_station_names(load_text_fixture):
+    """Pinned first: the names genuinely are not there to be scraped."""
+    html = load_text_fixture("timetable_live_shape.html")
+    for name in ("수서", "오송", "부산"):
+        assert name not in html
+    assert 'getStationNameByCode(\'0551\')' in html
+    assert '<td id="stationNm_1">' in html
+
+
+def test_timetable_resolves_each_stop_from_its_own_script(load_text_fixture):
+    page = parse_timetable_page(load_text_fixture("timetable_live_shape.html"))
+
+    assert [(row.station_code, row.station_name) for row in page.rows] == [
+        ("0551", "수서"),
+        ("0297", "오송"),
+        ("0020", "부산"),
+    ]
+    assert [row.times for row in page.rows] == [
+        ("10:00",),
+        ("10:40", "10:41"),
+        ("12:29",),
+    ]
+
+
+def test_timetable_never_reports_the_placeholder_dash_as_a_station(
+    load_text_fixture,
+):
+    """The old heuristic returned '-' for the origin and the terminus.
+
+    Those rows carry a literal "-" where the missing arrival (origin) or
+    departure (terminus) time would go, and "first non-time cell" picked it up.
+    """
+    page = parse_timetable_page(load_text_fixture("timetable_live_shape.html"))
+    assert all(row.station_name not in {"", "-"} for row in page.rows)
+
+
+def test_timetable_falls_back_when_a_row_has_no_station_script():
+    """A row without the script keeps the old cell reading, minus the dash."""
+    html = (
+        "<table><tr><td>Synthetic Stop</td><td>-</td><td>07:15</td></tr>"
+        "<tr><td>-</td><td>08:20</td><td>08:22</td></tr></table>"
+    )
+    page = parse_timetable_page(html)
+    assert [(row.station_code, row.station_name) for row in page.rows] == [
+        ("", "Synthetic Stop"),
+        ("", ""),
+    ]
+
+
+def test_timetable_row_codes_stay_aligned_when_one_row_lacks_a_script():
+    """Row affinity, not positional zipping.
+
+    A document-order list of codes matched positionally against rows would
+    shift every stop after a row the server rendered without a script.
+    """
+    html = (
+        "<table>"
+        "<tr><td id='stationNm_1'><td></td>"
+        "<script>$(\"#stationNm_1\").html( getStationNameByCode('0551') );</script>"
+        "<td>-</td><td>10:00</td></tr>"
+        "<tr><td>Synthetic Unnamed</td><td>10:20</td><td>10:22</td></tr>"
+        "<tr><td id='stationNm_3'><td></td>"
+        "<script>$(\"#stationNm_3\").html( getStationNameByCode('0020') );</script>"
+        "<td>12:29</td><td>-</td></tr>"
+        "</table>"
+    )
+    page = parse_timetable_page(html)
+    assert [(row.station_code, row.station_name) for row in page.rows] == [
+        ("0551", "수서"),
+        ("", "Synthetic Unnamed"),
+        ("0020", "부산"),
+    ]

@@ -28,6 +28,7 @@ from .models import (
     TrainSearchResult,
     TrainSummary,
 )
+from .stations import station_name_by_code
 
 
 class _TextExtractor(HTMLParser):
@@ -395,26 +396,126 @@ class _TableParser(HTMLParser):
 
 TIME_RE = re.compile(r"\b\d{2}:\d{2}\b")
 FARE_RE = re.compile(r"(\d{1,3}(?:,\d{3})*)\s*원")
+# The call the timetable page uses to fill in a stop's name client-side. Live
+# capture, 2026-07-26 -- see parse_timetable_page.
+STATION_NAME_CALL_RE = re.compile(
+    r"getStationNameByCode\(\s*['\"](?P<code>[0-9]+)['\"]\s*\)"
+)
+# A cell holding only this is a "no time here" placeholder (the origin has no
+# arrival time, the terminus no departure time), not a station name.
+_TIMETABLE_PLACEHOLDER_CELLS = frozenset({"-", "–", "—", ""})
+
+
+class _TimetableTableParser(_TableParser):
+    """``_TableParser`` plus the station code each row's inline script carries.
+
+    The station name is not in the markup at all; the code that produces it is,
+    in a ``<script>`` INSIDE the ``<tr>``. So the code has to be collected with
+    row affinity — a document-order list of codes matched positionally against
+    rows would drift the moment the server emits a row without one.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.row_station_codes: list[str] = []
+        self._row_script_parts: list[str] | None = None
+        self._in_script = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "tr":
+            self._row_script_parts = []
+        elif tag.lower() == "script":
+            self._in_script = True
+        super().handle_starttag(tag, attrs)
+
+    def handle_data(self, data: str) -> None:
+        if self._in_script:
+            if self._row_script_parts is not None:
+                self._row_script_parts.append(data)
+            return
+        super().handle_data(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "script":
+            self._in_script = False
+            return
+        row_had_cells = self._row is not None and any(self._row or ())
+        super().handle_endtag(tag)
+        if tag.lower() == "tr":
+            script_text = " ".join(self._row_script_parts or ())
+            self._row_script_parts = None
+            if row_had_cells:
+                match = STATION_NAME_CALL_RE.search(script_text)
+                self.row_station_codes.append(match.group("code") if match else "")
 
 
 def parse_timetable_page(html: str) -> TimetablePage:
+    """Parse the 열차 시간표 page, resolving each stop's name from its code.
+
+    **This app is a WebView shell, and the timetable is where that shows.** The
+    station name is NOT in the HTML. Captured live on 2026-07-26, a stop row is::
+
+        <tr class="ac">
+            <td id="stationNm_1">
+            <td style="border-left: 2px solid #999;">
+                <img id="stationNow_1" class="hidden" ...>
+            </td>
+            <script>$("#stationNm_1").html( getStationNameByCode('0551') );</script>
+            <td>-</td>
+            <td>10:00</td>
+        </tr>
+
+    The name cell is empty (and unclosed); the WebView fills it in from the
+    CODE, using the same static lookup table we already ship as
+    :mod:`srt_mobile_api.stations`.
+
+    Reading "the first non-time cell" as the station name therefore never found
+    one. On the real 수서→부산 timetable it produced ``'-'`` for the origin and
+    the terminus — the arrival/departure placeholder dash, mistaken for a name —
+    and ``''`` for all five intermediate stops. Seven rows, zero station names,
+    two of them actively wrong. Both captured routes behaved identically.
+
+    So the code is read from the row's own script and resolved through
+    ``station_name_by_code``, exactly as the app does, and kept on
+    :class:`~srt_mobile_api.models.TimetableRow.station_code` as well — it is
+    real data the response carries that was previously dropped entirely. The old
+    cell heuristic remains as the fallback for a row with no such script, minus
+    the placeholder dashes it used to mistake for names.
+    """
     page = parse_html_page(html, context="timetable")
-    table = _TableParser()
+    table = _TimetableTableParser()
     table.feed(html)
+    table.close()
     rows: list[TimetableRow] = []
-    for cells in table.rows:
+    for index, cells in enumerate(table.rows):
         raw_text = " ".join(cells)
         times = tuple(TIME_RE.findall(raw_text))
-        if times:
+        if not times:
+            continue
+        code = (
+            table.row_station_codes[index]
+            if index < len(table.row_station_codes)
+            else ""
+        )
+        station = station_name_by_code(code) if code else ""
+        if not station:
             station = next(
                 (
-                    cell
+                    cell.strip()
                     for cell in cells
-                    if cell.strip() and not TIME_RE.fullmatch(cell.strip())
+                    if cell.strip() not in _TIMETABLE_PLACEHOLDER_CELLS
+                    and not TIME_RE.fullmatch(cell.strip())
                 ),
                 "",
             )
-            rows.append(TimetableRow(station_name=station, times=times, raw_text=raw_text))
+        rows.append(
+            TimetableRow(
+                station_name=station,
+                times=times,
+                raw_text=raw_text,
+                station_code=code,
+            )
+        )
     if not rows:
         times = tuple(TIME_RE.findall(page.text))
         if not times:
