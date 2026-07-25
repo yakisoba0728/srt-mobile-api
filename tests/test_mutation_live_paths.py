@@ -45,7 +45,7 @@ from srt_mobile_api import (
     SrtSession,
     TrainSummary,
 )
-from srt_mobile_api.errors import SrtAppError
+from srt_mobile_api.errors import SrtAppError, SrtAuthError, SrtSessionExpiredError
 from srt_mobile_api.payloads import personal_reservation_payload
 from srt_mobile_api.safety import (
     SRT_LIVE_MUTATION_CATEGORIES,
@@ -223,17 +223,151 @@ def test_reserve_form_compacts_multiple_passenger_types_in_canonical_order():
 # --- reserve(dry_run=False) live send (offline via MockTransport) -----------
 
 
-def test_reserve_refuses_live_send_until_cancel_and_verification():
-    # Live SRT reserve is deliberately disabled: there is no callable cancel to
-    # release a created hold and the live wiring is unverified. Even with full
-    # consent (dry_run=False + allow_reserve) reserve must refuse and send nothing.
-    client, recorder = _client_with({RESERVE_ROUTE: {}})
-    with pytest.raises(SrtMutationNotAllowedError):
-        client.reserve(
-            _eligible_train(),
-            consent=_live(allow_reserve=True),
-            netfunnel_key=SYNTHETIC_NF,
-        )
+NETFUNNEL_PATH = "/ts.wseq"
+ACQUIRED_NF = "ACQUIRED_NETFUNNEL_KEY"
+NETFUNNEL_BODY = (
+    "NetFunnel.gRtype=5101;"
+    f"NetFunnel.gControl.result='5101:200:key={ACQUIRED_NF}&nwait=0&nnext=0';"
+)
+
+
+class _LiveRecorder:
+    """Records requests, answering the act_10 GET and the reserve POST."""
+
+    def __init__(self, reserve_reply: dict, *, reserve_status: int = 200) -> None:
+        self.reserve_reply = reserve_reply
+        self.reserve_status = reserve_status
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if request.url.path == NETFUNNEL_PATH:
+            return httpx.Response(200, text=NETFUNNEL_BODY)
+        if request.url.path == RESERVE_ROUTE:
+            return httpx.Response(self.reserve_status, json=self.reserve_reply)
+        raise AssertionError(f"unexpected request to {request.url.path}")
+
+    @property
+    def paths(self) -> list[str]:
+        return [request.url.path for request in self.requests]
+
+    def reserve_form(self) -> dict[str, str]:
+        posts = [r for r in self.requests if r.url.path == RESERVE_ROUTE]
+        assert len(posts) == 1, f"expected exactly one reserve POST, got {len(posts)}"
+        return dict(httpx.QueryParams(posts[0].content.decode()))
+
+
+def _live_client(reserve_reply: dict, **kwargs) -> tuple[SrtClient, _LiveRecorder]:
+    recorder = _LiveRecorder(reserve_reply, **kwargs)
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(recorder))
+    client.session.current = SrtSession(login_id="synthetic", user_map={})
+    return client, recorder
+
+
+def test_reserve_live_send_acquires_an_act10_key_and_returns_a_hold(
+    load_json_fixture,
+):
+    # The whole point of opening the gate: a consented dry_run=False reserve now
+    # transmits. It must acquire the act_10 key itself (the SAME key flow train
+    # search uses -- srtgo srt.py:987 -- not act_19), put that key on the
+    # reserve form, and hand back a hold carrying the PNR.
+    reply = load_json_fixture("reservation_attempt_success.json")
+    client, recorder = _live_client(reply)
+
+    hold = client.reserve(_eligible_train(), consent=_live(allow_reserve=True))
+
+    assert isinstance(hold, SrtReservationHold)
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
+    # Key acquired first, then exactly one reserve POST. A reserve is never
+    # retried: a retry could double-book.
+    assert recorder.paths == [NETFUNNEL_PATH, RESERVE_ROUTE]
+    netfunnel_request = recorder.requests[0]
+    assert netfunnel_request.url.params["aid"] == "act_10"
+    assert recorder.reserve_form()["netfunnelKey"] == ACQUIRED_NF
+    assert recorder.reserve_form()["jobId"] == "1101"
+
+
+def test_reserve_live_send_honours_a_caller_supplied_netfunnel_key(
+    load_json_fixture,
+):
+    # A caller who already has a key (e.g. from the search that chose the train)
+    # can pass it; the client must then NOT acquire a second one.
+    client, recorder = _live_client(
+        load_json_fixture("reservation_attempt_success.json")
+    )
+
+    hold = client.reserve(
+        _eligible_train(),
+        consent=_live(allow_reserve=True),
+        netfunnel_key=SYNTHETIC_NF,
+    )
+
+    assert isinstance(hold, SrtReservationHold)
+    assert recorder.paths == [RESERVE_ROUTE]
+    assert recorder.reserve_form()["netfunnelKey"] == SYNTHETIC_NF
+
+
+def test_reserve_live_send_salvages_a_cancelable_hold_from_a_malformed_reply(
+    load_json_fixture,
+):
+    # THE safety property of this method. The server has created a real hold by
+    # the time we parse. If strict parsing then trips over an unrelated
+    # malformed field, raising would orphan that hold -- nobody would know the
+    # PNR to cancel. A degraded hold must come back instead.
+    reply = load_json_fixture("reservation_attempt_success.json")
+    del reply["trainListMap"]  # unrelated to the PNR, fatal to strict parsing
+    client, recorder = _live_client(reply)
+
+    hold = client.reserve(_eligible_train(), consent=_live(allow_reserve=True))
+
+    assert isinstance(hold, SrtReservationHold)
+    # The identity that lets the caller release the hold survived.
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
+    assert recorder.paths == [NETFUNNEL_PATH, RESERVE_ROUTE]
+
+
+def test_reserve_live_send_does_not_invent_a_hold_from_a_declared_failure():
+    # The mirror image, and equally important: telling a caller a reservation
+    # exists when it does not makes them stop trying to recover. A declared FAIL
+    # must raise, never salvage.
+    client, _recorder = _live_client(
+        {
+            "resultMap": [
+                {
+                    "strResult": "FAIL",
+                    "msgCd": "WRR000100",
+                    "msgTxt": "synthetic no seat",
+                    "pnrNo": "NOT-A-REAL-PNR",
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(SrtAppError):
+        client.reserve(_eligible_train(), consent=_live(allow_reserve=True))
+
+
+def test_reserve_live_send_clears_the_session_on_expiry_and_re_raises():
+    # Matches every other authenticated call: an expired session is cleared
+    # locally and the error propagates. S111 on a reserve means the reservation
+    # was REJECTED, so there is no hold to lose here.
+    client, _recorder = _live_client(
+        {"resultMap": [{"strResult": "FAIL", "msgCd": "S111", "msgTxt": "relogin"}]}
+    )
+
+    with pytest.raises(SrtSessionExpiredError):
+        client.reserve(_eligible_train(), consent=_live(allow_reserve=True))
+
+    assert client.session.current is None
+
+
+def test_reserve_live_send_requires_an_authenticated_session():
+    client, recorder = _live_client({})
+    client.session.current = None
+
+    with pytest.raises(SrtAuthError):
+        client.reserve(_eligible_train(), consent=_live(allow_reserve=True))
+
     assert recorder.requests == []
 
 

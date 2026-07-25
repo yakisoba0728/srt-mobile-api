@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **`SrtClient.reserve()` can now transmit.** It returns
+  `MutationPreview | SrtReservationHold`: unchanged under the default
+  `dry_run=True`, but a `dry_run=False` reserve consent now POSTs
+  `arc/selectListArc05013_n.do` and returns the parsed `SrtReservationHold`
+  whose `pnr_no` feeds `cancel()`. **A success creates a real unpaid hold on a
+  real account**, which the caller owns and must cancel or pay. The NetFunnel
+  gate is the same `act_10` key flow as train search (srtgo `srt.py:987`, *not*
+  `act_19`), so it reuses the existing `_get_act10_key` rather than adding a
+  second acquisition path; a caller-supplied `netfunnel_key` is honoured
+  verbatim and suppresses the acquisition. A failed reserve is never retried, so
+  at most one hold can exist per call, and session expiry clears the session and
+  re-raises as it does for every other authenticated call.
+  Losing a PNR is the worst outcome this path can produce, so it is designed
+  against: if strict parsing trips over a field unrelated to the PNR *after* the
+  server has created the hold, a degraded but **cancelable** hold is returned
+  instead of raising, while a server-declared failure still raises rather than
+  inventing a hold that does not exist. The live NetFunnel/referer wiring is
+  still unverified, and `scripts/recover_hold.py` cancels a stranded hold from
+  nothing but its PNR string.
 - **Live-enabled exactly two mutation categories, `reserve` and `cancel`.**
   `safety.SRT_LIVE_MUTATION_CATEGORIES` was an empty frozenset and is now
   `{"reserve", "cancel"}`, so a consented `dry_run=False` call in either

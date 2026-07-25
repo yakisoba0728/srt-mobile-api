@@ -111,16 +111,31 @@ helpers; they perform no I/O and are not client routes.
 
 The transport currently allows 20 exact read-only app/NetFunnel routes.
 `act_19`, payment, refund, other ATA/ARD flows, native bridges, callbacks, and
-external seat-map calls are not callable. A preview-only `reserve` and a
-preview-by-default `cancel` exist; `cancel` can now transmit under an explicit
-non-dry-run consent, `reserve` still cannot. See the next section.
+external seat-map calls are not callable. Preview-by-default `reserve` and
+`cancel` methods exist; both transmit under an explicit non-dry-run consent for
+their own category. See the next section.
 
 ## Consent-gated Mutation Surface
 
-- `SrtClient.reserve(train, *, consent, ...)` requires an explicit
-  `MutationConsent` with `allow_reserve=True`, and it is **preview-only**:
-  `dry_run=False` is refused, so it returns a redacted `MutationPreview` of the
-  exact `arc/selectListArc05013_n.do` form and performs no I/O.
+- `SrtClient.reserve(train, *, consent, ...) -> MutationPreview |
+  SrtReservationHold` requires an explicit `MutationConsent` with
+  `allow_reserve=True` and an authenticated session. With the default
+  `dry_run=True` it returns a redacted `MutationPreview` of the exact
+  `arc/selectListArc05013_n.do` form and performs no I/O. With `dry_run=False`
+  it transmits and returns an `SrtReservationHold`; **a success creates a real
+  unpaid hold on a real account**, which the caller owns and must cancel or pay.
+  The NetFunnel gate is the same `act_10` key flow as train search (srtgo
+  `srt.py:987`, *not* `act_19`), so it reuses `_get_act10_key`; a
+  caller-supplied `netfunnel_key` is honoured verbatim and suppresses the
+  acquisition. The reserve POST is never retried — a retry could double-book —
+  so at most one hold exists per call. Session expiry clears the session and
+  re-raises, as for every other authenticated call.
+- Losing a PNR is the worst outcome the reserve path can produce, so
+  `parse_reservation_hold_response` salvages a minimal but **cancelable** hold
+  when strict parsing trips over a field unrelated to the PNR, and refuses to
+  manufacture one when the server declared a failure (an invented hold would
+  make a caller stop trying to recover). `scripts/recover_hold.py` cancels a
+  stranded hold from nothing but its PNR string.
 - `SrtClient.cancel(reservation, *, consent)` releases a created-but-unpaid
   reservation via `ard/selectListArd02045_n.do`. It takes an
   `SrtReservationHold` or a bare PNR string (a caller recovering from a partial
@@ -273,7 +288,7 @@ car/seat response or availability contract.
   the explicit live-service test. No live request or credential access occurred.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate and the
-  consent-gated cancel surface: `836 passed, 1 deselected`; the deselected case
+  consent-gated cancel surface: `841 passed, 1 deselected`; the deselected case
   remains the explicit live-service opt-in. No live mutation was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.

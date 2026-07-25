@@ -10,11 +10,11 @@ commits. Remove or replace those values before sharing any diagnostic output.
 
 This package transmits no state-changing request without an explicit,
 per-category `MutationConsent` carrying `dry_run=False`. Payment, refund, and
-seat holding or selection have no client method at all. Reservation has a
-consent-gated, preview-only method (`reserve`) that refuses `dry_run=False` and
-performs no I/O. Cancellation has a consent-gated method (`cancel`) that
-previews by default and, under an explicit non-dry-run consent, transmits; its
-wire shape is srtgo-attested and unconfirmed against our app version.
+seat holding or selection have no client method at all. Reservation (`reserve`)
+and cancellation (`cancel`) each have a consent-gated method that previews by
+default and, under an explicit non-dry-run consent for its own category,
+transmits — a live `reserve` creates a real unpaid hold. `cancel`'s wire shape
+is srtgo-attested and unconfirmed against our app version.
 
 The mutation send path itself (`post_mutation_form`, and the underlying
 `_send_mutation_request`) refuses every category outside

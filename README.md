@@ -6,12 +6,13 @@ without an explicit, per-category `MutationConsent` with `dry_run=False`: by
 default the client transmits only login/read requests, and a mutation method
 returns a redacted `MutationPreview` of the exact form that would be POSTed.
 
-Two consent-gated mutation methods exist, `reserve` and `cancel`. `reserve` is
-still **preview-only** at the method layer (`dry_run=False` is refused
-outright); `cancel` previews by default and, given an explicit non-dry-run
-consent, now transmits. `cancel`'s wire shape is srtgo-attested and unconfirmed
-against our app version, and the live NetFunnel/referer wiring for `reserve` is
-unverified — **no live reserve->cancel round trip has been performed yet.**
+Two consent-gated mutation methods exist, `reserve` and `cancel`. Both preview
+by default and both transmit when given an explicit `dry_run=False` consent for
+their own category. A live `reserve` creates a **real unpaid hold on a real
+account**, which the caller then owns. `cancel`'s wire shape is srtgo-attested
+and unconfirmed against our app version, and the live NetFunnel/referer wiring
+for `reserve` is unverified — **no live reserve->cancel round trip has been
+performed yet.**
 
 Which mutations may reach the network at all is enforced at the transport
 layer, by two different mechanisms which are worth keeping distinct:
@@ -43,7 +44,7 @@ recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated preview-only reserve
 mutation surface, the transport-layer live-mutation gate, and the consent-gated
 cancel surface landed, the current offline suite at HEAD is
-`836 passed, 1 deselected`. The deselected case is the
+`841 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -323,11 +324,17 @@ surface described next was added separately.
 
 Two consent-gated methods are implemented and offline-tested:
 
-- `reserve` (`arc/selectListArc05013_n.do`) is **preview-only**: `dry_run=False`
-  is refused by the method itself (its live NetFunnel/referer wiring is
-  unverified), so it returns a redacted `MutationPreview` and performs no I/O.
-  The transport gate below no longer blocks the reserve category, but the method
-  layer still does.
+- `reserve` (`arc/selectListArc05013_n.do`, `jobId=1101` personal) previews by
+  default. Given a `dry_run=False` reserve consent it transmits and returns an
+  `SrtReservationHold` whose `pnr_no` feeds `cancel`. It obtains its NetFunnel
+  key from the **same `act_10` flow as train search** (srtgo `srt.py:987`; *not*
+  `act_19`), reusing `_get_act10_key` rather than a second acquisition path; a
+  caller-supplied `netfunnel_key` is honoured verbatim and suppresses the
+  acquisition. A failed reserve is never retried, so at most one hold can exist
+  per call. If strict parsing trips over an unrelated malformed field after the
+  server has already created the hold, a degraded but **cancelable** hold is
+  returned rather than raising — losing a PNR is the worst outcome this method
+  can produce. Its live NetFunnel/referer wiring is unverified.
 - `cancel` (`ard/selectListArd02045_n.do`, unpaid reservation) accepts an
   `SrtReservationHold` or a bare PNR string and previews by default. Given an
   explicit `dry_run=False` cancel consent it now transmits, and returns a parsed

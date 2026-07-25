@@ -11,7 +11,6 @@ from .config import SrtConfig
 from .consent import MutationConsent, MutationPreview, require_mutation_consent
 from .errors import (
     SrtAuthError,
-    SrtMutationNotAllowedError,
     SrtNetFunnelError,
     SrtProtocolError,
     SrtSessionExpiredError,
@@ -40,6 +39,7 @@ from .parsers import (
     parse_html_page,
     parse_mutual_verification_response,
     parse_notice_list_response,
+    parse_reservation_hold_response,
     parse_search_has_following_page,
     parse_search_page_state,
     parse_seat_selection_page,
@@ -450,65 +450,108 @@ class SrtClient:
         seat_type: SeatType = SeatType.GENERAL_FIRST,
         window_seat: bool | None = None,
         netfunnel_key: str | None = None,
-    ) -> MutationPreview:
-        """Preview a personal (개인예약) SRT reservation under explicit consent.
+    ) -> MutationPreview | SrtReservationHold:
+        """Create a personal (개인예약) SRT reservation hold under explicit consent.
 
         Gated by ``require_mutation_consent(consent, "reserve")``: a default
         :class:`~srt_mobile_api.consent.MutationConsent` (``allow_reserve=False``)
         or ``None`` is denied with
         :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` before
-        anything is built. Requires an authenticated session. With the default
-        ``dry_run=True`` it validates ``train``/``passengers`` and returns a
-        :class:`~srt_mobile_api.consent.MutationPreview` of the exact form that
-        WOULD be POSTed (mirroring srtgo ``_reserve``), performing NO network I/O
-        — the NetFunnel key is left as the caller-supplied ``netfunnel_key`` (or
-        empty) and is redacted in the preview.
+        anything is built. Requires an authenticated session.
 
-        This method is **preview-only**: ``dry_run=False`` is refused. A
-        :meth:`cancel` method now exists, but it cannot transmit either while
-        ``SRT_LIVE_MUTATION_CATEGORIES`` is empty, and its wire shape is
-        srtgo-attested and unconfirmed against our app version — so a live
-        reserve would still create a hold this library could not release, and
-        the live NetFunnel/referer wiring remains unverified. Live sending is
-        deferred until a reserve->cancel round trip is verified against the real
-        server. Of the tiered mutation routes only reserve and cancel have a
-        client method; payment/refund remain classification-only pending live
-        capture. The reserve-response parser (``parse_reservation_hold_response``,
-        → ``SrtReservationHold``) is exported for the future live path and feeds
-        :meth:`cancel`.
+        With the default ``dry_run=True`` it validates ``train``/``passengers``
+        and returns a :class:`~srt_mobile_api.consent.MutationPreview` of the
+        exact form that WOULD be POSTed (mirroring srtgo ``_reserve``),
+        performing NO network I/O — the NetFunnel key is left as the
+        caller-supplied ``netfunnel_key`` (or empty) and is redacted in the
+        preview.
+
+        With ``dry_run=False`` it **transmits**, and a success creates a real
+        unpaid hold on a real account. It acquires a NetFunnel key, POSTs
+        ``/arc/selectListArc05013_n.do`` through
+        :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form` with
+        ``category="reserve"``, and returns the parsed
+        :class:`~srt_mobile_api.models.SrtReservationHold`, whose ``pnr_no``
+        feeds :meth:`cancel`. **The caller owns that hold** and is responsible
+        for cancelling or paying it.
+
+        The NetFunnel gate is the SAME ``act_10`` key flow as train search
+        (srtgo ``srt.py:987``; NOT ``act_19``), so this reuses
+        :meth:`_get_act10_key` rather than introducing a second acquisition
+        path. A caller-supplied ``netfunnel_key`` is honoured verbatim and
+        suppresses the acquisition, which is what lets an operator reuse a key
+        already obtained for the search that chose ``train``.
+
+        **Nothing here has been confirmed live.** The route and its ~30-field
+        body ARE present in our v2.0.41 evidence bundle, but the live
+        NetFunnel/referer wiring has never been exercised against the server,
+        and the :meth:`cancel` this method depends on for release is
+        **srtgo-attested only and UNCONFIRMED**: ``/ard/selectListArd02045_n.do``
+        has zero hits across all 21,673 files of that bundle. So the cancel that
+        is supposed to undo a hold created here may itself fail on a shape the
+        server does not accept. Treat a live call as capable of stranding a real
+        reservation, and keep the PNR: ``scripts/recover_hold.py`` exists for
+        exactly that recovery.
+
+        Losing a PNR is the worst outcome this method can produce, so it is
+        designed against: ``parse_reservation_hold_response`` salvages a minimal
+        but cancelable hold when strict parsing trips over an unrelated
+        malformed field, and a failed reserve is never retried — a retry could
+        double-book — so at most one hold can exist per call.
         """
         require_mutation_consent(consent, "reserve")
         if self.session.current is None:
             raise SrtAuthError("SRT reservation requires an authenticated session")
-        if not consent.dry_run:
-            # Live SRT reserve is deliberately not enabled yet. A cancel method
-            # exists now, but no mutation category is live-enabled, so cancel
-            # cannot transmit either: a created hold would still be
-            # unreleasable by this library. Its shape is also srtgo-attested
-            # only, and the live NetFunnel-key/referer wiring is unverified
-            # against the server. Enabling live sending before a verified
-            # reserve->cancel round trip could strand a real hold. dry_run
-            # previews the exact form without sending.
-            raise SrtMutationNotAllowedError(
-                "live SRT reserve is not enabled: no mutation category can be "
-                "transmitted yet, so a created hold could not be released even "
-                "though a cancel method exists, and the NetFunnel/referer "
-                "wiring is unverified; use dry_run=True for a preview"
-            )
+        route = "/arc/selectListArc05013_n.do"
         passengers = passengers or PassengerCounts()
-        form = personal_reservation_payload(
-            train,
-            passengers,
-            seat_type=seat_type,
-            netfunnel_key=netfunnel_key or "",
-            window_seat=window_seat,
-        )
-        return MutationPreview(
-            category="reserve",
-            method="POST",
-            route="/arc/selectListArc05013_n.do",
-            payload=form,
-        )
+        if consent.dry_run:
+            # Built inside the dry-run branch with the caller's key (or none):
+            # a preview must not acquire anything, so it performs no I/O at all.
+            return MutationPreview(
+                category="reserve",
+                method="POST",
+                route=route,
+                payload=personal_reservation_payload(
+                    train,
+                    passengers,
+                    seat_type=seat_type,
+                    netfunnel_key=netfunnel_key or "",
+                    window_seat=window_seat,
+                ),
+            )
+        # The booking page is the referer search uses for its own act_10
+        # acquisition (_prepare_search), and reserve gates on the same key, so
+        # the same referer is used rather than inventing a second one.
+        booking_referer = f"{self.config.base_url}/ara/ara0101v.do"
+        with self._session_guard():
+            key = (
+                netfunnel_key
+                if netfunnel_key
+                else self._get_act10_key(booking_referer)
+            )
+            form = personal_reservation_payload(
+                train,
+                passengers,
+                seat_type=seat_type,
+                netfunnel_key=key,
+                window_seat=window_seat,
+            )
+            response = self.http.post_mutation_form(
+                route,
+                form,
+                consent=consent,
+                category="reserve",
+                # The app reserves from the search-result page (ara1001l.js:1541
+                # -1560), which is the referer every other post-search read here
+                # sends. INFERRED from the app flow, not captured from the wire.
+                referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
+            )
+            # From here a hold may EXIST on the server. parse_reservation_hold_
+            # response is the designed guard: it salvages a minimal hold from a
+            # PNR-bearing response rather than letting a strict-validation
+            # failure orphan it, and refuses to manufacture one when the server
+            # declared a failure.
+            return parse_reservation_hold_response(response)
 
     def cancel(
         self,
