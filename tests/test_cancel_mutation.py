@@ -276,6 +276,13 @@ def test_cancel_result_is_frozen_and_repr_safe():
         None,
         {"resultMap": []},
         {"resultMap": [{}]},
+        # A NON-EMPTY row with no strResult key at all. {"resultMap": [{}]}
+        # above never reaches the status check (the empty-row guard fires
+        # first), so without this case the parser could default a missing
+        # status to "SUCC" and report a cancel that never happened. Whether a
+        # hold was released is the one thing a caller must not be misled about.
+        {"resultMap": [{"msgCd": "SYNTHETIC", "msgTxt": "synthetic"}]},
+        {"outDataSets": {"dsOutput0": [{"msgCd": "SYNTHETIC"}]}},
         {"resultMap": [{"strResult": ""}]},
         {"resultMap": [{"strResult": 1}]},
         {"resultMap": [{"strResult": "SUCC", "msgCd": 7}]},
