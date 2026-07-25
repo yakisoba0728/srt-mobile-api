@@ -104,22 +104,40 @@ and its transport-layer gate are recorded under `## Unreleased` in
 - Train-group selector popup read
 - Physical seat-selection page read returning `SeatSelectionPage`
 
-The package also exports the offline `parse_reservation_attempt_response()` and
-`parse_reservation_hold_response()` helpers; they perform no I/O and are not
-client routes.
+The package also exports the offline `parse_reservation_attempt_response()`,
+`parse_reservation_hold_response()` and `parse_unpaid_cancel_response()`
+helpers; they perform no I/O and are not client routes.
 
 The transport currently allows 20 exact read-only app/NetFunnel routes.
-`act_19`, payment, cancellation, refund, ATA/ARD flows, native bridges,
-callbacks, and external seat-map calls are not callable. A preview-only
-`reserve` exists; see the next section.
+`act_19`, payment, refund, other ATA/ARD flows, native bridges, callbacks, and
+external seat-map calls are not callable. A preview-only `reserve` and a
+preview-by-default `cancel` exist, and neither can transmit; see the next
+section.
 
 ## Consent-gated Mutation Surface
 
-- `SrtClient.reserve(train, *, consent, ...)` is the only mutation method. It
-  requires an explicit `MutationConsent` with `allow_reserve=True`, and it is
-  **preview-only**: `dry_run=False` is refused, so it returns a redacted
-  `MutationPreview` of the exact `arc/selectListArc05013_n.do` form and performs
-  no I/O. `cancel`, `payment` and `refund` have no client method at all.
+- `SrtClient.reserve(train, *, consent, ...)` requires an explicit
+  `MutationConsent` with `allow_reserve=True`, and it is **preview-only**:
+  `dry_run=False` is refused, so it returns a redacted `MutationPreview` of the
+  exact `arc/selectListArc05013_n.do` form and performs no I/O.
+- `SrtClient.cancel(reservation, *, consent)` releases a created-but-unpaid
+  reservation via `ard/selectListArd02045_n.do`. It takes an
+  `SrtReservationHold` or a bare PNR string (a caller recovering from a partial
+  failure may have only the PNR), requires `allow_cancel=True` and an
+  authenticated session, and with the default `dry_run=True` returns a redacted
+  `MutationPreview` and performs no I/O. It is implemented and offline-tested
+  only: **the route, its `pnrNo`/`jrnyCnt`/`rsvChgTno` body and its
+  `strResult == "SUCC"` success rule are srtgo-attested and UNCONFIRMED against
+  v2.0.41** (0 hits across all 21,673 files of the offline bundle; only the
+  `jrnyCnt="1"` value is partially corroborated, at `ara0101v.js:92`). With
+  `dry_run=False` it is refused by the send gate below and transmits nothing;
+  sending a real cancel requires adding a category to
+  `SRT_LIVE_MUTATION_CATEGORIES` after a live verification, which has not been
+  done. `jrnyCnt` defaults to `"1"` rather than being derived from the hold
+  (the reserve response carries a seat count, not a journey count) and any
+  supplied journey count is compared numerically, tolerating zero-padding, so a
+  formatting difference can never make a hold uncancellable.
+- `payment` and `refund` have no client method at all.
 - The four state-changing routes are tiered in `safety.SRT_MUTATION_ROUTES` and
   deliberately kept out of `READ_ONLY_ROUTES`, so the 20-route read-only
   allowlist and its guarantee are unchanged and `assert_read_only_request`
@@ -134,10 +152,12 @@ callbacks, and external seat-map calls are not callable. A preview-only
   `SrtClient.http` directly cannot transmit either.
 - Enabling a category is a one-line change to that frozenset and is gated on the
   category being both implemented and live-verified. `reserve` additionally
-  requires a working `cancel`, because SRT offers no other way to release a hold
-  this library would create. `cancel`/`payment`/`refund` wire formats are 0-hit
-  across all 21,673 files of the v2.0.41 offline evidence bundle and are
-  srtgo-attested only, so they need live capture first.
+  requires a verified reserve->cancel round trip: `cancel` exists but sends
+  through the same closed gate, so SRT still offers this library no way to
+  release a hold it would create. `cancel`/`payment`/`refund` wire formats are
+  0-hit across all 21,673 files of the v2.0.41 offline evidence bundle and are
+  srtgo-attested only, so they need live capture first — implementing cancel did
+  not change that.
 
 ## Bounded Seat-Layout Evidence Gate
 
@@ -248,9 +268,11 @@ car/seat response or availability contract.
 - Sanitized-fixture phase full offline gate: `512 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
 - Current full offline gate (`pytest -q -m "not live"`), after the
-  consent-gated mutation port and the transport-layer live-mutation gate:
-  `717 passed, 1 deselected`; the deselected case remains the explicit
-  live-service opt-in. No live mutation was ever run.
+  consent-gated mutation port, the transport-layer live-mutation gate and the
+  consent-gated cancel surface: `797 passed, 1 deselected`; the deselected case
+  remains the explicit live-service opt-in. No live mutation was ever run.
+- Prior offline gate after the mutation port and its transport-layer gate, before
+  cancel: `717 passed, 1 deselected`.
 - Prior full offline gate at `955de306`, including the additive
   reservation-attempt parser tests: `625 passed, 1 deselected`.
 - Prior integrated full offline gate: `587 passed, 1 deselected`. Offline
@@ -370,7 +392,8 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
 - Runtime-success entries: 20
 - Currently implemented underlying read routes: 20, including NetFunnel `act_10`
 - Mutation routes tiered but never transmitted: 4 (reserve, cancel, payment,
-  refund); only reserve has a client method, and it is preview-only
+  refund); reserve (preview-only) and cancel (preview by default, refused at the
+  send gate) have client methods, payment and refund have none
 - Therefore the complete documented endpoint matrix is not yet implemented
 
 Static aliases, live reservation execution, payment handoff, native
@@ -386,5 +409,7 @@ handoff, external seat-map call, callback, and native bridge remain excluded.
 Every mutation endpoint remains excluded from transmission: none is
 live-enabled, so nothing state-changing is sent (see "Consent-gated Mutation
 Surface"). Making one sendable requires implementing it, capturing its live
-response, and — for reserve — a working `cancel` first. The implemented
-personal and group continuation contract has bounded live evidence.
+response, and — for reserve — a verified reserve->cancel round trip first. The
+implemented cancel does not satisfy that: its shape has never been confirmed
+against our app version or the live server. The implemented personal and group
+continuation contract has bounded live evidence.
