@@ -208,12 +208,22 @@ def test_notice_parser_rejects_non_object_incomplete_and_wrong_typed_rows(row):
 def test_fare_parser_retains_numeric_and_unavailable_semantic_rows(
     load_text_fixture,
 ):
+    """One leg's worth of rows, keeping the unavailable ones as semantic rows.
+
+    The fixture carries two fare tables because the real page always does: it is
+    laid out for a transfer itinerary. Only the first is the leg we requested --
+    ``fare_payload`` hard-codes the second leg's fields empty -- so only its rows
+    may be returned. See ``parse_fare_page`` for the live capture that made the
+    difference matter: the real second table repeats the first table's LABELS
+    with ``0원`` amounts, so reading both produced duplicate labels priced at
+    zero.
+    """
     page = parse_fare_page(load_text_fixture("fare.html"))
 
-    assert len(page.items) == 9
+    assert len(page.items) == 5
     assert all(item.amount is not None for item in page.items)
     assert page.available_items == page.items
-    assert len(page.semantic_items) == 12
+    assert len(page.semantic_items) == 6
     assert page.items[0] == FareItem(
         label="Synthetic A1",
         amount=12340,
@@ -228,6 +238,8 @@ def test_fare_parser_retains_numeric_and_unavailable_semantic_rows(
     assert unavailable.available is False
     assert unavailable.status == "Unavailable-A"
     assert unavailable.raw_amount == "Unavailable-A"
+    # Nothing from the second table survives, under either accessor.
+    assert not [item for item in page.semantic_items if item.label.startswith("Synthetic B")]
 
 
 def test_search_parser_exposes_typed_metadata_and_optional_train_fields():

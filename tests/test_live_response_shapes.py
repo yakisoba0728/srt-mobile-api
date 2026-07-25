@@ -18,6 +18,7 @@ from srt_mobile_api.parsers import (
     is_login_form,
     is_login_redirect_page,
     is_unauthenticated_page,
+    parse_fare_page,
     parse_html_page,
 )
 
@@ -95,3 +96,54 @@ def test_login_redirect_marker_must_sit_inside_a_script(load_text_fixture):
     assert is_login_redirect_page(visible) is False
     page = parse_html_page(visible, context="ticket list", require_authenticated=True)
     assert "login020" in page.text
+
+
+# --------------------------------------------------------------------------
+# Fare page: the real page always renders a SECOND, placeholder leg whose rows
+# repeat the first leg's labels at 0원.
+# --------------------------------------------------------------------------
+
+
+def test_fare_page_ignores_the_unrequested_transfer_leg(load_text_fixture):
+    page = parse_fare_page(load_text_fixture("fare_transfer_placeholder.html"))
+
+    assert len(page.semantic_items) == 6
+    assert page.items == page.semantic_items
+    assert [(item.label, item.amount) for item in page.items] == [
+        ("Synthetic Adult Synthetic First", 75700),
+        ("Synthetic Adult Synthetic Standard", 51900),
+        ("Synthetic Child Synthetic First", 49700),
+        ("Synthetic Child Synthetic Standard", 25900),
+        ("Synthetic Senior Synthetic First", 60100),
+        ("Synthetic Senior Synthetic Standard", 36300),
+    ]
+
+
+def test_fare_page_emits_no_zero_priced_duplicate_labels(load_text_fixture):
+    """The defect stated as its consequence, not as a row count.
+
+    Before the fix this page produced nine "available" items, three of them
+    ``0원`` under labels identical to real ones, so
+    ``{item.label: item.amount}`` answered 0 for a real fare.
+    """
+    page = parse_fare_page(load_text_fixture("fare_transfer_placeholder.html"))
+
+    labels = [item.label for item in page.semantic_items]
+    assert len(labels) == len(set(labels))
+    assert all(item.amount for item in page.items)
+    by_label = {item.label: item.amount for item in page.items}
+    assert by_label["Synthetic Adult Synthetic Standard"] == 51900
+
+
+def test_fare_page_hide_calls_are_not_used_as_the_signal(load_text_fixture):
+    """The page hides BOTH blocks somewhere in its script; only one is real.
+
+    ``$("#trainPayInfo22").hide();`` is a top-level statement, but
+    ``$("#trainPayInfo1").hide();`` also appears, inside
+    ``selectTransferTrain()``. A parser that collected hide() targets textually
+    would drop the real fares and keep nothing.
+    """
+    html = load_text_fixture("fare_transfer_placeholder.html")
+    assert '$("#trainPayInfo22").hide();' in html
+    assert '$("#trainPayInfo1").hide();' in html
+    assert parse_fare_page(html).items

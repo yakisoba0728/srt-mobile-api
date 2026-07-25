@@ -342,12 +342,21 @@ class _TableParser(HTMLParser):
         super().__init__()
         self.rows: list[list[str]] = []
         self.data_rows: list[list[str]] = []
+        # data_rows grouped by the <table> they came from, in document order,
+        # with the empty groups dropped. The fare page renders one table per
+        # journey leg and only the first is ever populated -- see
+        # parse_fare_page.
+        self.data_row_tables: list[list[list[str]]] = []
         self._row: list[str] | None = None
         self._cell_parts: list[str] | None = None
         self._row_has_data_cell = False
+        self._table_data_rows: list[list[str]] | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() == "tr":
+        if tag.lower() == "table":
+            self._close_table()
+            self._table_data_rows = []
+        elif tag.lower() == "tr":
             self._row = []
             self._row_has_data_cell = False
         elif tag.lower() in {"td", "th"} and self._row is not None:
@@ -368,7 +377,20 @@ class _TableParser(HTMLParser):
                 self.rows.append(self._row)
                 if self._row_has_data_cell:
                     self.data_rows.append(self._row)
+                    if self._table_data_rows is not None:
+                        self._table_data_rows.append(self._row)
             self._row = None
+        elif tag.lower() == "table":
+            self._close_table()
+
+    def _close_table(self) -> None:
+        if self._table_data_rows:
+            self.data_row_tables.append(self._table_data_rows)
+        self._table_data_rows = None
+
+    def close(self) -> None:
+        super().close()
+        self._close_table()
 
 
 TIME_RE = re.compile(r"\b\d{2}:\d{2}\b")
@@ -402,11 +424,45 @@ def parse_timetable_page(html: str) -> TimetablePage:
 
 
 def parse_fare_page(html: str) -> FarePage:
+    """Parse the 운임·요금 page for the ONE journey leg we asked about.
+
+    **Live-captured 2026-07-26, and the reason this reads one table and not
+    all of them.** The real page is built for a TRANSFER itinerary: it renders
+    ``<div id="trainPayInfo1">`` for the first leg and
+    ``<div id="trainPayInfo22">`` for a second, each with its own fare table.
+    Our request can only ever describe one leg -- :func:`fare_payload` hard-codes
+    ``runDt2=""``/``trnNo2=""``/``dptRsStnCd2=""``/``arvRsStnCd2=""`` -- so the
+    second block comes back as an unpopulated placeholder: its title shows ``..``
+    for the date and ``[]`` for the station course, and the page hides it on load
+    with ``$("#trainPayInfo22").hide();``.
+
+    Its six rows are not empty, though. They repeat the same labels with
+    placeholder amounts::
+
+        어른 특실 -        어른 일반실 0원
+        어린이 특실 -      어린이 일반실 0원
+        경로 특실 -        경로 일반실 0원
+
+    Reading every table therefore produced twelve items, of which three were
+    ``0원`` fares carrying labels IDENTICAL to real ones. A caller building
+    ``{item.label: item.amount}`` got ``어른 일반실 → 0`` instead of ``51900``:
+    a silently wrong answer about money, reproduced on two unrelated routes
+    (수서→부산 and 수서→천안아산) in the same capture.
+
+    So only the first fare-bearing table is read. The page's own ``hide()``
+    calls are deliberately NOT used as the signal: the same script also contains
+    ``$("#trainPayInfo1").hide();`` inside ``selectTransferTrain()``, so
+    collecting hide() calls textually would suppress the REAL table too.
+    "The first table with data rows" needs no JavaScript reasoning and matches
+    what we requested.
+    """
     page = parse_html_page(html, context="fare")
     table = _TableParser()
     table.feed(html)
+    table.close()
+    leg_rows = table.data_row_tables[0] if table.data_row_tables else table.data_rows
     items: list[FareItem] = []
-    for cells in table.data_rows:
+    for cells in leg_rows:
         semantic_cells = [cell.strip() for cell in cells if cell.strip()]
         if len(semantic_cells) < 2:
             continue
