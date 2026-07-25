@@ -434,7 +434,7 @@ def test_search_parser_normalizes_observed_and_legacy_train_order(train_order):
 
 @pytest.mark.parametrize(
     "bad_value",
-    [True, 4.0, -1, None, " 4", "４", "four"],
+    [True, 4.0, -1, " 4", "４", "four"],
 )
 def test_search_parser_rejects_invalid_train_order(bad_value):
     payload = _success_response(
@@ -443,6 +443,24 @@ def test_search_parser_rejects_invalid_train_order(bad_value):
 
     with pytest.raises(SrtProtocolError, match="trnOrdrNo"):
         parse_train_search_response(payload)
+
+
+def test_search_parser_reads_a_null_train_order_as_absent():
+    """JSON null is this API's spelling of "no value", not a protocol error.
+
+    ``None`` used to sit in the rejection list above. The live server refutes
+    that: every dsOutput1 row it sent on 2026-07-26 carried
+    ``"fresRsvPsbCdNm": null``, so null is ordinary in these rows -- and an
+    optional field raising takes the WHOLE search down, not just the field.
+    Every other malformed value still rejects.
+    """
+    payload = _success_response(
+        rows=[{"trnNo": "811", "trnOrdrNo": None}]
+    )
+
+    train = parse_train_search_response(payload).trains[0]
+    assert train.train_run_order is None
+    assert train.train_no == "811"
 
 
 @pytest.mark.parametrize("target", ["query_count", "train_order"])

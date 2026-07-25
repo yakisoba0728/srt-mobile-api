@@ -15,6 +15,7 @@ import pytest
 from srt_mobile_api import SrtClient, SrtConfig
 from srt_mobile_api.errors import SrtAppError, SrtSessionExpiredError
 from srt_mobile_api.parsers import (
+    parse_train_search_response,
     is_login_form,
     is_login_redirect_page,
     is_unauthenticated_page,
@@ -312,3 +313,124 @@ def test_seat_page_end_to_end_refuses_the_sold_out_shape(load_text_fixture):
     )
     with pytest.raises(SrtAppError):
         client.get_seat_page(train)
+
+
+# --------------------------------------------------------------------------
+# Search rows: the server sends JSON null as an ordinary "no value".
+# --------------------------------------------------------------------------
+
+
+def _live_shape_search_response(row_overrides: dict | None = None) -> dict:
+    """The envelope the live personal search actually returns, trimmed.
+
+    Reproduces the 2026-07-26 shape: the ErrorCode/ErrorMsg wrapper, dsOutput0
+    carrying ``fllwPgExt2: null`` alongside the real metadata, and a dsOutput1
+    row carrying ``fresRsvPsbCdNm: null``. Identifiers and figures are synthetic.
+    """
+    row = {
+        "trnNo": "999",
+        "trnGpCd": "300",
+        "stlbTrnClsfCd": "17",
+        "runDt": "20990102",
+        "dptDt": "20990102",
+        "dptTm": "100000",
+        "arvDt": "20990102",
+        "arvTm": "122900",
+        "dptRsStnCd": "0551",
+        "arvRsStnCd": "0020",
+        "dptStnRunOrdr": "000001",
+        "arvStnRunOrdr": "000007",
+        "dptStnConsOrdr": "000001",
+        "arvStnConsOrdr": "000024",
+        "seatAttCd": "015",
+        "runTm": "0229",
+        "trnOrdrNo": 0,
+        "ocurDlayTnum": 0,
+        "expnDptDlayTnum": "00000",
+        "gnrmRsvPsbStr": "예약가능",
+        "sprmRsvPsbStr": "매진",
+        "gnrmRsvPsbCdNm": "좌석있음",
+        "sprmRsvPsbCdNm": "좌석매진",
+        "rsvWaitPsbCd": " 0",
+        "rsvWaitPsbCdNm": "신청하기",
+        "stmpRsvPsbFlgCd": "YY",
+        "stndRsvPsbCdNm": "예약하기",
+        "rcvdAmt": "00000000052900",
+        "rcvdFare": "00000000023800",
+        "trainDiscGenRt": "0000.00",
+        "trnCpsCd1": "X",
+        # Present in EVERY live row, always null.
+        "fresRsvPsbCdNm": None,
+    }
+    row.update(row_overrides or {})
+    return {
+        "ErrorCode": "0",
+        "ErrorMsg": "",
+        "outDataSets": {
+            "dsOutput0": [
+                {
+                    "msgCd": "IRG000000",
+                    "seandYo": "N",
+                    "qryCnqeCnt": 1,
+                    "strResult": "SUCC",
+                    "msgTxt": "정상처리되었습니다",
+                    "fllwPgExt2": None,
+                    "fllwPgExt": "Y",
+                }
+            ],
+            "dsOutput1": [row],
+        },
+    }
+
+
+def test_search_parses_the_live_row_shape_including_its_nulls():
+    result = parse_train_search_response(_live_shape_search_response())
+
+    assert len(result.trains) == 1
+    assert result.metadata.has_following_page is True
+    assert result.metadata.query_count == 1
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "runTm",
+        "expnDptDlayTnum",
+        "rsvWaitPsbCd",
+        "stmpRsvPsbFlgCd",
+        "gnrmRsvPsbStr",
+        "trnCpsCd1",
+    ],
+)
+def test_a_null_optional_row_field_costs_one_attribute_not_the_search(field):
+    """The consequence, not the type check: a null must not empty the page.
+
+    The optional readers used to raise SrtProtocolError for any present
+    non-string, and that exception is not scoped to the field -- it aborts the
+    whole search. The live server sends nulls in these very rows, so this is the
+    difference between one train losing one attribute and a route returning no
+    trains at all.
+    """
+    result = parse_train_search_response(
+        _live_shape_search_response({field: None})
+    )
+
+    assert len(result.trains) == 1
+    assert result.trains[0].train_no == "999"
+
+
+def test_a_null_message_is_read_as_the_empty_default():
+    payload = _live_shape_search_response()
+    payload["outDataSets"]["dsOutput0"][0]["msgTxt"] = None
+
+    assert parse_train_search_response(payload).metadata.message == ""
+
+
+@pytest.mark.parametrize("wrong_value", [42, 4.0, [], {}])
+def test_a_non_null_wrong_type_still_rejects(wrong_value):
+    """Relaxing null must not relax everything else."""
+    with pytest.raises(Exception) as excinfo:
+        parse_train_search_response(
+            _live_shape_search_response({"gnrmRsvPsbStr": wrong_value})
+        )
+    assert "gnrmRsvPsbStr" in str(excinfo.value)

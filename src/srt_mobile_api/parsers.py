@@ -1249,12 +1249,38 @@ def _required_row_string(
     return value
 
 
+def _row_field_is_absent(row: dict[str, Any], key: str) -> bool:
+    """Whether an OPTIONAL row field is missing, counting JSON null as missing.
+
+    **The server really does send nulls here, and it is not an anomaly.** Every
+    one of the 30 personal ``dsOutput1`` rows in the 2026-07-26 live capture
+    carried ``"fresRsvPsbCdNm": null``, and ``dsOutput0`` carried
+    ``"fllwPgExt2": null`` in every successful search. So ``null`` is this API's
+    ordinary spelling of "this row has no such value" — the app agrees, since it
+    reads ``item.X`` straight into the DOM and cannot tell null from absent.
+
+    It matters because the optional readers below raised
+    :class:`SrtProtocolError` for any present non-string, and that exception is
+    not scoped to the field: it aborts the ENTIRE search. We happen not to read
+    ``fresRsvPsbCdNm``, so the bomb has not gone off — but the fields we DO read
+    optionally live in the same rows, filled by the same server, and the day one
+    of them (say ``rsvWaitPsbCd`` on a train with no waitlist) comes back null,
+    every search on the route stops returning trains at all rather than one
+    train losing one attribute.
+
+    A present non-string that is NOT null still raises. A number or an object
+    where a string belongs is a genuine protocol surprise; null is documented
+    behaviour we have observed.
+    """
+    return key not in row or row[key] is None
+
+
 def _optional_row_string(
     row: dict[str, Any],
     *keys: str,
 ) -> str | None:
     for key in keys:
-        if key not in row:
+        if _row_field_is_absent(row, key):
             continue
         value = row[key]
         if not isinstance(value, str):
@@ -1270,7 +1296,7 @@ def _optional_row_nonnegative_int(
     *keys: str,
 ) -> int | None:
     for key in keys:
-        if key not in row:
+        if _row_field_is_absent(row, key):
             continue
         value = row[key]
         return _nonnegative_int(value, context=f"search train row {key}")
@@ -1283,7 +1309,7 @@ def _optional_row_string_tuple(
 ) -> tuple[str, ...]:
     values: list[str] = []
     for key in keys:
-        if key not in row:
+        if _row_field_is_absent(row, key):
             continue
         value = row[key]
         if not isinstance(value, str):
@@ -1346,12 +1372,28 @@ def _station_name(
     return normalized
 
 
+def _optional_message(result: dict[str, Any]) -> str:
+    """``msgTxt`` as a string, treating JSON null as the empty default.
+
+    Same reasoning as :func:`_row_field_is_absent`, applied to the metadata
+    container that demonstrably carries nulls (``fllwPgExt2`` is null in every
+    successful search of the 2026-07-26 capture). ``msgTxt`` already defaults to
+    ``""`` when absent, so a null -- the server's other spelling of absent --
+    yielding anything but that default would be inconsistent, and raising over a
+    human-readable message would discard a whole page of trains.
+    """
+    message = result.get("msgTxt")
+    if message is None:
+        return ""
+    if not isinstance(message, str):
+        raise SrtProtocolError("SRT search metadata msgTxt must be a string")
+    return message
+
+
 def _parse_search_metadata(result: dict[str, Any]) -> TrainSearchMetadata:
     code = _required_row_string(result, "msgCd", context="search metadata")
     status = _required_row_string(result, "strResult", context="search metadata")
-    message = result.get("msgTxt", "")
-    if not isinstance(message, str):
-        raise SrtProtocolError("SRT search metadata msgTxt must be a string")
+    message = _optional_message(result)
     raw_query_count = result.get("qryCnqeCnt")
     query_count = _nonnegative_int(
         raw_query_count,
@@ -1396,9 +1438,7 @@ def parse_train_search_response(
         raise SrtProtocolError("SRT search response missing dsOutput0 result metadata")
     code = _required_row_string(result, "msgCd", context="search metadata")
     status = _required_row_string(result, "strResult", context="search metadata")
-    message = result.get("msgTxt", "")
-    if not isinstance(message, str):
-        raise SrtProtocolError("SRT search metadata msgTxt must be a string")
+    message = _optional_message(result)
     if code == "NET000001":
         raise SrtNetFunnelError(code, message or "NetFunnel key required", raw=data)
     # The app classifies a search purely on dsOutput0.strResult (== "FAIL" fails, anything
