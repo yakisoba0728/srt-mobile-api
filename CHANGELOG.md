@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- The NetFunnel queue protocol is now complete. We sent only `getTidChkEnter`
+  (5101); the bundle's own vendored `netfunnel.js` defines three request types
+  (`RTYPE_CHK_ENTER=5002`, `RTYPE_SET_COMPLETE=5004`,
+  `RTYPE_GET_TID_CHK_ENTER=5101`, netfunnel.js:84) and we implemented one third
+  of it. Two consequences: if the queue actually engaged (201 `kContinue`) the
+  search **failed** — the queue working as designed looked like an error — and
+  the slot was never released, so our place in line was held until it timed out.
+  Added `chkEnter` polling with HARD caps (20 polls or 60s wall clock, whichever
+  first; each wait is the server's own `ttl` clamped to the app's 1..5s
+  `TS_MAX_TTL`, so it can never become a tight retry loop) and `setComplete`
+  after every guarded request, matching the bundle's `TS_AUTO_COMPLETE = true`.
+  A failed release is swallowed by design: it runs after the caller's real
+  request already succeeded or failed, and must never replace that outcome —
+  least of all on a `reserve`, where it would hide a PNR.
+  `safety.py`'s `/ts.wseq` contract now registers **three exact per-opcode query
+  shapes** instead of one; it was not loosened. Two bundle details are recorded
+  because they contradict the obvious assumption that one shape covers all
+  three: `setComplete` carries **no `sid` and no `aid`** (the only one of the
+  four builders in `netfunnel.js` that omits them), and `ttl` sits **between
+  `prefix` and `sid`** on `chkEnter`, carrying the server's returned value
+  rather than a constant. `js=yes` stays pinned throughout — srtgo and
+  ryanking13/SRT both send `js=true`, and the bundle says `yes`.
+  **Live-verified 2026-07-26**: a real acquire → release round trip
+  (`5002:200` with a 256-character key and `ttl=0`/`nwait=0`, then `5004:200`).
+  **Not verified**: the 201 polling path, because at normal load the queue does
+  not engage and load was deliberately not synthesised to force it. That live
+  run caught a bug no fixture could — the key-shape guard bounded keys at 128
+  characters while a real key is 256, so every `setComplete` failed the guard
+  and was silently swallowed. One divergence is deliberate: the acquire reply
+  names a specific queue node (`ip`/`port`) the app would follow, and we stay
+  pinned to the two canonical origins instead; the live run showed the front
+  door releases the slot anyway.
+
 - New read: `SrtClient.get_reservations(page_no=0)` — `POST
   /atc/selectListAtc14016_n.do` with `pageNo`, returning typed
   `SrtReservationSummary` rows in an `SrtReservationListResult`. This is the

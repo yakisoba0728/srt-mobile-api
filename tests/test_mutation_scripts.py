@@ -787,17 +787,27 @@ def test_roundtrip_end_to_end_against_a_real_client(
         "POST /apb/selectListApb01080_n.do",
         "GET /main/main.do",
         "GET /ara/ara0101v.do",
-        "GET /ts.wseq",  # search's act_10
+        "GET /ts.wseq",  # search's act_10 (5101 getTidChkEnter)
         "GET /ara/selectListAra10007_n.do",
         "POST /ara/selectListAra10007_n.do",
+        "GET /ts.wseq",  # search's slot released (5004 setComplete)
         # Pre-reserve ticket-list snapshot: the baseline that lets a lost
         # response still be noticed as a created hold.
         "GET /atc/selectListAtc14017_n.do",
         "GET /ts.wseq",  # reserve's act_10 -- the SAME flow, not act_19
         "POST /arc/selectListArc05013_n.do",
+        "GET /ts.wseq",  # reserve's slot released
         "POST /ard/selectListArd02045_n.do",
         "GET /atc/selectListAtc14017_n.do",
     ]
+    # Every acquired slot is released. Without setComplete our place in line is
+    # held until it times out, which at peak load is queue pollution we caused.
+    netfunnel = [
+        request
+        for request in sent["paths"]
+        if request == "GET /ts.wseq"
+    ]
+    assert len(netfunnel) == 4
     # ABC123 is the key in the netfunnel_act10 fixture: the reserve really did
     # carry a freshly acquired act_10 key.
     assert sent["reserve"]["netfunnelKey"] == "ABC123"

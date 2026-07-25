@@ -287,6 +287,116 @@ def _assert_seat_page_request(request: httpx.Request) -> None:
         raise SrtProtocolError("SRT seat page dynamic form values are malformed")
 
 
+# The NetFunnel queue protocol, one exact query contract per opcode.
+#
+# This is deliberately three named contracts rather than one loosened contract:
+# the guard used to accept getTidChkEnter (5101) and nothing else, and the way
+# to add the other two halves of the protocol is to REGISTER them, not to stop
+# checking. Every field below is taken from the corresponding builder in the
+# bundle's own netfunnel.js -- getTidChkEnterProc, chkEnterProc and
+# TsClient.prototype.setComplete -- and the differences between them are the
+# app's, not ours:
+#
+#   * 5101 getTidChkEnter: no key (there is none yet to send).
+#   * 5002 chkEnter: adds `key`, and OPTIONALLY `ttl` -- present only when the
+#     previous 201 sent a non-zero one, and positioned between `prefix` and
+#     `sid`, which is where the app concatenates it.
+#   * 5004 setComplete: adds `key` and DROPS `sid` and `aid` entirely. It is the
+#     only one of the four builders in netfunnel.js that never appends
+#     "&sid=" + service_id + "&aid=" + action_id.
+#
+# `js=yes` is pinned for all three. srtgo and ryanking13/SRT both send
+# `js=true`; the bundle we ship says `yes`, and the bundle is the app.
+#
+# The key is opaque and server-issued, so it is validated by SHAPE rather than
+# by value: a non-empty run of the characters a NetFunnel key is made of. That
+# keeps the parameter from becoming a free-text field a bug could smuggle
+# anything through.
+#
+# The 512 bound is a ceiling, not a guess. A real act_10 key captured on
+# 2026-07-26 is 256 characters of uppercase hex; an earlier 128 bound here made
+# every setComplete fail this check, and because a failed release is swallowed
+# by design (SrtClient._release_netfunnel_slots) it failed SILENTLY -- the live
+# run is what exposed it, which is exactly the class of bug a fixture cannot.
+NETFUNNEL_KEY_RE = re.compile(r"[A-Za-z0-9_.:@~-]{1,512}")
+_NETFUNNEL_COMMON = {
+    "nfid": "0",
+    "js": "yes",
+}
+_NETFUNNEL_ACT_10 = {
+    "sid": "service_1",
+    "aid": "act_10",
+}
+NETFUNNEL_QUERY_CONTRACTS = {
+    "5101": {
+        **_NETFUNNEL_COMMON,
+        **_NETFUNNEL_ACT_10,
+        "prefix": "NetFunnel.gRtype=5101;",
+    },
+    "5002": {
+        **_NETFUNNEL_COMMON,
+        **_NETFUNNEL_ACT_10,
+        "prefix": "NetFunnel.gRtype=5002;",
+    },
+    "5004": {
+        **_NETFUNNEL_COMMON,
+        "prefix": "NetFunnel.gRtype=5004;",
+    },
+}
+# Opcodes whose request carries the queue key, and (separately) the one opcode
+# that may carry a ttl. Kept as data next to the contracts so "which opcode has
+# which optional field" is answerable by reading, not by tracing the checker.
+NETFUNNEL_KEYED_OPCODES = frozenset({"5002", "5004"})
+NETFUNNEL_TTL_OPCODES = frozenset({"5002"})
+
+
+def _assert_netfunnel_request(url: httpx.URL) -> None:
+    items = url.params.multi_items()
+    params = dict(items)
+    opcode = params.get("opcode", "")
+    required = NETFUNNEL_QUERY_CONTRACTS.get(opcode)
+    if required is None:
+        raise SrtProtocolError(
+            "SRT NetFunnel opcode is not one of the registered queue "
+            "operations (5101 getTidChkEnter, 5002 chkEnter, 5004 setComplete)"
+        )
+    # The unkeyed timestamp the app appends as `"&" + Date.getTime()`. httpx
+    # parses it as a parameter whose NAME is the epoch and whose value is empty.
+    timestamp_keys = [name for name, value in items if name.isdigit() and value == ""]
+    expected_count = len(required) + 2  # + opcode + timestamp
+    optional_names: list[str] = []
+    if opcode in NETFUNNEL_KEYED_OPCODES:
+        optional_names.append("key")
+        expected_count += 1
+        if NETFUNNEL_KEY_RE.fullmatch(params.get("key", "")) is None:
+            raise SrtProtocolError(
+                "SRT NetFunnel key parameter is missing or malformed"
+            )
+    if opcode in NETFUNNEL_TTL_OPCODES and "ttl" in params:
+        optional_names.append("ttl")
+        expected_count += 1
+        ttl = params["ttl"]
+        # netfunnel.js only appends ttl `if (NetFunnel.ttl > 0)` and caps it at
+        # mConfig.max_ttl (TS_MAX_TTL = 5), so a ttl outside 1..5 is not a shape
+        # the app can produce.
+        if not ttl.isdigit() or not 1 <= int(ttl) <= 5:
+            raise SrtProtocolError(
+                "SRT NetFunnel ttl parameter is outside the app's 1..5 range"
+            )
+    if (
+        any(params.get(name) != value for name, value in required.items())
+        or len(timestamp_keys) != 1
+        or len(items) != expected_count
+        or any(
+            sum(name == item_name for item_name, _value in items) != 1
+            for name in ("opcode", *required, *optional_names)
+        )
+    ):
+        raise SrtProtocolError(
+            f"SRT NetFunnel request is not the registered opcode-{opcode} contract"
+        )
+
+
 def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
     if config.base_url != APP_ORIGIN or config.netfunnel_url != NETFUNNEL_ORIGIN:
         raise SrtProtocolError("SRT request configuration does not use canonical origins")
@@ -323,30 +433,7 @@ def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
         return
     if host_kind != "netfunnel":
         return
-
-    items = url.params.multi_items()
-    params = dict(items)
-    timestamp_keys = [name for name, value in items if name.isdigit() and value == ""]
-    required = {
-        "opcode": "5101",
-        "nfid": "0",
-        "prefix": "NetFunnel.gRtype=5101;",
-        "sid": "service_1",
-        "aid": "act_10",
-        "js": "yes",
-    }
-    if (
-        any(params.get(name) != value for name, value in required.items())
-        or len(timestamp_keys) != 1
-        or len(items) != len(required) + 1
-        or any(
-            sum(name == item_name for item_name, _value in items) != 1
-            for name in required
-        )
-    ):
-        raise SrtProtocolError(
-            "SRT NetFunnel request is not the registered act_10 contract"
-        )
+    _assert_netfunnel_request(url)
 
 
 EXCLUDED_API_DOMAINS = frozenset(

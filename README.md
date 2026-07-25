@@ -45,9 +45,10 @@ The reviewed safety boundary contains 21 routes. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
-surface, the two-category live enablement, the operator scripts and the
-reservation-list read landed, the current offline suite at HEAD is
-`1030 passed, 1 deselected`. The deselected case is the
+surface, the two-category live enablement, the operator scripts, the
+reservation-list read and the NetFunnel queue protocol landed, the current
+offline suite at HEAD is
+`1090 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -199,6 +200,54 @@ permissively: only `pnrNo` is required, an unexpected field type is dropped
 rather than raised on, asymmetric containers do not truncate the tail, and a
 response carrying rows we cannot read a PNR out of fails loudly rather than
 reporting an empty account.
+
+### NetFunnel queue protocol
+
+`/ts.wseq` carries the whole three-opcode conversation now, not just its first
+message. The bundle's own vendored `netfunnel.js` defines all three
+(`RTYPE_GET_TID_CHK_ENTER=5101`, `RTYPE_CHK_ENTER=5002`,
+`RTYPE_SET_COMPLETE=5004`, netfunnel.js:84):
+
+- **5101 getTidChkEnter** — acquire, as before;
+- **5002 chkEnter** — poll while the queue holds us. Previously a 201
+  (`kContinue`) simply failed the search: the queue working as designed looked
+  like an error. The loop is **bounded**, unlike the app's — 20 polls or 60
+  seconds of wall clock, whichever comes first — and each wait is the server's
+  own `ttl`, clamped to the app's own 1..5s (`TS_MAX_TTL`) so it can never
+  become a tight retry loop;
+- **5004 setComplete** — release the slot. Without it our place in line was held
+  until it timed out, which at peak load is queue pollution we caused.
+  `TS_AUTO_COMPLETE = true` in the bundle's config, so the app releases too. A
+  failed release is swallowed: it is housekeeping that runs after the caller's
+  real request already succeeded or failed, and it must never replace that
+  outcome — least of all on a `reserve`, where it would hide a PNR.
+
+`safety.py`'s `/ts.wseq` contract registers **three exact per-opcode query
+shapes** rather than being loosened to "any NetFunnel request". Two of the
+bundle's own details are worth stating because they contradict the obvious
+assumption that one query shape covers all three: `setComplete` carries **no
+`sid` and no `aid`** (it is the only one of the four builders in `netfunnel.js`
+that omits them), and `ttl` sits **between `prefix` and `sid`** on `chkEnter`
+and is the server's returned value rather than a constant. `js=yes` is pinned
+throughout — srtgo and ryanking13/SRT both send `js=true`, and the bundle we
+ship says `yes`.
+
+**Live status.** A real acquire → release round trip was verified on
+2026-07-26: the acquire answered `5002:200` with a 256-character key (typed
+5002 even though we asked 5101, which is the app's own retyping) and
+`ttl=0`/`nwait=0`, and the `setComplete` answered `5004:200`. **The 201 polling
+path is offline-tested only** — at normal load the queue does not engage, and
+load was deliberately not synthesised to force it. The live run also caught a
+bug no fixture could: the key-shape guard bounded keys at 128 characters while
+a real one is 256, so every `setComplete` failed the guard and was silently
+swallowed.
+
+One divergence is deliberate. The acquire reply names a specific queue node
+(`ip=rnf14.letskorail.com&port=443`), and the app WOULD send its subsequent
+`chkEnter`/`setComplete` there (`TS_CONFIG_USE = false`). We do not: the client
+is pinned to two canonical origins, and following a server-named host would let
+a response choose where the next request goes. The live run showed we do not
+have to — the front door released a slot issued by another node.
 
 ## Scope
 

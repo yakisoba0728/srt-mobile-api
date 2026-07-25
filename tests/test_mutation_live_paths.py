@@ -356,6 +356,10 @@ class _LiveRecorder:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if request.url.path == NETFUNNEL_PATH:
+            if request.url.params["opcode"] == "5004":
+                return httpx.Response(
+                    200, text="NetFunnel.gControl.result='5004:200:utime=1';"
+                )
             return httpx.Response(200, text=NETFUNNEL_BODY)
         if request.url.path == RESERVE_ROUTE:
             return httpx.Response(self.reserve_status, json=self.reserve_reply)
@@ -392,11 +396,15 @@ def test_reserve_live_send_acquires_an_act10_key_and_returns_a_hold(
 
     assert isinstance(hold, SrtReservationHold)
     assert hold.pnr_no == "NOT-A-REAL-PNR"
-    # Key acquired first, then exactly one reserve POST. A reserve is never
-    # retried: a retry could double-book.
-    assert recorder.paths == [NETFUNNEL_PATH, RESERVE_ROUTE]
+    # Key acquired first, then exactly one reserve POST, then the queue slot
+    # released. A reserve is never retried: a retry could double-book.
+    assert recorder.paths == [NETFUNNEL_PATH, RESERVE_ROUTE, NETFUNNEL_PATH]
     netfunnel_request = recorder.requests[0]
     assert netfunnel_request.url.params["aid"] == "act_10"
+    assert netfunnel_request.url.params["opcode"] == "5101"
+    release = recorder.requests[-1]
+    assert release.url.params["opcode"] == "5004"
+    assert release.url.params["key"] == ACQUIRED_NF
     assert recorder.reserve_form()["netfunnelKey"] == ACQUIRED_NF
     assert recorder.reserve_form()["jobId"] == "1101"
 
@@ -437,7 +445,7 @@ def test_reserve_live_send_salvages_a_cancelable_hold_from_a_malformed_reply(
     assert isinstance(hold, SrtReservationHold)
     # The identity that lets the caller release the hold survived.
     assert hold.pnr_no == "NOT-A-REAL-PNR"
-    assert recorder.paths == [NETFUNNEL_PATH, RESERVE_ROUTE]
+    assert recorder.paths == [NETFUNNEL_PATH, RESERVE_ROUTE, NETFUNNEL_PATH]
 
 
 def test_reserve_live_send_does_not_invent_a_hold_from_a_declared_failure():

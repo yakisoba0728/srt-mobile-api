@@ -22,6 +22,25 @@ from srt_mobile_api.parsers import (
 )
 
 
+def _netfunnel_opcodes(calls) -> list[str]:
+    """The NetFunnel opcodes issued, in order.
+
+    Counting bare "/ts.wseq" hits stopped being meaningful once the client
+    started RELEASING its queue slot: an acquisition (5101 getTidChkEnter) and
+    a release (5004 setComplete) are both /ts.wseq. Asserting the opcode
+    sequence says which is which, so these tests now pin more than they did.
+    """
+    return [
+        request.url.params["opcode"]
+        for request in calls
+        if request.url.path == "/ts.wseq"
+    ]
+
+
+def _acquisitions(calls) -> int:
+    return _netfunnel_opcodes(calls).count("5101")
+
+
 def test_html_page_rejects_empty_and_login_form_for_authenticated_context():
     with pytest.raises(SrtProtocolError):
         parse_html_page("", context="ticket list")
@@ -372,7 +391,9 @@ def test_search_uses_act10_and_search_endpoint(load_json_fixture, load_text_fixt
     assert group.trains[0].train_no == "301"
     assert group.trains[0].departure_station_name == "수서"
     assert group.trains[0].arrival_station_name == "부산"
-    assert [request.url.path for request in calls].count("/ts.wseq") == 2
+    # Two searches: each acquires a key (5101) and releases its slot (5004)
+    # once the guarded POST is done -- the app's TS_AUTO_COMPLETE behaviour.
+    assert _netfunnel_opcodes(calls) == ["5101", "5004", "5101", "5004"]
     assert all(str(request.url).endswith("&1712345678901") for request in calls if request.url.path == "/ts.wseq")
     assert sum(
         request.method == "GET" and request.url.path == "/ara/selectListAra10007_n.do" for request in calls
@@ -486,12 +507,16 @@ def test_iter_train_search_pages_reuses_personal_hydration_key_and_cursor(load_t
         ["060000"],
         ["070000"],
     ]
+    # The whole walk is ONE guarded interaction: the key is acquired once, the
+    # continuation page reuses it, and the slot is released when the walk ends.
     assert [request.url.path for request in calls] == [
         "/ts.wseq",
         "/ara/selectListAra10007_n.do",
         "/ara/selectListAra10007_n.do",
         "/ara/selectListAra10007_n.do",
+        "/ts.wseq",
     ]
+    assert _netfunnel_opcodes(calls) == ["5101", "5004"]
     posts = [request for request in calls if request.method == "POST"]
     first, second = [
         dict(parse_qsl(request.content.decode(), keep_blank_values=True))
@@ -648,7 +673,9 @@ def test_iter_first_page_net000001_repeats_full_flow_once(
         nonlocal post_count
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
-            key = "FIRST" if sum(call.url.path == "/ts.wseq" for call in calls) == 1 else "SECOND"
+            if request.url.params["opcode"] == "5004":
+                return httpx.Response(200, text="NetFunnel.gControl.result='5004:200:utime=1';")
+            key = "FIRST" if _acquisitions(calls) == 1 else "SECOND"
             return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:200:key={key}';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
@@ -661,7 +688,9 @@ def test_iter_first_page_net000001_repeats_full_flow_once(
     pages = list(client.iter_train_search_pages(TrainSearchQuery("0551", "0020", "20260710")))
 
     assert len(pages) == 1
-    assert sum(call.url.path == "/ts.wseq" for call in calls) == 2
+    # Two acquisitions (the NET000001 retry gets a fresh key) and both slots
+    # released at the end of the walk -- neither is left holding a place.
+    assert _netfunnel_opcodes(calls) == ["5101", "5101", "5004", "5004"]
     assert sum(call.method == "GET" and call.url.path != "/ts.wseq" for call in calls) == 2
     payloads = [
         dict(parse_qsl(request.content.decode(), keep_blank_values=True))
@@ -681,7 +710,9 @@ def test_iter_continuation_net000001_refreshes_only_failing_cursor_once(
         nonlocal post_count
         calls.append(request)
         if request.url.host == "nf.letskorail.com":
-            key = "FIRST" if sum(call.url.path == "/ts.wseq" for call in calls) == 1 else "SECOND"
+            if request.url.params["opcode"] == "5004":
+                return httpx.Response(200, text="NetFunnel.gControl.result='5004:200:utime=1';")
+            key = "FIRST" if _acquisitions(calls) == 1 else "SECOND"
             return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:200:key={key}';")
         if request.method == "GET":
             key = "FIRST" if sum(call.method == "GET" and call.url.path != "/ts.wseq" for call in calls) == 1 else "SECOND"
@@ -720,7 +751,7 @@ def test_iter_continuation_net000001_refreshes_only_failing_cursor_once(
         "nonce-FIRST",
         "nonce-SECOND",
     ]
-    assert sum(call.url.path == "/ts.wseq" for call in calls) == 2
+    assert _netfunnel_opcodes(calls) == ["5101", "5101", "5004", "5004"]
 
 
 def test_iter_continuation_second_net000001_raises_without_replaying_first_page(
@@ -870,12 +901,16 @@ def test_net000001_repeats_full_flow_once_with_fresh_keys(load_json_fixture, loa
     calls: list[tuple[str, str]] = []
     posted_keys: list[str] = []
     post_count = 0
+    acquisitions = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal post_count
+        nonlocal post_count, acquisitions
         calls.append((request.method, request.url.path))
         if request.url.host == "nf.letskorail.com":
-            key = "FIRST" if sum(path == "/ts.wseq" for _, path in calls) == 1 else "SECOND"
+            if request.url.params["opcode"] == "5004":
+                return httpx.Response(200, text="NetFunnel.gControl.result='5004:200:utime=1';")
+            acquisitions += 1
+            key = "FIRST" if acquisitions == 1 else "SECOND"
             return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:200:key={key}';")
         if request.method == "GET":
             return httpx.Response(200, text=load_text_fixture("search_page.html"))
@@ -888,7 +923,9 @@ def test_net000001_repeats_full_flow_once_with_fresh_keys(load_json_fixture, loa
     client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler), clock=lambda: 1712345678.901)
     result = client.search_trains(TrainSearchQuery("0551", "0020", "20260710"))
     assert result.trains[0].train_no == "303"
-    assert [path for _, path in calls].count("/ts.wseq") == 2
+    # Each attempt of _search_once releases its own slot before the next one
+    # acquires, so the sequence alternates rather than draining at the end.
+    assert [path for _, path in calls].count("/ts.wseq") == 4
     assert calls.count(("GET", "/ara/selectListAra10007_n.do")) == 2
     assert calls.count(("POST", "/ara/selectListAra10007_n.do")) == 2
     assert posted_keys == ["FIRST", "SECOND"]

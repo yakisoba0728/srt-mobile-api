@@ -10,6 +10,7 @@ import httpx
 from .config import SrtConfig
 from .consent import MutationConsent, MutationPreview, require_mutation_consent
 from .errors import (
+    SrtApiError,
     SrtAuthError,
     SrtNetFunnelError,
     SrtProtocolError,
@@ -34,7 +35,17 @@ from .models import (
     TrainSearchResult,
     TrainSummary,
 )
-from .netfunnel import build_act10_url, parse_netfunnel_response
+from .netfunnel import (
+    QUEUE_POLL_LIMIT,
+    QUEUE_WAIT_LIMIT_SECONDS,
+    build_act10_url,
+    build_chk_enter_url,
+    build_set_complete_url,
+    is_queued,
+    parse_queue_response,
+    parse_set_complete_response,
+    queue_wait_seconds,
+)
 from .parsers import (
     parse_fare_page,
     parse_html_page,
@@ -77,11 +88,18 @@ class SrtClient:
         *,
         transport: httpx.BaseTransport | None = None,
         clock: Callable[[], float] | None = None,
+        sleep: Callable[[float], None] | None = None,
     ) -> None:
         self.config = config or SrtConfig()
         self.http = SrtHttpClient(self.config, transport=transport)
         self.session = SrtSessionClient(self.http)
         self._clock = clock or time.time
+        self._sleep = sleep or time.sleep
+        # act_10 keys acquired but not yet released with setComplete (5004).
+        # A list rather than a single slot because a NetFunnel retry mid-flow
+        # can acquire a second key before the first is released, and the point
+        # of tracking them is that NONE is left holding a place in line.
+        self._netfunnel_slots: list[str] = []
 
     def close(self) -> None:
         self.http.close()
@@ -271,13 +289,113 @@ class SrtClient:
             )
             return parse_mutual_verification_response(data)
 
+    def _netfunnel_get(self, url: str, referer: str) -> str:
+        return self.http.get_text_url(url, referer=referer)
+
     def _get_act10_key(self, referer: str) -> str:
-        url = build_act10_url(
-            self.config.netfunnel_url,
-            timestamp_ms=int(self._clock() * 1000),
+        """Acquire an ``act_10`` queue key, WAITING if the queue engages.
+
+        Sends ``getTidChkEnter`` (5101) once. A pass (200, or a 300 bypass that
+        carries no key) returns immediately, which is what happens at normal
+        load and is the only outcome this repository has ever observed live.
+
+        A 201/202 means we are actually in line, and the app's answer to that is
+        to poll ``chkEnter`` (5002) until admitted
+        (``_showResultChkEnter`` arms ``setTimeout(chkEnterCont, ttl * 1000)``).
+        Before this, we simply failed there and the search died of a queue that
+        was working as designed.
+
+        The loop is BOUNDED, unlike the app's. The app polls forever behind a
+        wait popup a human can close; a library has no such escape hatch, so
+        both a poll count (:data:`~srt_mobile_api.netfunnel.QUEUE_POLL_LIMIT`)
+        and a wall-clock budget
+        (:data:`~srt_mobile_api.netfunnel.QUEUE_WAIT_LIMIT_SECONDS`) cap it, and
+        whichever is reached first raises :class:`SrtNetFunnelError` rather than
+        waiting on. Each wait is the server's own ``ttl``, clamped to the app's
+        1..5s (``TS_MAX_TTL``), so this cannot become a tight retry loop — which
+        matters, because tight retries against a queue are exactly the traffic
+        shape that earns an IP block.
+
+        Every acquired key is recorded so it can be released with ``setComplete``
+        once the guarded request is done; see :meth:`_release_netfunnel_slots`.
+
+        **Live status: the polling path is OFFLINE-TESTED ONLY.** At normal load
+        the SRT queue does not engage, so no run of this code has seen a 201,
+        and load was deliberately not synthesised to force one.
+        """
+        body = self._netfunnel_get(
+            build_act10_url(
+                self.config.netfunnel_url,
+                timestamp_ms=int(self._clock() * 1000),
+            ),
+            referer,
         )
-        body = self.http.get_text_url(url, referer=referer)
-        return parse_netfunnel_response(body, action="act_10").key
+        token = parse_queue_response(body, action="act_10")
+        key = token.key
+        deadline = self._clock() + QUEUE_WAIT_LIMIT_SECONDS
+        polls = 0
+        while is_queued(token):
+            if polls >= QUEUE_POLL_LIMIT or self._clock() >= deadline:
+                raise SrtNetFunnelError(
+                    token.code,
+                    "NetFunnel queue did not admit us within the bounded wait",
+                )
+            wait = queue_wait_seconds(token)
+            self._sleep(wait)
+            polls += 1
+            # The key to poll with is the one the queue last echoed
+            # (chkEnterCont(retval.getValue("key"))); a 201 that omits it leaves
+            # the previously held key in place rather than aborting.
+            key = token.key or key
+            if not key:
+                raise SrtNetFunnelError(
+                    token.code,
+                    "NetFunnel queued us without ever issuing a key to poll with",
+                )
+            body = self._netfunnel_get(
+                build_chk_enter_url(
+                    self.config.netfunnel_url,
+                    key=key,
+                    timestamp_ms=int(self._clock() * 1000),
+                    ttl=wait,
+                ),
+                referer,
+            )
+            token = parse_queue_response(body, action="act_10")
+            key = token.key or key
+        if key:
+            self._netfunnel_slots.append(key)
+        return key
+
+    def _release_netfunnel_slots(self, referer: str) -> None:
+        """Send ``setComplete`` (5004) for every key we still hold. Best effort.
+
+        Without this our place in line is held until it times out, and at peak
+        load that is queue pollution we caused. ``TS_AUTO_COMPLETE = true`` in
+        the bundle's own config, so the app releases automatically too.
+
+        Deliberately swallows everything. A release is housekeeping that happens
+        AFTER the caller's real request has already succeeded or failed on its
+        own terms; letting a failed release replace that outcome would mean a
+        successful search reported as an error because we could not tidy up. It
+        is also unbounded-retry-free by construction: each key is popped before
+        it is sent, so a failure drops the key rather than queueing another
+        attempt.
+        """
+        while self._netfunnel_slots:
+            key = self._netfunnel_slots.pop()
+            try:
+                body = self._netfunnel_get(
+                    build_set_complete_url(
+                        self.config.netfunnel_url,
+                        key=key,
+                        timestamp_ms=int(self._clock() * 1000),
+                    ),
+                    referer,
+                )
+                parse_set_complete_response(body, action="act_10")
+            except (SrtApiError, ValueError):
+                continue
 
     def _hydrate_search(self, query: TrainSearchQuery, key: str) -> SearchPageState:
         referer = f"{self.config.base_url}/ara/ara0101v.do"
@@ -319,8 +437,16 @@ class SrtClient:
         return parse_train_search_response(data, request_context=payload)
 
     def _search_once(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
-        path, payload = self._prepare_search(query, group=group)
-        return self._post_search_page(path, payload)
+        # The slot is released once the guarded request is over, whichever way
+        # it went -- a search that raised held a place in line just as much as
+        # one that succeeded. This is the app's TS_AUTO_COMPLETE behaviour.
+        try:
+            path, payload = self._prepare_search(query, group=group)
+            return self._post_search_page(path, payload)
+        finally:
+            self._release_netfunnel_slots(
+                f"{self.config.base_url}/ara/ara0101v.do"
+            )
 
     def _search_with_retry(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
         for attempt in range(2):
@@ -355,6 +481,28 @@ class SrtClient:
         raise AssertionError("unreachable NetFunnel retry state")
 
     def _iter_train_search_pages(
+        self,
+        query: TrainSearchQuery,
+        *,
+        group: bool,
+        max_pages: int,
+    ) -> Iterator[TrainSearchResult]:
+        # The whole walk is ONE guarded interaction, so the slot is released
+        # when the walk ends -- normally, by exception, or by a caller
+        # abandoning the generator (GeneratorExit runs this finally too). It is
+        # deliberately not released after the first page: continuation pages
+        # reuse the same key, and completing it mid-walk would be the app
+        # calling setComplete while still on the guarded screen.
+        try:
+            yield from self._paginate_train_search(
+                query, group=group, max_pages=max_pages
+            )
+        finally:
+            self._release_netfunnel_slots(
+                f"{self.config.base_url}/ara/ara0101v.do"
+            )
+
+    def _paginate_train_search(
         self,
         query: TrainSearchQuery,
         *,
@@ -596,16 +744,28 @@ class SrtClient:
                 netfunnel_key=key,
                 window_seat=window_seat,
             )
-            response = self.http.post_mutation_form(
-                route,
-                form,
-                consent=consent,
-                category="reserve",
-                # The app reserves from the search-result page (ara1001l.js:1541
-                # -1560), which is the referer every other post-search read here
-                # sends. INFERRED from the app flow, not captured from the wire.
-                referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
-            )
+            try:
+                response = self.http.post_mutation_form(
+                    route,
+                    form,
+                    consent=consent,
+                    category="reserve",
+                    # The app reserves from the search-result page
+                    # (ara1001l.js:1541-1560), which is the referer every other
+                    # post-search read here sends. INFERRED from the app flow,
+                    # not captured from the wire.
+                    referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
+                )
+            finally:
+                # Release the queue slot once the reserve is over. Best effort
+                # and exception-swallowing by construction (see
+                # _release_netfunnel_slots), which matters most HERE: a hold may
+                # already exist on the server by this point, and a failed
+                # housekeeping call must never be what the caller sees instead
+                # of the PNR. A caller-supplied netfunnel_key was not acquired
+                # by us and so is not in _netfunnel_slots to release -- whoever
+                # obtained it owns completing it.
+                self._release_netfunnel_slots(booking_referer)
             # From here a hold may EXIST on the server. parse_reservation_hold_
             # response is the designed guard: it salvages a minimal hold from a
             # PNR-bearing response rather than letting a strict-validation

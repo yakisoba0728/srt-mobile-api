@@ -55,7 +55,7 @@ and its transport-layer gate are recorded under `## Unreleased` in
   each value caller-accessible. Wrapper and business `SrtAppError` rendering
   now uses fixed local messages; the original response remains available via
   the repr-hidden `raw` attribute.
-- The read-only transport boundary allows 20 exact read-only app/NetFunnel
+- The read-only transport boundary allows 21 exact read-only app/NetFunnel
   routes; every mutation route is excluded from it, so
   `assert_read_only_request` refuses all four.
 - A consent-gated mutation surface was subsequently added (see "Consent-gated
@@ -99,7 +99,8 @@ and its transport-layer gate are recorded under `## Unreleased` in
 - Manual mutual-verification read
 - Timetable read with structured rows
 - Fare read with structured items and six passenger slots
-- NetFunnel `act_10` acquisition, parsing, and one fresh-key retry
+- NetFunnel `act_10` queue protocol: acquisition (5101), bounded polling
+  (5002) and slot release (5004), plus one fresh-key retry
 - Station selector popup read
 - Station-map selector popup read
 - Date/time selector popup read
@@ -112,7 +113,7 @@ The package also exports the offline `parse_reservation_attempt_response()`,
 `parse_reservation_hold_response()` and `parse_unpaid_cancel_response()`
 helpers; they perform no I/O and are not client routes.
 
-The transport currently allows 20 exact read-only app/NetFunnel routes.
+The transport currently allows 21 exact read-only app/NetFunnel routes.
 `act_19`, payment, refund, other ATA/ARD flows, native bridges, callbacks, and
 external seat-map calls are not callable. Preview-by-default `reserve` and
 `cancel` methods exist; both transmit under an explicit non-dry-run consent for
@@ -373,10 +374,32 @@ car/seat response or availability contract.
   `pageNo` parameter, as a WebView GET (`SRForegroundDialogActivity.java:31`,
   `sub/ticketList.html:405`); the JSON-over-POST spelling is srtgo's, and both
   were confirmed live on 2026-07-26. Only the POST is allowlisted.
+- NetFunnel queue protocol completed and partially live-verified 2026-07-26.
+  Previously only `getTidChkEnter` (5101) was ever sent, so an engaged queue
+  (201 kContinue) failed the search outright and the queue slot was never
+  released. Added: `chkEnter` (5002) polling with HARD caps (20 polls / 60s
+  wall clock, each wait the server's own `ttl` clamped to the app's 1..5s
+  `TS_MAX_TTL`), and `setComplete` (5004) release after every guarded request.
+  `safety.py`'s `/ts.wseq` contract now registers three exact per-opcode query
+  shapes instead of one, rather than being loosened.
+  **LIVE-VERIFIED**: a real acquire->release round trip
+  (`5002:200:key=<256 hex>&...&ttl=0&nwait=0&ip=rnf14.letskorail.com` then
+  `5004:200`). **NOT verified**: the 201 polling path — at normal load the queue
+  does not engage and load was deliberately not synthesised to force it.
+  The live run caught a silent bug a fixture could not: the key-shape guard
+  bounded keys at 128 characters while a real key is 256, so every setComplete
+  failed the guard and was swallowed by the best-effort release path.
+  Two bundle findings are recorded in code because they contradict the obvious
+  assumption: `setComplete` carries NO `sid`/`aid` (the only one of the four
+  builders that omits them), and `ttl` sits between `prefix` and `sid` on
+  `chkEnter` and is the server's own value, not a constant. The acquire reply
+  also names a specific queue node (`ip`/`port`) that the app WOULD follow; we
+  deliberately do not, staying pinned to the two canonical origins, and the live
+  run showed the front door releases the slot anyway.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate, the
-  consent-gated cancel surface and the reservation-list read:
-  `1030 passed, 1 deselected`; the deselected case
+  consent-gated cancel surface, the reservation-list read and the NetFunnel
+  queue protocol: `1090 passed, 1 deselected`; the deselected case
   remains the explicit live-service opt-in. No live mutation was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.
@@ -482,10 +505,10 @@ car/seat response or availability contract.
   `ticketPageLoaded=True`, `personalTrainCount=10`,
   `mutualVerificationLoaded=True`, `groupTrainCount=10`,
   `timetableRowCount=7`, and `fareItemCount=9`.
-- NetFunnel remains the single unchanged `act_10` read-only route with its
-  existing acquisition and parsing. Single-page search retains its full-flow
-  one-fresh-key retry; pagination additionally refreshes and retries only one
-  rejected continuation cursor.
+- NetFunnel remains the single `act_10` read-only route (`/ts.wseq`), now
+  carrying the whole three-opcode queue protocol rather than acquisition alone.
+  Single-page search retains its full-flow one-fresh-key retry; pagination
+  additionally refreshes and retries only one rejected continuation cursor.
 - Physical seat models and selection continue to require separate sanitized
   fixture evidence and a new concrete design before implementation.
 

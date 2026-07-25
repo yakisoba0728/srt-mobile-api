@@ -196,12 +196,19 @@ def test_netfunnel_parser_requires_exact_result_assignment(body):
         ("NetFunnel.gControl.result='5002:FAIL:key=key-secret';", "FAIL"),
         ("NetFunnel.gControl.result='5002:5101:key=key-secret';", "5101"),
         ("NetFunnel.gControl.result='2002:5101:key=key-secret';", "5101"),
-        # kTsErrorAComplete=502 is a setComplete(5004)-only success; for a chkEnter
-        # (5002/5101) parse it hits the switch default -> onError, so it is NOT a
-        # success here (netfunnel.js:84 code table + _showResultChkEnter default).
+        # kTsErrorAComplete=502. We accept it for setComplete (5004) only, and
+        # that acceptance is an INFERENCE rather than something the bundle
+        # states -- _showResultSetComplete routes 502 to onError too, and we
+        # take "already complete" as meaning our slot is not held. For a
+        # chkEnter (5002/5101) parse it hits the switch default -> onError, so
+        # it is NOT a success here either way (netfunnel.js:84 code table +
+        # _showResultChkEnter default). See parse_set_complete_response.
         ("NetFunnel.gControl.result='5002:502:key=key-secret';", "502"),
-        # kContinue=201 means keep-polling (onContinued); this single-shot parser does
-        # not model a polling loop, so 201 is a documented non-success.
+        # kContinue=201 means keep-polling (onContinued). This parser is the
+        # STRICT single-shot reading and does not model the loop, so 201 is a
+        # documented non-success HERE; the client now goes through
+        # parse_queue_response, which returns it as a wait (see
+        # tests/test_netfunnel_queue.py).
         ("NetFunnel.gControl.result='5002:201:key=key-secret';", "201"),
         ("NetFunnel.gControl.result='NetFunnel.gRtype=5002;5101:key=key-secret';", None),
         ("NetFunnel.gControl.result='invalid:5101:key=key-secret';", None),
