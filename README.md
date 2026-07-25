@@ -1,41 +1,49 @@
 # srt-mobile-api
 
 This repository provides an installable read-only-by-default Python package for
-the evidenced SRT Android app WebView API surface. The client transmits only
-login/read requests. Two consent-gated mutation methods exist, and neither can
-send: `reserve` is **preview-only** (`dry_run=False` is refused outright), and
-`cancel` previews by default and is refused at the transport gate when asked to
-send. Both validate their inputs and return a redacted `MutationPreview` of the
-exact form that would be POSTed. `cancel`'s wire shape is srtgo-attested and
-unconfirmed against our app version, and the live NetFunnel/referer wiring for
-`reserve` is unverified.
+the evidenced SRT Android app WebView API surface. Nothing is transmitted
+without an explicit, per-category `MutationConsent` with `dry_run=False`: by
+default the client transmits only login/read requests, and a mutation method
+returns a redacted `MutationPreview` of the exact form that would be POSTed.
 
-No mutation is transmitted at all, and that is enforced at the transport layer,
-by two different mechanisms which are worth keeping distinct:
+Two consent-gated mutation methods exist, `reserve` and `cancel`. `reserve` is
+still **preview-only** at the method layer (`dry_run=False` is refused
+outright); `cancel` previews by default and, given an explicit non-dry-run
+consent, now transmits. `cancel`'s wire shape is srtgo-attested and unconfirmed
+against our app version, and the live NetFunnel/referer wiring for `reserve` is
+unverified — **no live reserve->cancel round trip has been performed yet.**
+
+Which mutations may reach the network at all is enforced at the transport
+layer, by two different mechanisms which are worth keeping distinct:
 
 - the read-only send path refuses the four mutation routes **by allowlist** —
   they are deliberately not in `READ_ONLY_ROUTES`, so `assert_read_only_request`
   rejects them;
-- `post_mutation_form`, the only method that could send a state-changing
-  request, refuses because **no consent category is live-enabled**:
-  `safety.SRT_LIVE_MUTATION_CATEGORIES` is an empty frozenset, so reserve,
-  cancel, payment and refund are all rejected however permissive the caller's
-  consent is. It separately refuses a `dry_run=True` consent, so a preview can
-  never be transmitted either. `_send_mutation_request`, the function that
-  actually calls `send`, re-asserts the same membership.
+- `post_mutation_form`, the only method that can send a state-changing request,
+  refuses every category outside `safety.SRT_LIVE_MUTATION_CATEGORIES`, which
+  holds **exactly `{"reserve", "cancel"}`**. So `payment` and `refund` are
+  rejected however permissive the caller's consent is, and neither has a client
+  method to begin with. It separately refuses a `dry_run=True` consent, so a
+  preview can never be transmitted either. `_send_mutation_request`, the
+  function that actually calls `send`, re-asserts the same membership.
 
-Enabling a category is a deliberate one-line change to that frozenset, and is
-gated on that category being both implemented and live-verified (`reserve` also
-on a verified reserve->cancel round trip — a cancel method that has never
-released a real hold does not close that requirement). The retained APK
-specification and smoke tooling remain the evidence context for that package.
+`reserve` and `cancel` are enabled together because they are the two halves of
+one reversible operation: reserve creates an unpaid hold, cancel releases one
+(from a hold object or a bare PNR string). Enabling reserve alone would mean a
+crash mid-flow strands a real reservation with no programmatic way out. Opening
+that gate is a decision about **recoverability, not evidence** — it is what
+makes the operator-run reserve->cancel round trip possible, and that round trip
+has not yet been performed. Adding `payment` or `refund` would require
+implementing each (neither exists) and live-verifying its own wire format. The
+retained APK specification and smoke tooling remain the evidence context for
+that package.
 
 The reviewed safety boundary contains 20 routes. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated preview-only reserve
 mutation surface, the transport-layer live-mutation gate, and the consent-gated
 cancel surface landed, the current offline suite at HEAD is
-`837 passed, 1 deselected`. The deselected case is the
+`836 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -313,23 +321,23 @@ surface described next was added separately.
 
 ### Consent-gated mutation surface
 
-Two consent-gated methods are implemented and offline-tested, and neither can
-transmit:
+Two consent-gated methods are implemented and offline-tested:
 
 - `reserve` (`arc/selectListArc05013_n.do`) is **preview-only**: `dry_run=False`
-  is refused by the method itself (unverified NetFunnel/referer wiring, and no
-  transmittable way to release a hold it would create), so it returns a redacted
-  `MutationPreview` and performs no I/O.
+  is refused by the method itself (its live NetFunnel/referer wiring is
+  unverified), so it returns a redacted `MutationPreview` and performs no I/O.
+  The transport gate below no longer blocks the reserve category, but the method
+  layer still does.
 - `cancel` (`ard/selectListArd02045_n.do`, unpaid reservation) accepts an
-  `SrtReservationHold` or a bare PNR string and previews by default. Asked to
-  send, it is refused by the transport gate below. **Its wire shape — the route,
-  the `pnrNo`/`jrnyCnt`/`rsvChgTno` body and the `strResult == "SUCC"` success
-  rule — is attested only by srtgo's live runs and is UNCONFIRMED against our
-  v2.0.41 app**, whose offline bundle contains zero hits for the route. Only the
-  `jrnyCnt="1"` value is partially corroborated by our own app
-  (`ara0101v.js:92`). It cannot transmit until a category is added to
-  `safety.SRT_LIVE_MUTATION_CATEGORIES` following a live verification, which has
-  not been done.
+  `SrtReservationHold` or a bare PNR string and previews by default. Given an
+  explicit `dry_run=False` cancel consent it now transmits, and returns a parsed
+  `SrtCancelResult` (a business failure is carried as data, not raised). **Its
+  wire shape — the route, the `pnrNo`/`jrnyCnt`/`rsvChgTno` body and the
+  `strResult == "SUCC"` success rule — is attested only by srtgo's live runs and
+  is UNCONFIRMED against our v2.0.41 app**, whose offline bundle contains zero
+  hits for the route. Only the `jrnyCnt="1"` value is partially corroborated by
+  our own app (`ara0101v.js:92`). Being transmittable is not evidence: no live
+  run has confirmed the shape yet.
 
 Payment and refund are tiered routes only — no client method exists for them,
 and their wire formats are likewise 0-hit across all 21,673 files of the v2.0.41
@@ -337,7 +345,7 @@ offline evidence bundle, so they need live response capture (see
 docs/MUTATION_HANDOFF.md in the korail repo). Native-bridge and external
 seat-map flows remain excluded entirely.
 
-Independently of which methods exist, none of the four categories can be
-transmitted: `post_mutation_form` and `_send_mutation_request` both refuse any
-category outside the empty `safety.SRT_LIVE_MUTATION_CATEGORIES`, and the
-read-only guard refuses the routes by allowlist.
+Independently of which methods exist, `payment` and `refund` cannot be
+transmitted at all: `post_mutation_form` and `_send_mutation_request` both
+refuse any category outside `safety.SRT_LIVE_MUTATION_CATEGORIES`, and the
+read-only guard refuses all four routes by allowlist.

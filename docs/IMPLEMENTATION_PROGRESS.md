@@ -56,8 +56,9 @@ and its transport-layer gate are recorded under `## Unreleased` in
   routes; every mutation route is excluded from it, so
   `assert_read_only_request` refuses all four.
 - A consent-gated mutation surface was subsequently added (see "Consent-gated
-  mutation surface" below). It did not widen the read-only allowlist, and no
-  mutation of any category is transmitted.
+  mutation surface" below). It did not widen the read-only allowlist. `reserve`
+  and `cancel` are live-enabled as a pair at the transport layer; `payment` and
+  `refund` are not and have no client method.
 - The prior Task 4 verification gate remains recorded: its full offline suite,
   package build, isolated wheel import, exact static boundary, independent
   review, and bounded live gate all passed.
@@ -111,8 +112,8 @@ helpers; they perform no I/O and are not client routes.
 The transport currently allows 20 exact read-only app/NetFunnel routes.
 `act_19`, payment, refund, other ATA/ARD flows, native bridges, callbacks, and
 external seat-map calls are not callable. A preview-only `reserve` and a
-preview-by-default `cancel` exist, and neither can transmit; see the next
-section.
+preview-by-default `cancel` exist; `cancel` can now transmit under an explicit
+non-dry-run consent, `reserve` still cannot. See the next section.
 
 ## Consent-gated Mutation Surface
 
@@ -130,10 +131,9 @@ section.
   `strResult == "SUCC"` success rule are srtgo-attested and UNCONFIRMED against
   v2.0.41** (0 hits across all 21,673 files of the offline bundle; only the
   `jrnyCnt="1"` value is partially corroborated, at `ara0101v.js:92`). With
-  `dry_run=False` it is refused by the send gate below and transmits nothing;
-  sending a real cancel requires adding a category to
-  `SRT_LIVE_MUTATION_CATEGORIES` after a live verification, which has not been
-  done. `jrnyCnt` defaults to `"1"` rather than being derived from the hold
+  `dry_run=False` it now transmits and returns a parsed `SrtCancelResult`; the
+  shape it puts on the wire is still the srtgo-attested one, and no live run has
+  confirmed it. `jrnyCnt` defaults to `"1"` rather than being derived from the hold
   (the reserve response carries a seat count, not a journey count) and any
   supplied journey count is compared numerically, tolerating zero-padding, so a
   formatting difference can never make a hold uncancellable.
@@ -143,21 +143,25 @@ section.
   allowlist and its guarantee are unchanged and `assert_read_only_request`
   refuses each of them. `SRT_MUTATION_ROUTE_CATEGORIES` binds each route to one
   consent category.
-- **No mutation of any category is transmitted, and this is enforced at the
-  transport layer.** `safety.SRT_LIVE_MUTATION_CATEGORIES` is an empty
-  frozenset; `SrtHttpClient.post_mutation_form` refuses every category outside
-  it (however permissive the consent), and `_send_mutation_request` — the
-  function that actually calls `send` — re-asserts the same membership. The
-  guarantee therefore no longer depends on `reserve()` alone: reaching
-  `SrtClient.http` directly cannot transmit either.
-- Enabling a category is a one-line change to that frozenset and is gated on the
-  category being both implemented and live-verified. `reserve` additionally
-  requires a verified reserve->cancel round trip: `cancel` exists but sends
-  through the same closed gate, so SRT still offers this library no way to
-  release a hold it would create. `cancel`/`payment`/`refund` wire formats are
-  0-hit across all 21,673 files of the v2.0.41 offline evidence bundle and are
-  srtgo-attested only, so they need live capture first — implementing cancel did
-  not change that.
+- **`payment` and `refund` cannot be transmitted at all, and this is enforced at
+  the transport layer.** `safety.SRT_LIVE_MUTATION_CATEGORIES` holds exactly
+  `{"reserve", "cancel"}`; `SrtHttpClient.post_mutation_form` refuses every
+  category outside it (however permissive the consent), and
+  `_send_mutation_request` — the function that actually calls `send` —
+  re-asserts the same membership. The guarantee does not depend on the absence
+  of a client method: reaching `SrtClient.http` directly cannot transmit a
+  payment or refund either.
+- `reserve` and `cancel` were live-enabled **as a pair**, because they are the
+  two halves of one reversible operation and enabling reserve without a
+  transmittable cancel would strand a real hold on a crash. That is a decision
+  about recoverability, not about evidence: the `cancel`/`payment`/`refund` wire
+  formats remain 0-hit across all 21,673 files of the v2.0.41 offline evidence
+  bundle and srtgo-attested only, and **the reserve->cancel round trip has not
+  been run yet.** Opening the gate is what makes running it possible.
+- Adding `payment` or `refund` is a two-part job, not a one-line edit: each must
+  first be implemented (neither has a client method) and then live-verified on
+  its own wire format. A payment additionally transmits a PAN in the clear and
+  keeps a separate `fake_card_only` gate behind the live-enablement one.
 
 ## Bounded Seat-Layout Evidence Gate
 
@@ -269,7 +273,7 @@ car/seat response or availability contract.
   the explicit live-service test. No live request or credential access occurred.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate and the
-  consent-gated cancel surface: `837 passed, 1 deselected`; the deselected case
+  consent-gated cancel surface: `836 passed, 1 deselected`; the deselected case
   remains the explicit live-service opt-in. No live mutation was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.

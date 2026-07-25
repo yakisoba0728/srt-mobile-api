@@ -99,33 +99,37 @@ READ_ONLY_ROUTES = frozenset(
 # ``assert_read_only_request`` rejects every one of these (none is reachable via
 # a read path). This is a classification only.
 #
-# Two separate things are true here and must not be conflated:
-#   * "no ``SrtClient`` method" — the reserve and cancel routes have callable
-#     client methods (``SrtClient.reserve``, preview-only, and
-#     ``SrtClient.cancel``, preview by default). payment/refund have no client
-#     method at all. Note that a method existing says nothing about the shape
-#     being confirmed: the cancel route is absent from the offline evidence
-#     bundle and is implemented from srtgo's attestation alone, so it, like
-#     payment/refund, still awaits live capture.
-#   * "cannot be transmitted" — a stronger claim, and the one that actually
-#     holds today for ALL FOUR categories: the mutation send path
-#     (``SrtHttpClient.post_mutation_form``) refuses every category listed
-#     outside :data:`SRT_LIVE_MUTATION_CATEGORIES`, which is currently empty.
+# Three separate things are true here and must not be conflated:
+#   * "has a ``SrtClient`` method" — reserve and cancel do
+#     (``SrtClient.reserve``, ``SrtClient.cancel``); payment and refund have no
+#     client method at all.
+#   * "can be transmitted" — reserve and cancel can, as of the two-category
+#     opening of :data:`SRT_LIVE_MUTATION_CATEGORIES` below, and ONLY under an
+#     explicit per-category ``MutationConsent`` with ``dry_run=False``. payment
+#     and refund still cannot: the send path
+#     (``SrtHttpClient.post_mutation_form``) refuses every category outside
+#     that set, at both the ``post_mutation_form`` gate and again at the
+#     ``_send_mutation_request`` send boundary.
+#   * "the shape is confirmed" — this is the one that holds for NEITHER of the
+#     enabled pair. A method existing, and a category being transmittable, say
+#     nothing about the form being the one this app version sends. The cancel
+#     route is absent from the offline evidence bundle entirely and is
+#     implemented from srtgo's attestation alone; reserve is present in the
+#     bundle but its live wiring is still unexercised.
 #
-# So the current invariant is: nothing in this frozenset can leave the process
-# as a live request, whether or not a client method exists, and regardless of
-# how permissive the caller's ``MutationConsent`` is. That is enforced by
-# :data:`SRT_LIVE_MUTATION_CATEGORIES` below (checked both in
-# ``post_mutation_form`` and again at the ``_send_mutation_request`` send
-# boundary), not by the absence of a method.
+# So the current invariant is: payment and refund cannot leave the process as a
+# live request no matter how permissive the caller's consent is, while reserve
+# and cancel can — deliberately, so the pair can be verified live — and every
+# one of these four routes remains unreachable through the read-only path.
 #
 # Each host is "app" (POST). The trailing comment names the consent category the
 # route gates.
 SRT_MUTATION_ROUTES = frozenset(
     {
-        # reserve (client method exists, but preview-only; not live-enabled)
+        # reserve (client method exists, preview by default; LIVE-ENABLED;
+        # route present in the v2.0.41 bundle, live wiring not yet exercised)
         MutationRoute("POST", "app", "/arc/selectListArc05013_n.do"),
-        # cancel (client method exists, preview by default; not live-enabled;
+        # cancel (client method exists, preview by default; LIVE-ENABLED;
         # srtgo-attested shape, unconfirmed against v2.0.41)
         MutationRoute("POST", "app", "/ard/selectListArd02045_n.do"),
         # payment (tiered only; no client method; not live-enabled)
@@ -137,36 +141,45 @@ SRT_MUTATION_ROUTES = frozenset(
 
 # Consent categories whose requests are permitted to actually reach the network.
 #
-# EMPTY ON PURPOSE — no SRT mutation category is live-enabled yet, for two
-# independent reasons:
+# EXACTLY TWO: "reserve" and "cancel". They are enabled together, and only
+# together, because they are the two halves of one reversible operation:
 #
-#   (a) No cancel can be transmitted. ``SrtClient.cancel`` exists now, but it
-#       sends through this same gate, so while this set is empty a live reserve
-#       would still create a hold this library has no way to release: a mistake
-#       or a crash mid-flow would strand a real reservation on a real account.
-#   (b) The cancel/payment/refund wire formats are unverified. Those three
-#       endpoints have ZERO hits across all 21,673 files of our v2.0.41 offline
-#       evidence bundle (they are server-rendered WebView flows, never bundled);
-#       they are attested only by srtgo's live runs, not by our own capture.
-#       That includes the implemented cancel: having a method is not evidence
-#       that the form it builds is the one this app version sends.
+#   * ``SrtClient.reserve`` creates an unpaid hold.
+#   * ``SrtClient.cancel`` releases one, from a full
+#     :class:`~srt_mobile_api.models.SrtReservationHold` or from a bare PNR
+#     string.
 #
-# Because this set is empty, ``SrtHttpClient.post_mutation_form`` refuses every
-# mutation category and the library transmits no state-changing request at all —
-# the guarantee holds at the transport layer, not merely at the client-method
-# layer.
+# Enabling reserve without cancel would mean a mistake or a crash mid-flow
+# strands a real reservation on a real account with no programmatic way out.
+# Enabling cancel alone is harmless but useless. So the pair is the smallest
+# unit that is safe to open, and this set is what makes the operator-run
+# reserve->cancel round trip (``scripts/verify_reserve_cancel_roundtrip.py``,
+# with ``scripts/recover_hold.py`` as its safety net) physically possible.
 #
-# Enabling a category is a one-line change here — but ONLY once that category is
-# both implemented AND live-verified against the real server. In particular
-# "reserve" must NOT be enabled before a reserve->cancel round trip has been
-# verified live; a cancel method that has never successfully released a real
-# hold does not close reason (a). Adding a category here without that
-# verification is a safety regression, and ``test_mutation_live_paths`` carries
-# a canary test that fails loudly if this set stops being empty.
+# WHAT THIS DOES NOT CLAIM. Opening the gate is a decision about recoverability,
+# not a statement of evidence. The cancel wire shape is still srtgo-attested
+# ONLY: ``/ard/selectListArd02045_n.do`` has ZERO hits across all 21,673 files
+# of our v2.0.41 offline evidence bundle, and no live run has confirmed it yet.
+# The reserve route IS present in that bundle, but its live NetFunnel/referer
+# wiring has not been exercised against the server either. That is precisely
+# what the round trip exists to establish — the gate is open so the
+# verification can be performed, not because it already has been.
+#
+# payment AND refund STAY OUT, and adding either is a two-part job, not a
+# one-line edit here:
+#   1. Implementation — neither has a client method at all today.
+#   2. Live verification of that category's own wire format, which (like
+#      cancel's) has zero hits in the offline bundle.
+# A payment additionally transmits a PAN in the clear, which is why
+# ``post_mutation_form`` keeps a separate ``fake_card_only`` gate behind this
+# one. Adding "payment" or "refund" to this set without both parts done is a
+# safety regression; ``test_mutation_live_paths`` carries a canary that pins
+# this set to exactly {"reserve", "cancel"} and so fails loudly on either
+# addition.
 #
 # Kept as pure data in this module (no imports) so http.py can enforce it
 # without creating an import cycle.
-SRT_LIVE_MUTATION_CATEGORIES: frozenset[str] = frozenset()
+SRT_LIVE_MUTATION_CATEGORIES: frozenset[str] = frozenset({"reserve", "cancel"})
 
 # The consent category each mutation route belongs to. The mutation send path
 # cross-checks the caller-supplied category against the route so a consent for

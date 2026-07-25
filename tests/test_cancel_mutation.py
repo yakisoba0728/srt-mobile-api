@@ -1,8 +1,14 @@
 """Offline tests for the SRT unpaid-reservation cancel (예약취소) surface.
 
 Everything here is offline: synthetic PNRs, synthetic envelopes, and an
-``httpx.MockTransport`` recorder that proves how many requests were actually
-issued (always zero). No real network, no real credentials, no real PNR.
+``httpx.MockTransport`` recorder that proves exactly how many requests were
+issued and what they contained. No real network, no real credentials, no real
+PNR.
+
+cancel is now live-enabled (``safety.SRT_LIVE_MUTATION_CATEGORIES``), so a
+consented ``dry_run=False`` call reaches the transport for real — against the
+mock, which is what lets these tests assert the precise bytes a live send would
+put on the wire. A ``dry_run=True`` call must still issue zero requests.
 
 **Provenance.** The cancel wire shape under test is srtgo-attested only and is
 UNCONFIRMED against our v2.0.41 app: ``/ard/selectListArd02045_n.do`` has zero
@@ -391,8 +397,10 @@ def _client_with(replies: dict[str, dict]) -> tuple[SrtClient, _Recorder]:
 
 
 def _cancel_reply() -> dict[str, dict]:
-    # The route answers 200 with a success envelope, so a leaked request would be
-    # RECORDED (and caught by `requests == []`) rather than dying in transport.
+    # The route answers 200 with a success envelope. For the dry-run tests that
+    # means a leaked request would be RECORDED (and caught by `requests == []`)
+    # rather than dying in transport; for the live-send tests it is the response
+    # the client parses.
     return {CANCEL_ROUTE: {"resultMap": [{"strResult": "SUCC"}]}}
 
 
@@ -488,7 +496,6 @@ def test_cancel_live_path_carries_the_journey_count_override():
 
     assert sent["data"]["jrnyCnt"] == "2"
     assert recorder.requests == []
-    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset()
 
 
 def test_cancel_journey_count_is_keyword_only():
@@ -541,29 +548,62 @@ def test_cancel_consent_gate_runs_before_the_session_check():
     assert recorder.requests == []
 
 
-def test_cancel_live_send_is_refused_by_the_live_gate_with_zero_requests():
-    # dry_run=False with full cancel consent reaches post_mutation_form, which
-    # refuses because SRT_LIVE_MUTATION_CATEGORIES is empty. This is the
-    # intended state: the wire shape has never been verified live.
+def test_cancel_live_send_reaches_the_transport_and_parses_the_envelope():
+    # cancel is live-enabled, so dry_run=False with a cancel consent now goes
+    # all the way to the wire. Offline that wire is a MockTransport, which lets
+    # us assert the exact request the server would receive.
+    client, recorder = _client_with(_cancel_reply())
+
+    result = client.cancel(
+        _hold(), consent=MutationConsent(allow_cancel=True, dry_run=False)
+    )
+
+    assert isinstance(result, SrtCancelResult)
+    assert result.succeeded is True
+    assert len(recorder.requests) == 1
+    request = recorder.requests[0]
+    assert request.method == "POST"
+    assert request.url.path == CANCEL_ROUTE
+    assert dict(httpx.QueryParams(request.content.decode())) == {
+        "pnrNo": FAKE_PNR,
+        "jrnyCnt": "1",
+        "rsvChgTno": "0",
+    }
+
+
+def test_cancel_live_send_works_from_a_bare_pnr_too():
+    # The recovery path: a caller who lost everything but the PNR string must
+    # still be able to release the hold. This is what scripts/recover_hold.py
+    # depends on.
+    client, recorder = _client_with(_cancel_reply())
+
+    result = client.cancel(
+        FAKE_PNR, consent=MutationConsent(allow_cancel=True, dry_run=False)
+    )
+
+    assert isinstance(result, SrtCancelResult)
+    assert result.succeeded is True
+    assert len(recorder.requests) == 1
+    assert dict(
+        httpx.QueryParams(recorder.requests[0].content.decode())
+    )["pnrNo"] == FAKE_PNR
+
+
+def test_cancel_still_refuses_a_dry_run_consent_at_the_transport():
+    # Opening the gate did not weaken the dry-run guarantee: post_mutation_form
+    # refuses a preview consent before the live-enablement block, so a dry run
+    # can never be transmitted even now that cancel is enabled.
     client, recorder = _client_with(_cancel_reply())
 
     with pytest.raises(SrtMutationNotAllowedError) as exc_info:
-        client.cancel(
-            _hold(), consent=MutationConsent(allow_cancel=True, dry_run=False)
+        client.http.post_mutation_form(
+            CANCEL_ROUTE,
+            {"pnrNo": FAKE_PNR, "jrnyCnt": "1", "rsvChgTno": "0"},
+            consent=MutationConsent(allow_cancel=True),
+            category="cancel",
         )
 
-    assert "not live-enabled" in str(exc_info.value)
-    assert recorder.requests == []
-
-
-def test_cancel_live_send_is_refused_for_a_bare_pnr_too():
-    client, recorder = _client_with(_cancel_reply())
-
-    with pytest.raises(SrtMutationNotAllowedError):
-        client.cancel(
-            FAKE_PNR, consent=MutationConsent(allow_cancel=True, dry_run=False)
-        )
-
+    assert "requires consent.dry_run=False" in str(exc_info.value)
     assert recorder.requests == []
 
 
@@ -578,11 +618,14 @@ def test_cancel_is_bound_to_the_cancel_route_and_category():
         assert_read_only_request(request, SrtConfig())
 
 
-def test_cancel_cannot_be_transmitted_while_the_gate_is_closed():
-    # The gate this whole surface depends on. If this fails, someone
-    # live-enabled a category: verify the live round trip actually happened
-    # before touching it.
-    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset()
+def test_cancel_is_live_enabled_but_payment_and_refund_are_not():
+    # The gate this whole surface depends on. cancel must be enabled or a hold
+    # created by reserve could not be released; payment and refund must not be,
+    # since neither is implemented or live-verified.
+    assert "cancel" in SRT_LIVE_MUTATION_CATEGORIES
+    assert "reserve" in SRT_LIVE_MUTATION_CATEGORIES
+    assert "payment" not in SRT_LIVE_MUTATION_CATEGORIES
+    assert "refund" not in SRT_LIVE_MUTATION_CATEGORIES
 
 
 def test_cancel_live_path_wiring_parses_the_envelope_without_opening_the_gate():
@@ -614,10 +657,10 @@ def test_cancel_live_path_wiring_parses_the_envelope_without_opening_the_gate():
         "jrnyCnt": "1",
         "rsvChgTno": "0",
     }
-    # The real transport still saw nothing.
+    # The real transport still saw nothing: the stub replaced the send path
+    # entirely, so this isolates what cancel HANDS OVER from what the transport
+    # then does with it.
     assert recorder.requests == []
-    # And the gate the stub bypassed is still shut.
-    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset()
 
 
 def test_cancel_live_path_returns_a_failure_envelope_as_data():

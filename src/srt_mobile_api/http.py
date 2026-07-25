@@ -229,14 +229,15 @@ class SrtHttpClient:
         #
         # Defense in depth: this is the function that actually calls
         # self._client.send, i.e. the true send boundary, so it re-asserts the
-        # live-enablement invariant itself rather than trusting its caller. With
-        # SRT_LIVE_MUTATION_CATEGORIES empty this refuses everything, so no
-        # future refactor of post_mutation_form can accidentally open a send
-        # path.
+        # live-enablement invariant itself rather than trusting its caller.
+        # SRT_LIVE_MUTATION_CATEGORIES holds exactly {"reserve", "cancel"}, so
+        # this refuses payment and refund outright and no future refactor of
+        # post_mutation_form can accidentally widen the set of categories that
+        # reach the wire.
         if category not in SRT_LIVE_MUTATION_CATEGORIES:
             raise SrtMutationNotAllowedError(
-                f"SRT mutation category {category!r} is not live-enabled; no "
-                "state-changing request may be transmitted (see "
+                f"SRT mutation category {category!r} is not live-enabled; only "
+                "reserve and cancel may be transmitted (see "
                 "safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
         request = self._client.build_request(
@@ -271,10 +272,10 @@ class SrtHttpClient:
         referer: str | None = None,
         accept: str = "application/json, text/javascript, */*; q=0.01",
     ) -> dict[str, Any]:
-        """The sole send path for a state-changing form — currently always refused.
+        """The sole send path for a state-changing form.
 
-        This is the only method that could transmit to a mutation route. Gates
-        are applied in this order, and a call must clear all of them:
+        This is the only method that can transmit to a mutation route. Gates are
+        applied in this order, and a call must clear all of them:
 
         1. ``require_mutation_consent(consent, category)`` — a
            :class:`~srt_mobile_api.consent.MutationConsent` with the matching
@@ -291,23 +292,23 @@ class SrtHttpClient:
            :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES` for exactly that
            category.
 
-        Gate 3 is the decisive one today: ``SRT_LIVE_MUTATION_CATEGORIES`` is
-        empty, so **this method never transmits** — every category (reserve,
-        cancel, payment, refund) is refused with
+        Gate 3 is the decisive one: ``SRT_LIVE_MUTATION_CATEGORIES`` holds
+        exactly ``{"reserve", "cancel"}``. So **``payment`` and ``refund`` are
+        refused here unconditionally** with
         :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError`, no matter how
-        permissive the consent is. ``_send_mutation_request``, the function that
-        actually calls ``send``, re-asserts the same membership, so the invariant
-        also holds at the true send boundary. Meanwhile the read-only path
-        (:func:`~srt_mobile_api.safety.assert_read_only_request`) refuses these
-        routes by allowlist. Net effect: the library transmits no mutation at
-        all, enforced at the transport layer rather than only at the client
-        methods.
+        permissive the consent is, while a consented, non-dry-run ``reserve`` or
+        ``cancel`` proceeds to the wire. ``_send_mutation_request``, the function
+        that actually calls ``send``, re-asserts the same membership, so the
+        payment/refund refusal also holds at the true send boundary. Meanwhile
+        the read-only path
+        (:func:`~srt_mobile_api.safety.assert_read_only_request`) refuses all
+        four routes by allowlist, so a mutation can only ever travel this
+        method.
 
-        The remaining behaviour is described for the day a category is
-        live-enabled: ``data`` (which includes the reserve payload's
-        ``netfunnelKey``) would be sent verbatim via the same request mechanics
-        as :meth:`post_form`, with no read-only field allowlist applied,
-        returning the parsed JSON object response.
+        For an enabled category, ``data`` (which includes the reserve payload's
+        ``netfunnelKey``) is sent verbatim via the same request mechanics as
+        :meth:`post_form`, with no read-only field allowlist applied, returning
+        the parsed JSON object response.
         """
         require_mutation_consent(consent, category)
         if consent.dry_run:
@@ -318,17 +319,17 @@ class SrtHttpClient:
         # Live-enablement block. Placed after the consent and dry-run gates (so
         # those keep their meaning and their error messages) but before every
         # check below, because from here on a call would otherwise actually
-        # transmit. SRT_LIVE_MUTATION_CATEGORIES is empty, so this refuses all
-        # four categories: the "SRT transmits no mutation" invariant is enforced
-        # here at the transport layer, not only by SrtClient.reserve.
+        # transmit. SRT_LIVE_MUTATION_CATEGORIES holds {"reserve", "cancel"},
+        # so this is what refuses payment and refund at the transport layer
+        # rather than merely by the absence of a client method.
         if category not in SRT_LIVE_MUTATION_CATEGORIES:
             raise SrtMutationNotAllowedError(
-                f"SRT mutation category {category!r} is not live-enabled: no "
-                "SRT mutation category may be transmitted yet. A cancel method "
-                "exists but sends through this same gate, so a live reserve "
-                "would still create a hold this library could not release, and "
-                "the cancel/payment/refund wire formats are unverified against "
-                "v2.0.41. Use dry_run=True for a preview "
+                f"SRT mutation category {category!r} is not live-enabled: only "
+                "reserve and cancel may be transmitted, because they are the "
+                "two halves of one reversible operation. Enabling payment or "
+                "refund requires implementing it (neither has a client method) "
+                "AND verifying its wire format live; a payment additionally "
+                "transmits a PAN in the clear. Use dry_run=True for a preview "
                 "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
         # Defense-in-depth at the transmit boundary: a payment carries the PAN in

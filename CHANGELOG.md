@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Live-enabled exactly two mutation categories, `reserve` and `cancel`.**
+  `safety.SRT_LIVE_MUTATION_CATEGORIES` was an empty frozenset and is now
+  `{"reserve", "cancel"}`, so a consented `dry_run=False` call in either
+  category reaches the network. They are enabled together and only together:
+  reserve creates an unpaid hold and cancel releases one (from a hold object or
+  a bare PNR string), so enabling reserve without a transmittable cancel would
+  strand a real reservation on any mid-flow failure. **`payment` and `refund`
+  stay out** and remain unreachable even through the low-level client; adding
+  either requires implementing it (neither has a client method) and
+  live-verifying its own wire format, and a payment keeps a separate
+  `fake_card_only` gate behind the live-enablement one.
+  This is a decision about **recoverability, not evidence**. It does not assert
+  that anything has been verified: the cancel route `ard02045` is still
+  srtgo-attested only and UNCONFIRMED against our v2.0.41 app (0 hits across all
+  21,673 files of the offline evidence bundle), and **the live reserve->cancel
+  round trip has not been performed.** Opening the gate is what makes performing
+  it possible.
 - Ported the consent-gated mutation model from the verified korail surface. The
   package stays read-only **by default**: `MutationConsent` grants nothing on
   construction (every `allow_*` flag defaults to `False`), `dry_run` defaults to
