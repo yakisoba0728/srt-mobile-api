@@ -6,23 +6,45 @@ login/read requests. A single consent-gated mutation method (`reserve`) exists,
 but it is **preview-only**: it validates its inputs and returns a redacted
 `MutationPreview` of the exact reservation form; live sending (`dry_run=False`)
 is deliberately refused because SRT has no callable cancel method yet to release
-a created hold and the live NetFunnel/referer wiring is unverified. The
-mutation-route send gate (`post_mutation_form`) and the read-only send path both
-refuse to transmit any mutation route accordingly. The retained APK
-specification and smoke tooling remain the evidence context for that package.
+a created hold and the live NetFunnel/referer wiring is unverified.
+
+No mutation is transmitted at all, and that is enforced at the transport layer,
+by two different mechanisms which are worth keeping distinct:
+
+- the read-only send path refuses the four mutation routes **by allowlist** —
+  they are deliberately not in `READ_ONLY_ROUTES`, so `assert_read_only_request`
+  rejects them;
+- `post_mutation_form`, the only method that could send a state-changing
+  request, refuses because **no consent category is live-enabled**:
+  `safety.SRT_LIVE_MUTATION_CATEGORIES` is an empty frozenset, so reserve,
+  cancel, payment and refund are all rejected however permissive the caller's
+  consent is. It separately refuses a `dry_run=True` consent, so a preview can
+  never be transmitted either. `_send_mutation_request`, the function that
+  actually calls `send`, re-asserts the same membership.
+
+Enabling a category is a deliberate one-line change to that frozenset, and is
+gated on that category being both implemented and live-verified (`reserve` also
+on a working `cancel`). The retained APK specification and smoke tooling remain
+the evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The integrated 0.2.0 gate
-recorded `587 passed, 1 deselected`; after the additive reservation-attempt
-response parser and the consent-gated, dry-run-by-default reserve mutation
-surface landed, the current offline suite at HEAD is `707 passed, 1 deselected`.
-The deselected case is the explicitly opted-in live-service test.
+recorded `587 passed, 1 deselected` (historical); after the additive
+reservation-attempt response parser, the consent-gated preview-only reserve
+mutation surface, and the transport-layer live-mutation gate landed, the current
+offline suite at HEAD is `717 passed, 1 deselected`. The deselected case is the
+explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
 
 ```bash
 python -m pip install -e ".[test]"
-PYTHONPATH="$PWD/src" pytest -q
+PYTHONPATH="$PWD/src" pytest -q -m "not live"
 ```
+
+The `-m "not live"` filter is the offline gate used by CI
+(`.github/workflows/ci.yml`) and by [docs/RELEASE.md](docs/RELEASE.md); it
+deselects the live-service test, which additionally requires an explicit
+`SRT_MOBILE_API_LIVE=1` opt-in.
 
 Release and handling documents:
 
@@ -83,7 +105,7 @@ Default tests are offline:
 
 ```bash
 pip install -e ".[test]"
-pytest
+pytest -q -m "not live"
 ```
 
 ### Typed raw-backed read results
@@ -280,8 +302,24 @@ documented reservation-attempt response shape
 caller-supplied JSON and returns a typed `ReservationAttemptResult` for a
 complete success shape; malformed or rejected shapes raise the existing
 protocol/app error types. Server message, temporary job sequence, command map,
-and the raw mapping are excluded from `repr()`. It adds no reservation route,
-request builder, NetFunnel `act_19` flow, client method, or live call, so the
-reviewed 20-route read-only boundary is unchanged.
+and the raw mapping are excluded from `repr()`. This parser itself adds no
+route, request builder, NetFunnel `act_19` flow, client method, or live call,
+and leaves the reviewed 20-route read-only boundary unchanged; the reservation
+surface described next was added separately.
 
-A single consent-gated, preview-only reservation method (`reserve`, `arc/selectListArc05013_n.do`) is implemented and offline-verified; its live send is refused (no cancel method yet, unverified wiring). Payment, refund, cancellation, and native bridge flows are not implemented in this package version — their routes are tiered but not callable and need live response capture (see docs/MUTATION_HANDOFF.md in the korail repo).
+### Consent-gated mutation surface
+
+A single consent-gated, preview-only reservation method (`reserve`,
+`arc/selectListArc05013_n.do`) is implemented and offline-verified; its live
+send is refused (no cancel method yet, unverified wiring), so it returns a
+redacted `MutationPreview` and performs no I/O. Payment, refund, and
+cancellation are tiered routes only — no client method exists for them, and
+their wire formats are 0-hit across all 21,673 files of the v2.0.41 offline
+evidence bundle, so they need live response capture (see
+docs/MUTATION_HANDOFF.md in the korail repo). Native-bridge and external
+seat-map flows remain excluded entirely.
+
+Independently of which methods exist, none of the four categories can be
+transmitted: `post_mutation_form` and `_send_mutation_request` both refuse any
+category outside the empty `safety.SRT_LIVE_MUTATION_CATEGORIES`, and the
+read-only guard refuses the routes by allowlist.
