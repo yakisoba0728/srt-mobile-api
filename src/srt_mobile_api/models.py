@@ -215,6 +215,33 @@ class SrtReservationHold:
 
 
 @dataclass(frozen=True)
+class SrtCancelResult:
+    """The parsed envelope of an unpaid-reservation cancel (예약취소).
+
+    The shape is the standard SRT ``resultMap`` envelope, successful when
+    ``strResult == "SUCC"`` — but see
+    :func:`~srt_mobile_api.parsers.parse_unpaid_cancel_response`: this is
+    srtgo-attested only and UNCONFIRMED against our v2.0.41 app, whose offline
+    bundle contains no trace of the cancel route.
+
+    A business failure is carried here as data (``succeeded`` False plus the
+    server's ``message_code``), not raised: a caller asking "was my hold
+    released?" must be able to read the answer without exception handling.
+    ``message`` and ``raw`` are excluded from ``repr`` because the raw envelope
+    echoes reservation identity.
+    """
+
+    status: str
+    message_code: str = ""
+    message: str = field(default="", repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status == "SUCC"
+
+
+@dataclass(frozen=True)
 class HtmlPage:
     text: str = field(repr=False)
     raw: str = field(repr=False)

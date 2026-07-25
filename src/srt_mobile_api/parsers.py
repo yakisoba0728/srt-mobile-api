@@ -19,8 +19,9 @@ from .models import (
     ReservationRecord,
     ReservationTrain,
     SearchPageState,
-    SrtReservationHold,
     SeatSelectionPage,
+    SrtCancelResult,
+    SrtReservationHold,
     TimetablePage,
     TimetableRow,
     TrainSearchMetadata,
@@ -490,12 +491,16 @@ def _reservation_attempt_string(
     return value
 
 
-def _validate_reservation_attempt_wrapper(data: dict[str, Any]) -> None:
+def _validate_error_code_wrapper(
+    data: dict[str, Any],
+    *,
+    context: str = "reservation attempt",
+) -> None:
     code_present = "ERROR_CODE" in data
     message_present = "ERROR_MSG" in data
     if code_present != message_present:
         raise SrtProtocolError(
-            "SRT reservation attempt ERROR_CODE/ERROR_MSG wrapper pair is partial",
+            f"SRT {context} ERROR_CODE/ERROR_MSG wrapper pair is partial",
             raw=data,
         )
     if not code_present:
@@ -504,11 +509,11 @@ def _validate_reservation_attempt_wrapper(data: dict[str, Any]) -> None:
     message = data["ERROR_MSG"]
     if not isinstance(code, str) or not isinstance(message, str):
         raise SrtProtocolError(
-            "SRT reservation attempt ERROR_CODE and ERROR_MSG must be strings",
+            f"SRT {context} ERROR_CODE and ERROR_MSG must be strings",
             raw=data,
         )
     if code not in {"", "0"}:
-        raise SrtAppError(code, message or "SRT reservation attempt rejected", raw=data)
+        raise SrtAppError(code, message or f"SRT {context} rejected", raw=data)
 
 
 def parse_reservation_attempt_response(
@@ -520,7 +525,7 @@ def parse_reservation_attempt_response(
             "SRT reservation attempt response must be a non-empty JSON object",
             raw=data,
         )
-    _validate_reservation_attempt_wrapper(data)
+    _validate_error_code_wrapper(data)
 
     result_row = _reservation_attempt_row(data, "resultMap")
     status = _reservation_attempt_string(
@@ -698,6 +703,65 @@ def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
         pnr_no=result.reservation.pnr_number,
         journey_list_key=result.reservation.journey_list_key,
         total_seat_count=result.reservation.total_seat_count,
+        raw=data,
+    )
+
+
+def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
+    """Parse the response of an unpaid-reservation cancel (예약취소).
+
+    **Provenance — UNCONFIRMED for our app version.** That
+    ``/ard/selectListArd02045_n.do`` answers with the standard ``resultMap``
+    envelope, successful on ``strResult == "SUCC"``, comes solely from srtgo's
+    live runs (``docs/analysis/ref-srtgo_plus.md`` §7.1). The route is 0-hit
+    across all 21,673 files of our v2.0.41 offline decompile
+    (``docs/analysis/cross-validation-2026-07-21.md``), so no response of ours
+    has ever been seen. This parser therefore reuses the shared envelope
+    handling (:func:`normalize_result_row`, which accepts both the ``resultMap``
+    and ``outDataSets.dsOutput0`` spellings, plus the ``ERROR_CODE``/
+    ``ERROR_MSG`` wrapper check) instead of asserting a container layout we
+    cannot corroborate.
+
+    A business failure is RETURNED, not raised: ``SrtCancelResult.succeeded`` is
+    ``False`` and the server's ``msgCd``/``msgTxt`` are preserved. Raising there
+    would push the "did my hold get released?" answer into an exception path,
+    which is how holds get orphaned. Only a malformed envelope
+    (:class:`SrtProtocolError`) or an app-level ``ERROR_CODE`` rejection
+    (:class:`SrtAppError`) raises. ``msgCd`` is optional, matching the app's own
+    habit of gating purely on ``strResult`` (see
+    :func:`parse_mutual_verification_response`) and srtgo, which never reads a
+    cancel ``msgCd``; refusing a response over a field nobody reads would hide a
+    real cancellation outcome.
+    """
+    if not isinstance(data, dict) or not data:
+        raise SrtProtocolError(
+            "SRT cancel response must be a non-empty JSON object",
+            raw=data,
+        )
+    _validate_error_code_wrapper(data, context="cancel")
+    row = normalize_result_row(data)
+    if not row:
+        raise SrtProtocolError(
+            "SRT cancel response must contain a resultMap result row",
+            raw=data,
+        )
+    status = row.get("strResult")
+    if not isinstance(status, str) or not status:
+        raise SrtProtocolError(
+            "SRT cancel resultMap strResult must be a non-empty string",
+            raw=data,
+        )
+    code = row.get("msgCd", "")
+    message = row.get("msgTxt", "")
+    if not isinstance(code, str) or not isinstance(message, str):
+        raise SrtProtocolError(
+            "SRT cancel resultMap msgCd and msgTxt must be strings",
+            raw=data,
+        )
+    return SrtCancelResult(
+        status=status,
+        message_code=code,
+        message=message,
         raw=data,
     )
 

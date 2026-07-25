@@ -14,9 +14,14 @@ accepts it.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
-from srt_mobile_api import SrtReservationHold
+import srt_mobile_api
+from srt_mobile_api import SrtCancelResult, SrtReservationHold
+from srt_mobile_api.errors import SrtAppError, SrtProtocolError
+from srt_mobile_api.parsers import parse_unpaid_cancel_response
 from srt_mobile_api.payloads import unpaid_reservation_cancel_payload
 
 
@@ -139,3 +144,119 @@ def test_cancel_form_rejects_an_empty_pnr(pnr):
 def test_cancel_form_rejects_a_foreign_reservation_type(reservation):
     with pytest.raises(ValueError):
         unpaid_reservation_cancel_payload(reservation)
+
+
+# --- response parsing: SUCC and FAIL are both data, not exceptions -----------
+
+
+def _envelope(status: str, **fields) -> dict:
+    row = {"strResult": status}
+    row.update(fields)
+    return {"resultMap": [row]}
+
+
+def test_cancel_parser_reads_a_success_envelope():
+    payload = _envelope(
+        "SUCC", msgCd="SYNTHETIC-CANCEL-OK", msgTxt="synthetic cancelled"
+    )
+
+    result = parse_unpaid_cancel_response(payload)
+
+    assert isinstance(result, SrtCancelResult)
+    assert result.succeeded is True
+    assert result.status == "SUCC"
+    assert result.message_code == "SYNTHETIC-CANCEL-OK"
+    assert result.message == "synthetic cancelled"
+    assert result.raw is payload
+
+
+def test_cancel_parser_reports_a_failure_without_raising():
+    # A FAIL must be readable as data: pushing "was my hold released?" into an
+    # exception path is how holds get orphaned.
+    payload = _envelope(
+        "FAIL", msgCd="SYNTHETIC-CANCEL-FAIL", msgTxt="synthetic refusal"
+    )
+
+    result = parse_unpaid_cancel_response(payload)
+
+    assert result.succeeded is False
+    assert result.status == "FAIL"
+    assert result.message_code == "SYNTHETIC-CANCEL-FAIL"
+    assert result.message == "synthetic refusal"
+    assert result.raw is payload
+
+
+def test_cancel_parser_treats_only_succ_as_success():
+    assert parse_unpaid_cancel_response(_envelope("succ")).succeeded is False
+
+
+def test_cancel_parser_accepts_the_dsoutput0_envelope_spelling():
+    # The exact container is unconfirmed for this route, so the shared
+    # normalize_result_row handling (resultMap OR outDataSets.dsOutput0) is
+    # reused rather than one layout being asserted.
+    payload = {"outDataSets": {"dsOutput0": [{"strResult": "SUCC"}]}}
+
+    assert parse_unpaid_cancel_response(payload).succeeded is True
+
+
+def test_cancel_parser_treats_a_missing_message_code_as_informational():
+    # srtgo gates a cancel purely on strResult and never reads msgCd; refusing a
+    # response over a field nobody reads would hide a real cancellation outcome.
+    result = parse_unpaid_cancel_response(_envelope("SUCC"))
+
+    assert result.succeeded is True
+    assert result.message_code == ""
+    assert result.message == ""
+
+
+def test_cancel_result_is_frozen_and_repr_safe():
+    result = parse_unpaid_cancel_response(
+        _envelope("SUCC", msgCd="OK", msgTxt="synthetic detail")
+    )
+
+    assert "synthetic detail" not in repr(result)
+    assert "resultMap" not in repr(result)
+    with pytest.raises(FrozenInstanceError):
+        result.status = "FAIL"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        [],
+        "SUCC",
+        None,
+        {"resultMap": []},
+        {"resultMap": [{}]},
+        {"resultMap": [{"strResult": ""}]},
+        {"resultMap": [{"strResult": 1}]},
+        {"resultMap": [{"strResult": "SUCC", "msgCd": 7}]},
+        {"resultMap": [{"strResult": "SUCC", "msgTxt": 7}]},
+        {"ERROR_CODE": "0"},
+    ],
+)
+def test_cancel_parser_rejects_a_malformed_envelope(payload):
+    with pytest.raises(SrtProtocolError):
+        parse_unpaid_cancel_response(payload)
+
+
+def test_cancel_parser_surfaces_an_app_level_rejection():
+    payload = {
+        "ERROR_CODE": "SYNTHETIC-ERROR",
+        "ERROR_MSG": "synthetic app rejection",
+        "resultMap": [{"strResult": "SUCC"}],
+    }
+
+    with pytest.raises(SrtAppError) as exc_info:
+        parse_unpaid_cancel_response(payload)
+
+    assert exc_info.value.code == "SYNTHETIC-ERROR"
+    assert exc_info.value.raw is payload
+
+
+def test_cancel_model_and_parser_are_exported():
+    assert srt_mobile_api.SrtCancelResult is SrtCancelResult
+    assert (
+        srt_mobile_api.parse_unpaid_cancel_response is parse_unpaid_cancel_response
+    )
