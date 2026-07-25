@@ -69,6 +69,24 @@ cancel / change).
 > starting hypothesis, not confirmed fact). **RESERVATION (`arc05013`, NetFunnel
 > `act_10`) remains CONFIRMED present** in our app and stays feasible. See
 > `## Revision 2 (2026-07-21)`.
+>
+> **✅ UPDATE 3 (2026-07-25, LIVE CAPTURE PERFORMED — cancel `Ard02045` confirmed).**
+> The live capture UPDATE 2 called for **has now happened, for cancel and reserve
+> only.** One operator-run reserve->cancel round trip
+> (`scripts/verify_reserve_cancel_roundtrip.py`) against the real server released a
+> real unpaid hold: reserve `strResult=SUCC`/`msgCd=IRR000018`, cancel
+> `strResult=SUCC`/`msgCd=IRG000000`, no trace left in the ticket list, nothing
+> charged. So `/ard/selectListArd02045_n.do` with `pnrNo`/`jrnyCnt="1"`/
+> `rsvChgTno="0"` **is confirmed against the live server for our app version**, and
+> reserve's live wiring (the `act_10` key flow, plus the referer our client sends) is
+> confirmed too. **The 0-hit findings below are NOT withdrawn** — those endpoints are
+> still absent from our v2.0.41 offline bundle, which is exactly why a live capture
+> was the only way to settle it. **Payment (`Ata09036`) and refund
+> (`Atc14087`→`Atc02063`) remain capture-blocked and unimplemented; nothing was
+> learned about their shapes.** Scope of the run: ONE single-journey, one-adult,
+> general-seat reservation — multi-leg (`jrnyCnt` > 1), group and standby were not
+> exercised. Recorded in `CHANGELOG.md` (Unreleased) and
+> `docs/IMPLEMENTATION_PROGRESS.md` ("Live Reserve->Cancel Verification").
 
 ---
 
@@ -81,13 +99,15 @@ cancel / change).
 > — `personal_reservation_payload()` and a preview-only `SrtClient.reserve()`
 > exist, and the four mutation routes are tiered in `SRT_MUTATION_ROUTES`
 > (still deliberately outside `READ_ONLY_ROUTES`, so §1.2's read-only allowlist
-> and its 20-route count are unchanged). What remains true, and is now enforced
-> at the transport layer rather than by the absence of code, is that **no
-> state-changing request is transmitted**: `SRT_LIVE_MUTATION_CATEGORIES` is
-> empty, so `post_mutation_form` and `_send_mutation_request` refuse every
-> category. For the current state read `CHANGELOG.md` (`## Unreleased`) and
-> `docs/IMPLEMENTATION_PROGRESS.md`; the rest of this document is left as the
-> planning record it was.
+> and its 20-route count are unchanged). What is enforced at the transport layer
+> rather than by the absence of code is **which** categories may transmit:
+> `SRT_LIVE_MUTATION_CATEGORIES` was an empty frozenset and now holds exactly
+> `{"reserve", "cancel"}`, so `post_mutation_form` and `_send_mutation_request`
+> still refuse `payment` and `refund` outright, while a consented non-dry-run
+> reserve or cancel does reach the network — and a live reserve->cancel round trip
+> was run once, on 2026-07-25 (see UPDATE 3 in the header). For the current state
+> read `CHANGELOG.md` (`## Unreleased`) and `docs/IMPLEMENTATION_PROGRESS.md`; the
+> rest of this document is left as the planning record it was.
 
 ### 1.1 What the client is today
 
@@ -285,9 +305,9 @@ request shapes are not in the APK.
 | `/ard/selectListArd02017_n.do` (payment entry, individual) | **POST (form submit)** | `#rsvForm` retargeted: `pnrNo`=reservListMap.pnrNo, `jrnySqno=1`, `JRNYLIST_KEY`, `arvDt/arvRsStnCd/arvTm`, `dlayAcptFlg`, `dptDt/dptRsStnCd/dptTm`, `jrnyTpCd`, `lumpStlTgtNo`, `proyStlTgtFlg`, `stlbTrnClsfCd`, `totSeatNum`, `trnGpCd`, `trnNo` + all remaining rsvForm fields | **HTML payment page** (~84 KB) | `ara1001l.js:1606-1626,1642-1646` | **WebView/PG-dependent — for THIS endpoint only.** A Python client can POST it and inspect the returned HTML, but this page *is* the WebView payment UI (PG redirect + secure keypad); approval cannot complete here. **UPDATE (2026-07-21): payment is NOT infeasible overall** — the mobile app pays via a *different* JSON endpoint, `ata09036` (new row below), which charges a card over plain HTTP with no PG/keypad/FIDO. `ard02017/18` is simply not the route the native app uses to pay. **⚠️ UPDATE 2 (cross-val): `ata09036` is 0-hit in OUR v2.0.41 bundle; OUR real payment path IS this `ard02017/18` WebView page + TransKey keypad + FIDO + AppGuard — payment reverts to needs-live-capture (§Rev 2).** |
 | `/ard/selectListArd02018_n.do` (payment entry, group) | **POST (form submit)** | `pnrNo=-1` (hard), `rcvdAmt`=resultMap.totRcvdAmt, `tmpJobSqno1`, `tmpJobSqno2=0`, `seatNo1`=trainListMap.seatNo, `scarNo1`=trainListMap.scarNo + shared journey fields | HTML payment page (~83 KB) | `ara1001l.js:1596-1605` | Same WebView/PG dependency. |
 | `/ata/selectListAta01032_n.do` (discount detail) | GET | `pnrNo=${commandMap.pnrNo}` (JSP EL, server-rendered) | HTML page | `arc/arc0102c.js:33-37` | Read-but-state-dependent (needs a real PNR). Not a mutation, listed for flow completeness. |
-| **cancel / refund / change** | **unknown** | **no static evidence in APK** | unknown | — (absent) | ~~**Blocked on live capture.**~~ **UPDATE (2026-07-21): cancel & refund RESOLVED via mobile-JSON API** (rows below); **change (변경) still capture-blocked** (srtgo has no change endpoint either). **⚠️ UPDATE 2 (cross-val): cancel `ard02045` & refund `atc14087`/`atc02063` are 0-hit in OUR bundle — srtgo-attested only; all three revert to needs-live-capture (§Rev 2).** |
+| **cancel / refund / change** | **unknown** | **no static evidence in APK** | unknown | — (absent) | ~~**Blocked on live capture.**~~ **UPDATE (2026-07-21): cancel & refund RESOLVED via mobile-JSON API** (rows below); **change (변경) still capture-blocked** (srtgo has no change endpoint either). **⚠️ UPDATE 2 (cross-val): cancel `ard02045` & refund `atc14087`/`atc02063` are 0-hit in OUR bundle — srtgo-attested only; all three revert to needs-live-capture (§Rev 2).** **✅ UPDATE 3 (2026-07-25): the live capture happened for CANCEL only — `ard02045` confirmed against the real server (SUCC/`IRG000000`); still 0-hit in the bundle. Refund and change remain capture-blocked.** |
 | **`/ata/selectListAta09036_n.do` (payment, card)** — mobile-JSON *(NEW, 2026-07-21)* | POST | `stlCrCrdNo1`(PAN, no hyphens), `crdVlidTrm1`(expiry YYMM), `vanPwd1`(pw first 2 digits), `athnVal1`(birthday YYMMDD / biz-no), `athnDvCd1`(`J` personal / `S` corp), `ismtMnthNum1`(installment), `stlMnsCd1="02"`(credit card), `crdInpWayCd1="@"`, `totNewStlAmt`/`mnsStlAmt1`(=total_cost), `pnrNo`, `mbCrdNo`, `ctlDvCd="3102"`, `cgPsId="korail"`, `trnGpCd="300"`, `jrnyCnt="1"` … | **JSON** (`dsOutput0[0].strResult`) | `srt.py:99`, body `srt.py:1184-1216`, resp `srt.py:1220-1225` | **Fully HTTP-replicable — NO PG/keypad/FIDO.** Real card charge over plain form-POST. **This is the opposite of the `ard02017/18` verdict** and is exactly what the §4 safety guardrails must block. **⚠️ UPDATE 2 (cross-val): `ata09036` is 0-hit across all 21,673 files in OUR v2.0.41 bundle — srtgo-attested only (maybe a different/newer app); UNCONFIRMED for our version, needs live capture (§Rev 2).** |
-| **`/ard/selectListArd02045_n.do` (cancel, 예약취소)** — mobile-JSON *(NEW, 2026-07-21)* | POST | `pnrNo`, `jrnyCnt="1"`, `rsvChgTno="0"` | `SRTResponseData` (SUCC/FAIL) | `srt.py:97`, body `srt.py:1138` | **Fully replicable.** Unpaid-reservation cancel. **⚠️ UPDATE 2 (cross-val): `ard02045` 0-hit in OUR bundle — srtgo-attested only; needs live capture (§Rev 2).** |
+| **`/ard/selectListArd02045_n.do` (cancel, 예약취소)** — mobile-JSON *(NEW, 2026-07-21)* | POST | `pnrNo`, `jrnyCnt="1"`, `rsvChgTno="0"` | `SRTResponseData` (SUCC/FAIL) | `srt.py:97`, body `srt.py:1138` | **Fully replicable.** Unpaid-reservation cancel. **⚠️ UPDATE 2 (cross-val): `ard02045` 0-hit in OUR bundle — srtgo-attested only; needs live capture (§Rev 2).** **✅ UPDATE 3 (2026-07-25): live capture done — this exact body released a real hold, `strResult=SUCC`/`msgCd=IRG000000`/`정상처리되었습니다`. The 0-hit finding stands; the shape is now confirmed on the live server for a SINGLE-journey, one-adult hold (`jrnyCnt` > 1 untested).** |
 | **`/atc/getListAtc14087.do` → `/atc/selectListAtc02063_n.do` (refund, 환불)** — mobile-JSON, 2-step *(NEW, 2026-07-21)* | POST | step 1 (Referer `/common/ATC/ATC0201L/view.do?pnrNo=<pnr>`, no body) → returns `ogtkSaleDt, ogtkSaleWctNo, ogtkSaleSqno, ogtkRetPwd, buyPsNm`; step 2 body: `pnr_no`(underscore!), `cnc_dmn_cont="승차권 환불로 취소"`, `saleDt, saleWctNo, saleSqno, tkRetPwd, psgNm` | step 1 `{ErrorCode,ErrorMsg}`; step 2 `SRTResponseData` | `srt.py:100,101,102`, `srt.py:1227-1257` | **Fully replicable.** Paid/issued-ticket refund; needs the pre-info fetch first. **⚠️ UPDATE 2 (cross-val): `getListAtc14087`/`atc02063` 0-hit in OUR bundle — srtgo-attested only; needs live capture (§Rev 2).** |
 
 ### 3.4 Prerequisites for mutation
@@ -376,6 +396,12 @@ request shapes are not in the APK.
 > blocked (srtgo-attested only, unconfirmed for v2.0.41):** payment, cancel, refund,
 > change, group reserve `arc06014`, and the `arc02012` HTML seat page. See
 > `## Revision 2 (2026-07-21)`.
+>
+> **✅ UPDATE 3 (2026-07-25): cancel leaves the capture-blocked bucket.** A live
+> reserve->cancel round trip confirmed `ard02045` (+ `pnrNo`/`jrnyCnt="1"`/
+> `rsvChgTno="0"`) on the real server, `SUCC`/`IRG000000`, for a single-journey
+> one-adult hold — and confirmed reserve's live `act_10`/referer wiring with it.
+> Still capture-blocked: payment, refund, change, `arc06014`, `arc02012`.
 
 The original WebView-surface classification is retained below for reference, with the
 reversed items struck:
@@ -797,6 +823,13 @@ until a live request/response shape is recorded and sanitized.
 > capture-blocked for our version**: srtgo's shapes are a starting hypothesis, and a
 > live v2.0.41 capture is still required before implementing cancel/refund (change
 > was always capture-blocked).
+>
+> **✅ UPDATE 3 (2026-07-25).** That live capture was performed **for cancel**: a
+> real reserve->cancel round trip confirmed `ard02045` + `pnrNo`/`jrnyCnt="1"`/
+> `rsvChgTno="0"` on the live server (`SUCC` / `IRG000000`), for a single-journey
+> one-adult hold. Cancel is implemented, live-enabled and verified. **Refund
+> (`getListAtc14087`→`atc02063`) and change are untouched and still
+> capture-blocked**, and the 0-hit finding above stands for all of them.
 
 - [ ] ~~🔒 First capture the cancel/refund/change shapes — ZERO static evidence.~~
       **UPDATE (2026-07-21): cancel & refund shapes are known** from srtgo's
@@ -854,6 +887,12 @@ P0 and P5 are not blocked.
 > cancel / refund** (P3/P4, live v2.0.41 capture), 🔒 **`arc02012` HTML seat page**
 > (P1/R1/R5), 🔒 **`arc06014` group reserve** (P2), 🔒 **change/변경** (P4). See
 > `## Revision 2 (2026-07-21)`.
+>
+> **✅ UPDATE 3 (2026-07-25).** Cancel leaves that list: the live capture was
+> performed and `ard02045` is confirmed on the real server (SUCC/`IRG000000`,
+> single-journey one-adult hold), alongside reserve's live `act_10`/referer wiring.
+> Remaining capture-blocked: 🔒 **payment** (P3), 🔒 **refund** (P4), 🔒 **`arc02012`
+> HTML seat page**, 🔒 **`arc06014` group reserve**, 🔒 **change/변경**.
 
 ---
 
@@ -1017,6 +1056,20 @@ capture-blocked list is: 🔒 **payment** (WebView `ard02017/18`, or an unconfir
 `ata09036`), 🔒 **cancel**, 🔒 **refund**, 🔒 **change (변경)**, 🔒 **group reserve
 `arc06014`**, and 🔒 **designated-seat / the `arc02012` HTML seat page**. Confirmed and
 implementable now: **individual reserve `arc05013`** with the existing `act_10` gate.
+
+> **✅ RESOLUTION for cancel (2026-07-25) — live capture performed.** Everything above
+> in this Revision stands as written: those six endpoints are still 0-hit in our
+> v2.0.41 bundle, and that is still why a live capture was the only way to settle
+> them. One such capture has now happened, for **cancel only**. A real reserve->cancel
+> round trip (`scripts/verify_reserve_cancel_roundtrip.py`, run once) reserved and
+> released a real unpaid hold: reserve `SUCC`/`IRR000018`, cancel `SUCC`/`IRG000000`,
+> nothing left in the ticket list, nothing charged. So `Ard02045` with
+> `pnrNo`/`jrnyCnt="1"`/`rsvChgTno="0"` moves from hypothesis to **confirmed on the
+> live server** — for a SINGLE-journey, one-adult, general-seat hold; multi-leg, group
+> and standby remain untested. 🔒 **payment**, 🔒 **refund**, 🔒 **change**, 🔒 **group
+> reserve `arc06014`** and 🔒 **the `arc02012` seat page** are unaffected and still
+> capture-blocked. Details: `docs/IMPLEMENTATION_PROGRESS.md` ("Live Reserve->Cancel
+> Verification") and `CHANGELOG.md` (Unreleased).
 
 ---
 
