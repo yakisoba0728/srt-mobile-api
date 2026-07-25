@@ -1,6 +1,9 @@
 # SRT Python Package Implementation Progress
 
-Last updated: 2026-07-20 KST (state at HEAD `955de306`, version `0.2.0`)
+Last updated: 2026-07-25 KST (version `0.2.0`; the consent-gated mutation port
+and its transport-layer gate are recorded under `## Unreleased` in
+`CHANGELOG.md`). Entries dated before that describe the state at HEAD
+`955de306` and are kept as the historical record.
 
 ## Current State
 
@@ -21,9 +24,10 @@ Last updated: 2026-07-20 KST (state at HEAD `955de306`, version `0.2.0`)
 - The package exports the pure offline `parse_reservation_attempt_response()`
   parser and typed repr-safe `ReservationAttemptResult` for the documented
   reservation-attempt response shape. It accepts caller-supplied JSON only and
-  raises the existing protocol/app errors for malformed or rejected shapes. No
-  reservation route, request builder, `act_19` flow, client method, or live
-  call was added.
+  raises the existing protocol/app errors for malformed or rejected shapes.
+  That parser itself added no route, request builder, `act_19` flow, client
+  method, or live call; the reservation route, builder and preview-only method
+  came later with the consent-gated mutation port below.
 - Internal release preparation is complete at current `HEAD`: typed-package
   metadata, source-manifest contents, an archive verifier, Python 3.11-3.14
   offline CI, and internal release/security/changelog guidance are present.
@@ -48,8 +52,12 @@ Last updated: 2026-07-20 KST (state at HEAD `955de306`, version `0.2.0`)
   each value caller-accessible. Wrapper and business `SrtAppError` rendering
   now uses fixed local messages; the original response remains available via
   the repr-hidden `raw` attribute.
-- The transport boundary now allows 20 exact read-only app/NetFunnel routes
-  while every mutation route remains excluded.
+- The read-only transport boundary allows 20 exact read-only app/NetFunnel
+  routes; every mutation route is excluded from it, so
+  `assert_read_only_request` refuses all four.
+- A consent-gated mutation surface was subsequently added (see "Consent-gated
+  mutation surface" below). It did not widen the read-only allowlist, and no
+  mutation of any category is transmitted.
 - The prior Task 4 verification gate remains recorded: its full offline suite,
   package build, isolated wheel import, exact static boundary, independent
   review, and bounded live gate all passed.
@@ -57,9 +65,10 @@ Last updated: 2026-07-20 KST (state at HEAD `955de306`, version `0.2.0`)
   explicit source categories. A generic script is distinct from embedded
   DOM/JSON inventory candidates, static Ajax contracts, same-origin references,
   cross-origin reference counts, and external handoffs.
-- The route and mutation boundary remains unchanged. Typed physical seats remain
-  excluded until separately authorized response evidence identifies a stable
-  iterable source and availability vocabulary.
+- The seat-layout evidence work changed neither the read-only route allowlist
+  nor the mutation boundary. Typed physical seats remain excluded until
+  separately authorized response evidence identifies a stable iterable source
+  and availability vocabulary.
 - Schema v2 introduces no public API or package-version change; the package
   remains `0.2.0`. Its exact operation budget remains one login, one personal
   search operation, and zero or one seat-page read for the first complete SRT
@@ -95,12 +104,40 @@ Last updated: 2026-07-20 KST (state at HEAD `955de306`, version `0.2.0`)
 - Train-group selector popup read
 - Physical seat-selection page read returning `SeatSelectionPage`
 
-The package also exports the offline `parse_reservation_attempt_response()`
-helper; it performs no I/O and is not a client route.
+The package also exports the offline `parse_reservation_attempt_response()` and
+`parse_reservation_hold_response()` helpers; they perform no I/O and are not
+client routes.
 
 The transport currently allows 20 exact read-only app/NetFunnel routes.
-Reservation, `act_19`, payment, cancellation, refund, ATA/ARD flows, native
-bridges, callbacks, and external seat-map calls are not callable.
+`act_19`, payment, cancellation, refund, ATA/ARD flows, native bridges,
+callbacks, and external seat-map calls are not callable. A preview-only
+`reserve` exists; see the next section.
+
+## Consent-gated Mutation Surface
+
+- `SrtClient.reserve(train, *, consent, ...)` is the only mutation method. It
+  requires an explicit `MutationConsent` with `allow_reserve=True`, and it is
+  **preview-only**: `dry_run=False` is refused, so it returns a redacted
+  `MutationPreview` of the exact `arc/selectListArc05013_n.do` form and performs
+  no I/O. `cancel`, `payment` and `refund` have no client method at all.
+- The four state-changing routes are tiered in `safety.SRT_MUTATION_ROUTES` and
+  deliberately kept out of `READ_ONLY_ROUTES`, so the 20-route read-only
+  allowlist and its guarantee are unchanged and `assert_read_only_request`
+  refuses each of them. `SRT_MUTATION_ROUTE_CATEGORIES` binds each route to one
+  consent category.
+- **No mutation of any category is transmitted, and this is enforced at the
+  transport layer.** `safety.SRT_LIVE_MUTATION_CATEGORIES` is an empty
+  frozenset; `SrtHttpClient.post_mutation_form` refuses every category outside
+  it (however permissive the consent), and `_send_mutation_request` — the
+  function that actually calls `send` — re-asserts the same membership. The
+  guarantee therefore no longer depends on `reserve()` alone: reaching
+  `SrtClient.http` directly cannot transmit either.
+- Enabling a category is a one-line change to that frozenset and is gated on the
+  category being both implemented and live-verified. `reserve` additionally
+  requires a working `cancel`, because SRT offers no other way to release a hold
+  this library would create. `cancel`/`payment`/`refund` wire formats are 0-hit
+  across all 21,673 files of the v2.0.41 offline evidence bundle and are
+  srtgo-attested only, so they need live capture first.
 
 ## Bounded Seat-Layout Evidence Gate
 
@@ -210,9 +247,12 @@ car/seat response or availability contract.
   tracked fixture was byte-for-byte identical to the reviewed safe report.
 - Sanitized-fixture phase full offline gate: `512 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
-- Current full offline gate at HEAD `955de306`, including the additive
-  reservation-attempt parser tests: `625 passed, 1 deselected`; the deselected
-  case remains the explicit live-service opt-in.
+- Current full offline gate (`pytest -q -m "not live"`), after the
+  consent-gated mutation port and the transport-layer live-mutation gate:
+  `717 passed, 1 deselected`; the deselected case remains the explicit
+  live-service opt-in. No live mutation was ever run.
+- Prior full offline gate at `955de306`, including the additive
+  reservation-attempt parser tests: `625 passed, 1 deselected`.
 - Prior integrated full offline gate: `587 passed, 1 deselected`. Offline
   replay of the retained runtime bodies passes for typed notices, timetable
   names, all 12 fare rows, and six personal/group search responses. The replay
@@ -328,17 +368,23 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
 - Documented endpoint-matrix entries: 38, including runtime, static, helper,
   excluded, and repeated failure scenarios
 - Runtime-success entries: 20
-- Currently implemented underlying routes: 20, including NetFunnel `act_10`
+- Currently implemented underlying read routes: 20, including NetFunnel `act_10`
+- Mutation routes tiered but never transmitted: 4 (reserve, cancel, payment,
+  refund); only reserve has a client method, and it is preview-only
 - Therefore the complete documented endpoint matrix is not yet implemented
 
-Static aliases, reservation execution, payment handoff, native integrations,
-and typed physical-seat inventory remain outside the current core package.
+Static aliases, live reservation execution, payment handoff, native
+integrations, and typed physical-seat inventory remain outside the current core
+package.
 
 ## Deferred Work
 
 Typed physical-seat layout and selection remain a future candidate requiring
 separately authorized Arc02011 response evidence that proves a stable iterable
 source, availability vocabulary, and closed parser. The unallowlisted Arc02011
-handoff, every mutation endpoint, external seat-map call, callback, and native
-bridge remain excluded. The implemented personal and group continuation
-contract has bounded live evidence.
+handoff, external seat-map call, callback, and native bridge remain excluded.
+Every mutation endpoint remains excluded from transmission: none is
+live-enabled, so nothing state-changing is sent (see "Consent-gated Mutation
+Surface"). Making one sendable requires implementing it, capturing its live
+response, and — for reserve — a working `cancel` first. The implemented
+personal and group continuation contract has bounded live evidence.

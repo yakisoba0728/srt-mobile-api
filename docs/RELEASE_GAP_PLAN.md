@@ -74,6 +74,21 @@ cancel / change).
 
 ## 1. Current State
 
+> **Status note (2026-07-25).** This section is a snapshot taken on 2026-07-21,
+> *before* the plan's first phase was executed. Part of it is now historical:
+> the consent-gated mutation port has since landed, so §1.3's "no reservation
+> request builder … and no mutation client method" no longer describes the code
+> — `personal_reservation_payload()` and a preview-only `SrtClient.reserve()`
+> exist, and the four mutation routes are tiered in `SRT_MUTATION_ROUTES`
+> (still deliberately outside `READ_ONLY_ROUTES`, so §1.2's read-only allowlist
+> and its 20-route count are unchanged). What remains true, and is now enforced
+> at the transport layer rather than by the absence of code, is that **no
+> state-changing request is transmitted**: `SRT_LIVE_MUTATION_CATEGORIES` is
+> empty, so `post_mutation_form` and `_send_mutation_request` refuse every
+> category. For the current state read `CHANGELOG.md` (`## Unreleased`) and
+> `docs/IMPLEMENTATION_PROGRESS.md`; the rest of this document is left as the
+> planning record it was.
+
 ### 1.1 What the client is today
 
 The package is a **pure server-side, read-only HTTP client**. The route allowlist
