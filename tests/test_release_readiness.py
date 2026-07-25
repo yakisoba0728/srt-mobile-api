@@ -844,7 +844,11 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     assert "installable read-only" in readme_lower
     assert "analysis workspace" not in readme_lower
     assert "20 routes" in readme
-    assert "587 passed" in readme and "1 deselected" in readme
+    # The CURRENT offline count, so this is a real gate: it must be updated
+    # whenever the suite grows. (The README also cites the historical 0.2.0
+    # figure; that one is labelled as historical and is not asserted here,
+    # because a frozen number can never fail.)
+    assert "717 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in readme.casefold()
     assert "personal and group each returned two pages" in readme.casefold()
@@ -868,11 +872,21 @@ def test_repository_truth_and_full_mutation_policy() -> None:
         "tests/",
         "docs/IMPLEMENTATION_PROGRESS.md",
         "docs/superpowers/specs/",
-        "docs/superpowers/plans/",
         "README.md",
         "scripts/srt_app_api_smoke.py",
     ):
+        # Section 12 must list it AND it must actually still be in the tree,
+        # so the retained-file table cannot drift away from the repository.
         assert retained_content in section_twelve
+        assert (ROOT / retained_content).exists()
+
+    # docs/superpowers/plans/ is the opposite case: it was removed after the
+    # plans were executed. Section 12 must keep saying so, and the directory
+    # must stay gone.
+    assert not (ROOT / "docs/superpowers/plans").exists()
+    assert "| `docs/superpowers/plans/`" not in section_twelve
+    assert "execution plans formerly under `docs/superpowers/plans/` were" in section_twelve
+    assert "removed after implementation" in section_twelve
 
     policy = specification.casefold()
     forbidden_recommendations = (
