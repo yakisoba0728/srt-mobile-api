@@ -1,9 +1,11 @@
 from copy import deepcopy
 from dataclasses import FrozenInstanceError, is_dataclass
+from unittest import mock
 
 import pytest
 
 import srt_mobile_api
+from srt_mobile_api import parsers
 from srt_mobile_api.errors import (
     SrtAppError,
     SrtProtocolError,
@@ -164,12 +166,81 @@ def test_parse_reservation_attempt_rejects_observed_wrapper_error():
         {"resultMap": []},
         {"resultMap": [{}]},
         {"resultMap": ["not-an-object"]},
-        {"resultMap": [{"strResult": "FAIL", "msgCd": "WRP011002"}]},
     ],
 )
 def test_parse_reservation_attempt_rejects_empty_partial_or_malformed_failures(payload):
     with pytest.raises(SrtProtocolError):
         parse_reservation_attempt_response(payload)
+
+
+# --- a DECLARED failure is classified before any optional field is read -------
+#
+# The server's strResult is authoritative about the outcome. A FAIL that is also
+# missing or malforming an optional field is still a FAIL, and must surface as
+# the business/session error it is rather than as a protocol error — otherwise
+# parse_reservation_hold_response's salvage branch (which catches exactly
+# SrtProtocolError) manufactures a hold for a reservation that never existed.
+
+
+@pytest.mark.parametrize(
+    ("result_row", "expected_code"),
+    [
+        # msgTxt missing: previously a SrtProtocolError, which is the shape that
+        # leaked into the salvage branch.
+        ({"strResult": "FAIL", "msgCd": "WRP011002"}, "WRP011002"),
+        # msgCd missing entirely.
+        ({"strResult": "FAIL", "msgTxt": "synthetic no seat"}, ""),
+        # msgCd present but not a string.
+        ({"strResult": "FAIL", "msgCd": 100, "msgTxt": "synthetic no seat"}, ""),
+        # Neither optional field present at all.
+        ({"strResult": "FAIL"}, ""),
+    ],
+)
+def test_parse_reservation_attempt_reports_a_malformed_fail_as_a_business_error(
+    result_row,
+    expected_code,
+):
+    payload = {"resultMap": [result_row]}
+
+    with pytest.raises(SrtAppError) as exc_info:
+        parse_reservation_attempt_response(payload)
+
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.raw is payload
+
+
+@pytest.mark.parametrize(
+    "result_row",
+    [
+        {"strResult": "FAIL", "msgCd": "S111"},
+        {"strResult": "FAIL", "msgCd": "S111", "msgTxt": 7},
+    ],
+)
+def test_parse_reservation_attempt_reports_a_malformed_s111_as_a_session_expiry(
+    result_row,
+):
+    payload = {"resultMap": [result_row]}
+
+    with pytest.raises(SrtSessionExpiredError) as exc_info:
+        parse_reservation_attempt_response(payload)
+
+    assert exc_info.value.raw is payload
+
+
+@pytest.mark.parametrize(
+    "result_row",
+    [
+        {"strResult": "SUCC"},
+        {"strResult": "SUCC", "msgCd": 7, "msgTxt": "synthetic"},
+        {"strResult": "SUCC", "msgCd": "SYNTHETIC-SUCCESS", "msgTxt": 7},
+        {"strResult": "SUCC", "msgCd": "", "msgTxt": "synthetic"},
+    ],
+)
+def test_parse_reservation_attempt_still_rejects_a_malformed_success_row(result_row):
+    # The mirror image: classifying the declared status first must NOT stop a
+    # declared SUCCESS from being validated strictly. Only FAIL short-circuits.
+    with pytest.raises(SrtProtocolError):
+        parse_reservation_attempt_response({"resultMap": [result_row]})
 
 
 @pytest.mark.parametrize(
@@ -364,6 +435,94 @@ def test_hold_parser_does_not_salvage_a_session_expiry(load_json_fixture):
 
     with pytest.raises(SrtSessionExpiredError):
         parse_reservation_hold_response(payload)
+
+
+# A FAIL that is ALSO slightly malformed used to be rescued: the strict
+# msgCd/msgTxt reads ran BEFORE the status was classified, so the parser raised
+# SrtProtocolError — the one exception the salvage branch catches — and a hold
+# was manufactured for a reservation the server had just refused. Telling a
+# caller a reservation exists when it does not is as damaging as losing one that
+# does: they stop trying to recover. Each case asserts the REASON, not merely
+# that something raised.
+
+
+@pytest.mark.parametrize(
+    "result_row",
+    [
+        # No msgCd at all.
+        {"strResult": "FAIL", "msgTxt": "synthetic no seat"},
+        # msgCd present but an int rather than a str.
+        {"strResult": "FAIL", "msgCd": 100, "msgTxt": "synthetic no seat"},
+        # No msgTxt.
+        {"strResult": "FAIL", "msgCd": "WRR000100"},
+        # Neither optional field.
+        {"strResult": "FAIL"},
+    ],
+)
+def test_hold_parser_does_not_salvage_a_malformed_business_failure(result_row):
+    payload = {
+        "resultMap": [result_row],
+        "reservListMap": [{"pnrNo": "NOT-A-REAL-PNR"}],
+    }
+
+    with pytest.raises(SrtAppError) as exc_info:
+        parse_reservation_hold_response(payload)
+
+    assert exc_info.value.raw is payload
+
+
+@pytest.mark.parametrize(
+    "result_row",
+    [
+        {"strResult": "FAIL", "msgCd": "S111"},
+        {"strResult": "FAIL", "msgCd": "S111", "msgTxt": 7},
+    ],
+)
+def test_hold_parser_does_not_salvage_a_malformed_session_expiry(result_row):
+    payload = {
+        "resultMap": [result_row],
+        "reservListMap": [{"pnrNo": "NOT-A-REAL-PNR"}],
+    }
+
+    with pytest.raises(SrtSessionExpiredError) as exc_info:
+        parse_reservation_hold_response(payload)
+
+    assert exc_info.value.raw is payload
+
+
+def test_hold_parser_refuses_to_salvage_a_declared_failure_independently():
+    # Defense in depth for the same guarantee. The salvage branch re-reads
+    # strResult off the RAW payload, so even if the parser's ordering regressed
+    # and a declared FAIL reached it as a protocol error again, no hold is
+    # manufactured. Simulated by making the parser raise SrtProtocolError for a
+    # payload that declares FAIL.
+    payload = {
+        "resultMap": [{"strResult": "FAIL", "msgCd": "WRR000100"}],
+        "reservListMap": [{"pnrNo": "NOT-A-REAL-PNR"}],
+    }
+
+    def _regressed(_data):
+        raise SrtProtocolError("synthetic ordering regression", raw=payload)
+
+    with mock.patch.object(
+        parsers, "parse_reservation_attempt_response", _regressed
+    ):
+        with pytest.raises(SrtProtocolError):
+            parse_reservation_hold_response(payload)
+
+
+def test_hold_parser_still_salvages_when_no_status_is_declared():
+    # The mirror-image guard: a response with NO strResult is malformed, not a
+    # declared failure, and a PNR in it is exactly what the salvage path exists
+    # to keep.
+    payload = {
+        "resultMap": [{"msgCd": "SYNTHETIC", "msgTxt": "synthetic"}],
+        "reservListMap": [{"pnrNo": "NOT-A-REAL-PNR"}],
+    }
+
+    hold = parse_reservation_hold_response(payload)
+
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
 
 
 def test_hold_parser_still_returns_the_strict_hold_for_a_clean_response(

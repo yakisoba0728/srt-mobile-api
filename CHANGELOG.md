@@ -70,6 +70,19 @@
   `_hold_from_reservation_response`); with no PNR the original error is
   re-raised, and business failures and session expiries are never salvaged. This
   is a prerequisite for ever enabling live reserve.
+- Made "business failures and session expiries are never salvaged" actually
+  true. `parse_reservation_attempt_response` read `msgCd`/`msgTxt` strictly
+  BEFORE classifying the declared `strResult`, so a FAIL that was also slightly
+  malformed (no `msgCd`, an int `msgCd`, no `msgTxt`) raised `SrtProtocolError`
+  — the one exception the salvage branch catches — and
+  `parse_reservation_hold_response` returned a minimal hold for a reservation
+  the server had just refused. Telling a caller a hold exists when it does not
+  is as damaging as losing one that does: they stop trying to recover. The
+  declared status is now classified first, so such a response raises
+  `SrtAppError` / `SrtSessionExpiredError` as its own docstring always claimed,
+  and the salvage branch independently re-reads `strResult` off the raw payload
+  and refuses to build a hold for any declared non-success. A declared SUCCESS
+  is still validated strictly; only a declared failure short-circuits.
 - Corrected the statements the cancel method falsified. `reserve`'s docstring
   and refusal message, `safety.SRT_MUTATION_ROUTES` /
   `SRT_LIVE_MUTATION_CATEGORIES`, and `post_mutation_form`'s refusal message

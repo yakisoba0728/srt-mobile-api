@@ -269,7 +269,7 @@ car/seat response or availability contract.
   the explicit live-service test. No live request or credential access occurred.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate and the
-  consent-gated cancel surface: `797 passed, 1 deselected`; the deselected case
+  consent-gated cancel surface: `814 passed, 1 deselected`; the deselected case
   remains the explicit live-service opt-in. No live mutation was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.

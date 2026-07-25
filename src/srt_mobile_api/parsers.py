@@ -534,6 +534,33 @@ def parse_reservation_attempt_response(
         container_name="resultMap",
         raw=data,
     )
+    # The DECLARED outcome is classified before any strict optional-field read.
+    # A server that says FAIL is authoritative about the outcome whether or not
+    # msgCd/msgTxt happen to be well formed, and callers distinguish "the
+    # reservation was rejected" from "the response was malformed" purely by
+    # exception type. Reading the optional fields strictly first meant a FAIL
+    # that was ALSO slightly malformed (no msgCd, an int msgCd, no msgTxt) came
+    # out as SrtProtocolError, which sent it into
+    # parse_reservation_hold_response's salvage branch and manufactured a hold
+    # for a reservation that was never created.
+    declared_code = result_row.get("msgCd")
+    declared_message = result_row.get("msgTxt")
+    code_hint = declared_code if isinstance(declared_code, str) else ""
+    message_hint = declared_message if isinstance(declared_message, str) else ""
+    if status != "SUCC" and code_hint == "S111":
+        # Bundled JS treats FAIL + msgCd "S111" as a session-expiry / re-login
+        # signal (ara1001l.js:1562-1571; cross-validation-2026-07-21.md §2),
+        # not a generic business error.
+        raise SrtSessionExpiredError(
+            message_hint or "SRT reservation attempt session expired",
+            raw=data,
+        )
+    if code_hint == "WRP011002" or status != "SUCC":
+        raise SrtAppError(code_hint, message_hint or status, raw=data)
+
+    # Only a DECLARED SUCCESS reaches the strict reads: there the fields are
+    # load-bearing, a malformed one means we cannot trust the parse, and the
+    # hold parser's salvage path is the designed answer.
     code = _reservation_attempt_string(
         result_row,
         "msgCd",
@@ -547,17 +574,6 @@ def parse_reservation_attempt_response(
         raw=data,
         allow_empty=True,
     )
-    if status != "SUCC" and code == "S111":
-        # Bundled JS treats FAIL + msgCd "S111" as a session-expiry / re-login
-        # signal (ara1001l.js:1562-1571; cross-validation-2026-07-21.md §2),
-        # not a generic business error.
-        raise SrtSessionExpiredError(
-            message or "SRT reservation attempt session expired",
-            raw=data,
-        )
-    if code == "WRP011002" or status != "SUCC":
-        raise SrtAppError(code, message or status, raw=data)
-
     total_received_amount = _reservation_attempt_string(
         result_row,
         "totRcvdAmt",
@@ -672,6 +688,26 @@ def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
     )
 
 
+def _declares_a_non_success(data: Any) -> bool:
+    """True when the payload itself declares an outcome that is not ``SUCC``.
+
+    Read straight off the raw payload, deliberately duplicating the check
+    :func:`parse_reservation_attempt_response` already performs. It is the
+    second layer of the guarantee that a declared failure is never salvaged
+    into a hold: if that parser's ordering ever regresses so a malformed FAIL
+    surfaces as :class:`SrtProtocolError` again, this still refuses to
+    manufacture a hold for a reservation the server says does not exist.
+    Absent status means "not declared", which is a malformed response, not a
+    declared failure — that is precisely the case the salvage path exists for.
+    """
+    if not isinstance(data, dict):
+        return False
+    row = normalize_result_row(data)
+    if "strResult" not in row:
+        return False
+    return row["strResult"] != "SUCC"
+
+
 def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
     """Parse a reserve response into a minimal cancelable hold.
 
@@ -691,10 +727,17 @@ def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
     (:class:`SrtAppError`) and a session expiry
     (:class:`SrtSessionExpiredError`) are NOT salvaged: those mean the
     reservation was rejected, not that a hold exists behind a parse failure.
+    Telling a caller a reservation exists when it does not is as damaging as
+    losing one that does — they stop trying to recover — so that exclusion is
+    enforced twice: by the declared-status classification inside
+    :func:`parse_reservation_attempt_response`, and again by
+    :func:`_declares_a_non_success` on the raw payload here.
     """
     try:
         result = parse_reservation_attempt_response(data)
     except SrtProtocolError:
+        if _declares_a_non_success(data):
+            raise
         hold = _minimal_hold_from_raw(data)
         if hold is None:
             raise
