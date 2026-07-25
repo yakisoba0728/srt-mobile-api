@@ -644,6 +644,23 @@ def _cancel_journey_count(journey_count: str | None) -> str:
     return str(count)
 
 
+def _foreign_reservation_message(value: object) -> str:
+    """The refusal message for something that is not a hold or a PNR string.
+
+    An ``int`` gets its own wording because it is the one refusal a caller is
+    likely to think is pedantic: ``str(int(pnr))`` would silently drop leading
+    zeros and cancel the wrong reservation, or none, so the fix is to pass the
+    PNR as a string rather than to loosen the check.
+    """
+    if isinstance(value, int) and not isinstance(value, bool):
+        return (
+            "cancel requires the PNR as a string, not an int: converting a "
+            "numeric PNR drops any leading zeros, which would cancel the "
+            "wrong reservation or none at all"
+        )
+    return "cancel requires an SrtReservationHold or a PNR string"
+
+
 def unpaid_reservation_cancel_payload(
     reservation: SrtReservationHold | str,
     *,
@@ -680,15 +697,19 @@ def unpaid_reservation_cancel_payload(
     for the day a live SRT response does carry one — it is normalized
     numerically and never refused (see :func:`_cancel_journey_count`).
     """
-    if type(reservation) is SrtReservationHold:
+    # isinstance, not `type(...) is`: a SrtReservationHold subclass is still a
+    # hold and a str subclass is still a PNR, and refusing one over its exact
+    # type is the formatting technicality that leaves a hold unreleasable. An
+    # int PNR stays refused, though — see _foreign_reservation_message.
+    if isinstance(reservation, SrtReservationHold):
         pnr_no = reservation.pnr_no
-    elif type(reservation) is str:
+    elif isinstance(reservation, str):
         pnr_no = reservation
     else:
-        raise ValueError(
-            "cancel requires an exact SrtReservationHold or a PNR string"
-        )
-    if type(pnr_no) is not str or not pnr_no.strip():
+        raise ValueError(_foreign_reservation_message(reservation))
+    if not isinstance(pnr_no, str):
+        raise ValueError(_foreign_reservation_message(pnr_no))
+    if not pnr_no.strip():
         raise ValueError("cancel requires a non-empty PNR")
     return {
         # Surrounding whitespace is stripped rather than transmitted; a PNR is

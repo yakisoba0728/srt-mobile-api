@@ -193,6 +193,55 @@ def test_cancel_form_rejects_a_foreign_reservation_type(reservation):
         unpaid_reservation_cancel_payload(reservation)
 
 
+@pytest.mark.parametrize("reservation", [7, _hold(7)])
+def test_cancel_form_tells_an_int_caller_to_pass_the_pnr_as_a_string(reservation):
+    # An int PNR stays refused — str(int(pnr)) would silently drop leading zeros
+    # and cancel the wrong reservation, or none — but the refusal must say what
+    # to do instead, because this is the one rejection a caller is likely to
+    # read as pedantry and work around by hand.
+    with pytest.raises(ValueError, match="not an int") as exc_info:
+        unpaid_reservation_cancel_payload(reservation)
+
+    assert "leading zeros" in str(exc_info.value)
+
+
+# --- a subclass is still a hold, and still a PNR -----------------------------
+
+
+class _AnnotatedHold(SrtReservationHold):
+    """What a downstream caller's own hold type looks like."""
+
+
+class _AnnotatedPnr(str):
+    """What a downstream caller's own PNR type looks like."""
+
+
+def test_cancel_form_accepts_a_hold_subclass():
+    # Refusing a subclass over its exact type is precisely the formatting
+    # technicality that leaves a real hold unreleasable.
+    assert unpaid_reservation_cancel_payload(_AnnotatedHold(pnr_no=FAKE_PNR)) == (
+        unpaid_reservation_cancel_payload(_hold())
+    )
+
+
+def test_cancel_form_accepts_a_str_subclass_pnr():
+    assert unpaid_reservation_cancel_payload(_AnnotatedPnr(FAKE_PNR)) == (
+        unpaid_reservation_cancel_payload(_hold())
+    )
+
+
+def test_cancel_accepts_a_hold_subclass_through_the_client():
+    client, recorder = _client_with(_cancel_reply())
+
+    preview = client.cancel(
+        _AnnotatedHold(pnr_no=FAKE_PNR),
+        consent=MutationConsent(allow_cancel=True),
+    )
+
+    assert preview.payload["jrnyCnt"] == "1"
+    assert recorder.requests == []
+
+
 # --- response parsing: SUCC and FAIL are both data, not exceptions -----------
 
 
