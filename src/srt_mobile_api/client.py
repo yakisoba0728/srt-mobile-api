@@ -515,6 +515,7 @@ class SrtClient:
         reservation: SrtReservationHold | str,
         *,
         consent: MutationConsent,
+        journey_count: str | None = None,
     ) -> MutationPreview | SrtCancelResult:
         """Cancel a created-but-unpaid SRT reservation (예약취소) under consent.
 
@@ -532,6 +533,18 @@ class SrtClient:
         ``require_mutation_consent(consent, "cancel")``, so a default
         :class:`~srt_mobile_api.consent.MutationConsent` (``allow_cancel=False``)
         or ``None`` is denied before the form is built.
+
+        ``journey_count`` overrides the form's ``jrnyCnt``, which otherwise
+        defaults to ``"1"`` (see
+        :func:`~srt_mobile_api.payloads.unpaid_reservation_cancel_payload` for
+        why it is defaulted and not derived). It is reachable from here rather
+        than only from the builder so that, if live capture ever shows a
+        multi-leg PNR needing ``jrnyCnt="2"``, a caller can express it through
+        this method instead of hand-rolling the payload and calling
+        ``post_mutation_form`` directly — the hand-rolled path is exactly the
+        one that orphans holds. It is normalized numerically and never refused,
+        so passing a badly formatted value cannot make a hold uncancellable;
+        ``None`` (the default) leaves the behaviour identical.
 
         With the default ``dry_run=True`` it returns a
         :class:`~srt_mobile_api.consent.MutationPreview` of the exact form that
@@ -553,7 +566,9 @@ class SrtClient:
         # Built before the dry-run branch so a preview validates exactly what a
         # live send would transmit. The builder never refuses over a journey
         # count formatting problem — see unpaid_reservation_cancel_payload.
-        form = unpaid_reservation_cancel_payload(reservation)
+        form = unpaid_reservation_cancel_payload(
+            reservation, journey_count=journey_count
+        )
         if consent.dry_run:
             return MutationPreview(
                 category="cancel",

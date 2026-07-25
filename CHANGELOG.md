@@ -64,7 +64,11 @@
   released. "Never raises" is now literally true: the zero padding is stripped
   textually before any numeric conversion, and a value past CPython's int/str
   conversion limit (4300 significant digits, on which `int()` raises
-  `ValueError`) falls back instead of propagating.
+  `ValueError`) falls back instead of propagating. The override is reachable
+  from `SrtClient.cancel(..., journey_count=...)` as well as from the builder:
+  without it, the day live capture shows a multi-leg PNR needing `jrnyCnt="2"`
+  a caller would have to hand-roll `payloads` plus `post_mutation_form`, which
+  is precisely the path that orphans holds. The default is unchanged.
 - `parse_reservation_hold_response()` no longer discards a reserve response that
   fails strict validation. A live reserve can create a hold before we parse, so
   when strict parsing raises a protocol error and a usable

@@ -376,6 +376,74 @@ def test_cancel_accepts_a_bare_pnr_and_a_hold_identically():
     assert recorder.requests == []
 
 
+def test_cancel_threads_a_journey_count_override_through_to_the_form():
+    # The korail-lesson normalization is only worth having if it is reachable.
+    # If live capture ever shows a multi-leg PNR needing jrnyCnt="2", a caller
+    # must be able to say so HERE; hand-rolling payloads + post_mutation_form is
+    # the path that orphans holds.
+    client, recorder = _client_with(_cancel_reply())
+    consent = MutationConsent(allow_cancel=True)
+
+    preview = client.cancel(_hold(), consent=consent, journey_count="0002")
+
+    assert preview.payload["jrnyCnt"] == "2"
+    assert recorder.requests == []
+
+
+def test_cancel_default_journey_count_is_unchanged():
+    client, _recorder = _client_with(_cancel_reply())
+    consent = MutationConsent(allow_cancel=True)
+
+    implicit = client.cancel(_hold(), consent=consent)
+    explicit = client.cancel(_hold(), consent=consent, journey_count=None)
+
+    assert implicit.payload["jrnyCnt"] == explicit.payload["jrnyCnt"] == "1"
+
+
+@pytest.mark.parametrize("journey_count", ["", "  ", "x", "-1", 2, object()])
+def test_cancel_never_refuses_over_a_journey_count_from_the_client(journey_count):
+    # The builder's "never refuses" guarantee must survive the client hop too.
+    client, _recorder = _client_with(_cancel_reply())
+
+    preview = client.cancel(
+        _hold(),
+        consent=MutationConsent(allow_cancel=True),
+        journey_count=journey_count,
+    )
+
+    assert preview.payload["jrnyCnt"] == "1"
+
+
+def test_cancel_live_path_carries_the_journey_count_override():
+    client, recorder = _client_with(_cancel_reply())
+    sent: dict = {}
+
+    def _stub(path, data, *, consent, category, **kwargs):
+        sent.update(data=dict(data))
+        return {"resultMap": [{"strResult": "SUCC"}]}
+
+    client.http.post_mutation_form = _stub  # type: ignore[method-assign]
+
+    client.cancel(
+        _hold(),
+        consent=MutationConsent(allow_cancel=True, dry_run=False),
+        journey_count="0002",
+    )
+
+    assert sent["data"]["jrnyCnt"] == "2"
+    assert recorder.requests == []
+    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset()
+
+
+def test_cancel_journey_count_is_keyword_only():
+    client, _recorder = _client_with(_cancel_reply())
+
+    with pytest.raises(TypeError):
+        client.cancel(  # type: ignore[misc]
+            _hold(), MutationConsent(allow_cancel=True), "2"
+        )
+
+
 @pytest.mark.parametrize(
     "consent",
     [

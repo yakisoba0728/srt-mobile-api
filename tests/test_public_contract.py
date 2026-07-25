@@ -158,12 +158,26 @@ def test_cancel_method_signature_type_and_export_are_stable():
     )
 
     signature = inspect.signature(SrtClient.cancel)
-    assert list(signature.parameters) == ["self", "reservation", "consent"]
+    assert list(signature.parameters) == [
+        "self",
+        "reservation",
+        "consent",
+        "journey_count",
+    ]
     assert signature.parameters["consent"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["consent"].default is inspect.Parameter.empty
+    # jrnyCnt must be expressible through the public method. Without it, a
+    # multi-leg PNR needing jrnyCnt="2" could only be cancelled by hand-rolling
+    # the payload and calling post_mutation_form directly, which is the path
+    # that orphans holds. Keyword-only and optional, so the default is unchanged.
+    assert (
+        signature.parameters["journey_count"].kind is inspect.Parameter.KEYWORD_ONLY
+    )
+    assert signature.parameters["journey_count"].default is None
     # A bare PNR must stay callable: a caller recovering from a partial failure
     # may have nothing else, and refusing that path orphans the reservation.
     hints = get_type_hints(SrtClient.cancel)
     assert hints["reservation"] == SrtReservationHold | str
+    assert hints["journey_count"] == str | None
     assert hints["return"] == MutationPreview | SrtCancelResult
     assert srt_mobile_api.SrtCancelResult is SrtCancelResult
