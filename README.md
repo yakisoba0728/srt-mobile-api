@@ -162,7 +162,7 @@ offline request-sequence tests. Live continuation was verified in one bounded
 2026-07-15 session: personal and group each returned two pages with 10 rows per
 page. The iterator adds no route: the reviewed 20-route read-only boundary and all
 reservation, payment, cancellation, refund, native-bridge, and external-seatmap
-exclusions remain unchanged.
+exclusions from the read-only allowlist remain unchanged.
 
 ### Read-only selector popups
 
@@ -183,7 +183,7 @@ popup text.
 
 These APIs select search-form preferences only. Reservation, payment, refund,
 cancellation, `act_19`, ATA/ARD, native bridges, and external seat-map calls
-remain excluded.
+remain outside the read-only allowlist.
 
 ### Physical seat-selection page read
 
