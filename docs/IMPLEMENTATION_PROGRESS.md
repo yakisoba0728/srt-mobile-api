@@ -26,8 +26,8 @@ and its transport-layer gate are recorded under `## Unreleased` in
   reservation-attempt response shape. It accepts caller-supplied JSON only and
   raises the existing protocol/app errors for malformed or rejected shapes.
   That parser itself added no route, request builder, `act_19` flow, client
-  method, or live call; the reservation route, builder and preview-only method
-  came later with the consent-gated mutation port below.
+  method, or live call; the reservation route, builder and client method came
+  later with the consent-gated mutation port below.
 - Internal release preparation is complete at current `HEAD`: typed-package
   metadata, source-manifest contents, an archive verifier, Python 3.11-3.14
   offline CI, and internal release/security/changelog guidance are present.
@@ -434,9 +434,10 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
   excluded, and repeated failure scenarios
 - Runtime-success entries: 20
 - Currently implemented underlying read routes: 20, including NetFunnel `act_10`
-- Mutation routes tiered but never transmitted: 4 (reserve, cancel, payment,
-  refund); reserve (preview-only) and cancel (preview by default, refused at the
-  send gate) have client methods, payment and refund have none
+- Mutation routes tiered: 4 (reserve, cancel, payment, refund). reserve and
+  cancel have client methods, preview by default and transmit under an explicit
+  non-dry-run consent for their own category; payment and refund have no client
+  method and cannot be transmitted at all
 - Therefore the complete documented endpoint matrix is not yet implemented
 
 Static aliases, live reservation execution, payment handoff, native

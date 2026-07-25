@@ -41,9 +41,10 @@ that package.
 
 The reviewed safety boundary contains 20 routes. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected` (historical); after the additive
-reservation-attempt response parser, the consent-gated preview-only reserve
-mutation surface, the transport-layer live-mutation gate, and the consent-gated
-cancel surface landed, the current offline suite at HEAD is
+reservation-attempt response parser, the consent-gated reserve mutation
+surface, the transport-layer live-mutation gate, the consent-gated cancel
+surface, the two-category live enablement and the operator scripts landed, the
+current offline suite at HEAD is
 `875 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 

@@ -90,22 +90,27 @@
 - Added `SrtClient.reserve()` (personal reservation, `arc/selectListArc05013_n.do`),
   its request builder `personal_reservation_payload()`, the
   `parse_reservation_hold_response()` parser, and the `SeatType` /
-  `SrtReservationHold` types. `reserve()` is **preview-only**: `dry_run=False` is
-  refused and the method returns a redacted `MutationPreview` of the exact form
-  that would be POSTed, performing no I/O. Live sending stays deferred until a
-  reserve->cancel round trip has been live-verified: a `cancel` method now exists
-  (below) but sends through the same closed gate, so this library still has no
-  way to release a hold it would create.
+  `SrtReservationHold` types. As first added, `reserve()` was **preview-only**:
+  `dry_run=False` was refused and the method returned a redacted
+  `MutationPreview` of the exact form that would be POSTed, performing no I/O,
+  because no cancel existed to release a hold it would create. **Superseded
+  within this same unreleased range** — see the `reserve()` entry at the top of
+  this section: once `cancel()` existed and both were live-enabled, that refusal
+  was removed and `reserve()` now transmits under an explicit non-dry-run
+  consent.
 - Closed the transport-layer gap that this port opened. `SrtHttpClient.post_mutation_form`
   was ported wholesale and did transmit, so a caller reaching `SrtClient.http`
   directly could bypass `reserve()`'s preview-only hardening for any of the four
-  categories. `safety.SRT_LIVE_MUTATION_CATEGORIES` — currently an empty
-  frozenset — now names the categories permitted to reach the network, and it is
-  enforced in `post_mutation_form` and re-asserted in the underlying
-  `_send_mutation_request`, the function that actually calls `send`. **No SRT
-  mutation of any category is transmitted by this library**, and that now holds
-  at the transport layer rather than only at the client methods. Enabling a
-  category requires it to be both implemented and live-verified.
+  categories. `safety.SRT_LIVE_MUTATION_CATEGORIES` — an empty frozenset when
+  introduced — now names the categories permitted to reach the network, and it
+  is enforced in `post_mutation_form` and re-asserted in the underlying
+  `_send_mutation_request`, the function that actually calls `send`. Which
+  categories are in that set changed later in this same unreleased range (see
+  the top of this section: it now holds `{"reserve", "cancel"}`); what this
+  entry established, and what still holds, is that membership is decided at the
+  **transport layer** rather than only at the client methods, so `payment` and
+  `refund` cannot be transmitted even by a caller reaching `SrtClient.http`
+  directly.
 - Added `SrtClient.cancel()` for a created-but-unpaid reservation (예약취소,
   `ard/selectListArd02045_n.do`), with its request builder
   `unpaid_reservation_cancel_payload()`, the `parse_unpaid_cancel_response()`
@@ -117,11 +122,12 @@
   implemented and offline-tested only. **Its wire shape is srtgo-attested and
   UNCONFIRMED against our v2.0.41 app**: the route is 0-hit across all 21,673
   files of the offline evidence bundle, and only the `jrnyCnt="1"` value is
-  partially corroborated by our own app (`ara0101v.js:92`). **It cannot
-  transmit**: `dry_run=False` goes through `post_mutation_form`, which refuses
-  because `safety.SRT_LIVE_MUTATION_CATEGORIES` is empty. Sending a real cancel
-  requires adding a category there after a live verification, which has not been
-  done and is not authorized by this change.
+  partially corroborated by our own app (`ara0101v.js:92`). As first added it
+  could not transmit at all, the gate being empty. **Superseded within this same
+  unreleased range**: `cancel` was subsequently live-enabled (see the top of
+  this section), so `dry_run=False` now reaches the wire. The provenance caveat
+  above is NOT superseded — the shape remains srtgo-attested and unconfirmed,
+  and no live run has yet exercised it.
 - `jrnyCnt` is defaulted to `"1"`, not derived from the hold: the reserve
   response carries `totSeatNum` (a SEAT count) and no journey count, so
   `SrtReservationHold` has nothing to derive from, and every hold this library
