@@ -10,7 +10,12 @@ from typing import Any
 from .client import SrtClient
 from .config import SrtConfig
 from .models import PassengerCounts, SeatSelectionPage, TrainSearchQuery, TrainSummary
-from .payloads import TRAIN_GROUP_OPTIONS
+from .payloads import (
+    TRAIN_GROUP_OPTIONS,
+    _general_seat_available,
+    _special_seat_available,
+    personal_reservation_payload,
+)
 
 
 def live_enabled() -> bool:
@@ -157,30 +162,85 @@ def run_live_smoke(
     }
 
 
-def run_live_smoke_from_env() -> dict[str, Any]:
-    if not live_enabled():
-        raise RuntimeError("Set SRT_MOBILE_API_LIVE=1 to run live smoke")
-    login_id, password = read_credentials_from_env()
-    test_date = os.environ.get("SRT_TEST_DATE")
-    if not test_date:
-        raise RuntimeError("SRT_TEST_DATE is required for live smoke")
-    passengers = PassengerCounts(
+def read_passenger_counts_from_env() -> PassengerCounts:
+    """Build the passenger mix from the documented SRT_*_COUNT variables."""
+    return PassengerCounts(
         adult=int(os.environ.get("SRT_ADULT_COUNT", "1")),
         child=int(os.environ.get("SRT_CHILD_COUNT", "0")),
         senior=int(os.environ.get("SRT_SENIOR_COUNT", "0")),
         disability_1_to_3=int(os.environ.get("SRT_DISABILITY_1_TO_3_COUNT", "0")),
         disability_4_to_6=int(os.environ.get("SRT_DISABILITY_4_TO_6_COUNT", "0")),
     )
-    query = TrainSearchQuery(
+
+
+def read_query_from_env() -> TrainSearchQuery:
+    """Build the journey query from the documented live-smoke variables.
+
+    Extracted from :func:`run_live_smoke_from_env` so any other live tool reads
+    the SAME variables with the SAME defaults, rather than growing a second,
+    silently divergent set. ``SRT_TEST_DATE`` is the only one with no default.
+    """
+    test_date = os.environ.get("SRT_TEST_DATE")
+    if not test_date:
+        raise RuntimeError("SRT_TEST_DATE is required for live smoke")
+    return TrainSearchQuery(
         departure_station_code=os.environ.get("SRT_DEPARTURE_STATION_CODE", "0551"),
         arrival_station_code=os.environ.get("SRT_ARRIVAL_STATION_CODE", "0020"),
         departure_date=test_date,
         departure_time=os.environ.get("SRT_DEPARTURE_TIME", "060000"),
-        passengers=passengers,
+        passengers=read_passenger_counts_from_env(),
         departure_station_name=os.environ.get("SRT_DEPARTURE_STATION_NAME", "수서"),
         arrival_station_name=os.environ.get("SRT_ARRIVAL_STATION_NAME", "부산"),
     )
-    client = SrtClient(SrtConfig(device_key=os.environ.get("SRT_DEVICE_KEY", "0123456789ABCDEF")))
+
+
+def read_device_key_from_env() -> str:
+    return os.environ.get("SRT_DEVICE_KEY", "0123456789ABCDEF")
+
+
+def train_is_reservable(train: TrainSummary) -> bool:
+    """Whether the server currently reports a bookable seat on ``train``.
+
+    Uses the same availability strings srtgo reads (``general_seat_available`` /
+    ``special_seat_available``, srt.py:486-490). Either class counts, because
+    ``SeatType.GENERAL_FIRST`` falls back from general to special.
+    """
+    return _general_seat_available(train) or _special_seat_available(train)
+
+
+def first_reservable_srt_train(
+    trains: Sequence[TrainSummary],
+    passengers: PassengerCounts | None = None,
+) -> TrainSummary | None:
+    """The first train that is both bookable AND completely described.
+
+    A row can advertise a free seat yet still be missing a field the reserve
+    form requires, so availability alone is not enough. Rather than re-listing
+    those fields (and drifting from the builder), this asks the builder itself:
+    a row whose form cannot be built is skipped. That way a caller can only be
+    handed a train the reserve payload will actually accept.
+    """
+    for train in trains:
+        if not train_is_reservable(train):
+            continue
+        try:
+            personal_reservation_payload(
+                train,
+                passengers or PassengerCounts(adult=1),
+                netfunnel_key="",
+            )
+        except ValueError:
+            continue
+        return train
+    return None
+
+
+def run_live_smoke_from_env() -> dict[str, Any]:
+    if not live_enabled():
+        raise RuntimeError("Set SRT_MOBILE_API_LIVE=1 to run live smoke")
+    login_id, password = read_credentials_from_env()
+    query = read_query_from_env()
+    client = SrtClient(SrtConfig(device_key=read_device_key_from_env()))
     try:
         return run_live_smoke(client, login_id=login_id, password=password, query=query)
     finally:

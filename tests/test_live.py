@@ -7,9 +7,12 @@ from srt_mobile_api.live import (
     _embedded_seat_inventory_candidate_present,
     _first_complete_srt_seat_train,
     live_enabled,
+    first_reservable_srt_train,
     read_credentials_from_env,
+    read_query_from_env,
     run_live_smoke,
     run_live_smoke_from_env,
+    train_is_reservable,
 )
 from srt_mobile_api.models import (
     FareItem,
@@ -239,3 +242,114 @@ def test_live_from_env_requires_explicit_test_date(monkeypatch):
     monkeypatch.delenv("SRT_TEST_DATE", raising=False)
     with pytest.raises(RuntimeError, match="SRT_TEST_DATE"):
         run_live_smoke_from_env()
+
+
+# --- env helpers shared with the round-trip script --------------------------
+
+
+def _reservable_train(**overrides) -> TrainSummary:
+    base = dict(
+        train_no="303",
+        service_class_code="17",
+        train_group_code="300",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+        departure_date="20990101",
+        departure_time="060000",
+        arrival_time="083000",
+        departure_station_name="수서",
+        arrival_station_name="부산",
+        departure_run_order="1",
+        arrival_run_order="10",
+        departure_consist_order="1",
+        arrival_consist_order="2",
+        general_seat_availability="예약가능",
+        special_seat_availability="매진",
+    )
+    base.update(overrides)
+    return TrainSummary(**base)
+
+
+def test_query_from_env_reads_the_documented_variables(monkeypatch):
+    monkeypatch.setenv("SRT_TEST_DATE", "20990101")
+    monkeypatch.setenv("SRT_DEPARTURE_STATION_CODE", "0015")
+    monkeypatch.setenv("SRT_ARRIVAL_STATION_CODE", "0030")
+    monkeypatch.setenv("SRT_DEPARTURE_TIME", "093000")
+    monkeypatch.setenv("SRT_DEPARTURE_STATION_NAME", "동탄")
+    monkeypatch.setenv("SRT_ARRIVAL_STATION_NAME", "동대구")
+    monkeypatch.setenv("SRT_ADULT_COUNT", "2")
+    monkeypatch.setenv("SRT_SENIOR_COUNT", "1")
+
+    query = read_query_from_env()
+
+    assert query.departure_station_code == "0015"
+    assert query.arrival_station_code == "0030"
+    assert query.departure_date == "20990101"
+    assert query.departure_time == "093000"
+    assert query.departure_station_name == "동탄"
+    assert query.arrival_station_name == "동대구"
+    assert query.passengers.adult == 2
+    assert query.passengers.senior == 1
+
+
+def test_query_from_env_requires_the_test_date(monkeypatch):
+    monkeypatch.delenv("SRT_TEST_DATE", raising=False)
+    with pytest.raises(RuntimeError, match="SRT_TEST_DATE"):
+        read_query_from_env()
+
+
+def test_train_is_reservable_reads_either_class(monkeypatch):
+    assert train_is_reservable(_reservable_train()) is True
+    assert (
+        train_is_reservable(
+            _reservable_train(
+                general_seat_availability="매진",
+                special_seat_availability="예약가능",
+            )
+        )
+        is True
+    )
+    assert (
+        train_is_reservable(
+            _reservable_train(
+                general_seat_availability="매진",
+                special_seat_availability="매진",
+            )
+        )
+        is False
+    )
+
+
+def test_first_reservable_train_skips_sold_out_rows():
+    sold_out = _reservable_train(
+        train_no="301",
+        general_seat_availability="매진",
+        special_seat_availability="매진",
+    )
+    available = _reservable_train(train_no="305")
+
+    assert first_reservable_srt_train([sold_out, available]) is available
+
+
+def test_first_reservable_train_skips_a_row_the_reserve_form_rejects():
+    # Availability alone is not enough: a row missing a field the reserve form
+    # requires would raise at build time, so it must never be selected.
+    incomplete = _reservable_train(train_no="301", arrival_time="")
+    good = _reservable_train(train_no="305")
+
+    assert first_reservable_srt_train([incomplete, good]) is good
+
+
+def test_first_reservable_train_returns_none_when_nothing_is_bookable():
+    assert first_reservable_srt_train([]) is None
+    assert (
+        first_reservable_srt_train(
+            [
+                _reservable_train(
+                    general_seat_availability="매진",
+                    special_seat_availability="매진",
+                )
+            ]
+        )
+        is None
+    )

@@ -178,6 +178,30 @@ their own category. See the next section.
   its own wire format. A payment additionally transmits a PAN in the clear and
   keeps a separate `fake_card_only` gate behind the live-enablement one.
 
+## Live Reserve->Cancel Verification (NOT YET RUN)
+
+- `scripts/verify_reserve_cancel_roundtrip.py` is the operator-run verification
+  that would confirm reserve's live NetFunnel/referer wiring and cancel's
+  srtgo-attested body. **It has not been run, so neither is confirmed.**
+- It requires two explicit opt-ins, `SRT_MOBILE_API_LIVE=1` **and**
+  `SRT_LIVE_MUTATION=1`. The second exists because the first only means "live
+  reads are acceptable", which is not consent to create a reservation.
+- Flow: login, search, select ONE train with a genuinely bookable seat
+  (refusing to proceed if none), reserve one adult, print the PNR before
+  anything else, cancel immediately, then re-read the ticket list to confirm no
+  trace remains. Reserve and cancel run under separate single-category
+  consents. The raw `strResult`/`msgCd` are printed for both operations.
+- Everything after a successful reserve is wrapped in `try`/`finally`. The
+  `finally` retries the cancel if it has not already succeeded — safe in a way a
+  reserve retry is not, since cancelling twice cannot create anything — and if
+  that also fails it prints the PNR in a banner with the exact
+  `scripts/recover_hold.py` command line. A stranded hold whose PNR the operator
+  does not know is the worst outcome, and the script is designed against it
+  above all else.
+- Journey parameters are read through `srt_mobile_api.live`'s own env helpers
+  (`read_query_from_env` and friends), the same ones `run_live_smoke_from_env`
+  uses, so the two tools cannot drift apart.
+
 ## Bounded Seat-Layout Evidence Gate
 
 Run `scripts/capture_seat_layout_evidence.py` only with explicit live opt-in,
@@ -288,7 +312,7 @@ car/seat response or availability contract.
   the explicit live-service test. No live request or credential access occurred.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate and the
-  consent-gated cancel surface: `852 passed, 1 deselected`; the deselected case
+  consent-gated cancel surface: `873 passed, 1 deselected`; the deselected case
   remains the explicit live-service opt-in. No live mutation was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.

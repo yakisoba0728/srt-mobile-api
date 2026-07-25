@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Added `scripts/verify_reserve_cancel_roundtrip.py`, the operator-run live
+  reserve->cancel verification. **It has not been run.** It logs in, searches,
+  selects ONE train that actually has a bookable seat (refusing to proceed if
+  none does), reserves one adult in the cheapest class, prints the PNR
+  immediately, cancels it, and re-reads the ticket list to confirm nothing
+  remains. It requires a second opt-in beyond the normal live flag —
+  `SRT_LIVE_MUTATION=1` on top of `SRT_MOBILE_API_LIVE=1` — so it can never
+  fire from an ordinary live smoke run, since "live reads are acceptable" is
+  not consent to create a reservation. The raw `strResult`/`msgCd` are printed
+  for both operations: they are the evidence the run exists to capture. Reserve
+  and cancel are performed under separate single-category consents, so neither
+  call carries the other's authority. Everything after a successful reserve is
+  wrapped in `try`/`finally`; the `finally` retries the cancel if it has not
+  already succeeded, and if that fails too the PNR is printed in an unmissable
+  banner with the exact `recover_hold.py` command line. Exits non-zero on any
+  failure; the password is never printed and the login id is masked.
+- Extracted `read_query_from_env()`, `read_passenger_counts_from_env()`,
+  `read_device_key_from_env()`, `train_is_reservable()` and
+  `first_reservable_srt_train()` into `srt_mobile_api.live`, and rebuilt
+  `run_live_smoke_from_env()` on the first three. The round-trip script reads
+  the journey environment through these same helpers instead of growing a
+  second, silently divergent set. `first_reservable_srt_train()` screens a row
+  by asking the reserve builder whether its form can be built, rather than
+  re-listing the required fields and drifting from it.
 - Added `scripts/recover_hold.py`, the operator safety net for a stranded
   unpaid hold. It takes a PNR on the command line, logs in from
   `SRT_LOGIN_ID`/`SRT_LOGIN_PASSWORD`, and cancels that hold — deliberately

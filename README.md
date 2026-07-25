@@ -44,7 +44,7 @@ recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated preview-only reserve
 mutation surface, the transport-layer live-mutation gate, and the consent-gated
 cancel surface landed, the current offline suite at HEAD is
-`852 passed, 1 deselected`. The deselected case is the
+`873 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -73,17 +73,42 @@ The reusable read-only smoke runner is:
 
 - `scripts/srt_app_api_smoke.py`
 
-The operator recovery tool for a stranded unpaid hold is:
+### Live reserve->cancel verification (operator-run)
 
-- `scripts/recover_hold.py` — cancels one hold given nothing but its PNR:
+Two scripts exist for the one live run that would confirm the reserve and
+cancel wire shapes. **Neither has been run yet.** Both create or release real
+reservations on a real account.
 
-  ```bash
-  SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... python3 scripts/recover_hold.py <PNR>
-  ```
+`scripts/verify_reserve_cancel_roundtrip.py` performs the round trip: login,
+search, pick one train that actually has a seat, reserve one adult, print the
+PNR, cancel it immediately, then re-read the ticket list to confirm nothing
+remains. It requires **two** explicit opt-ins, so it can never fire from an
+ordinary live smoke run:
 
-  It exits 0 only when the server reports the hold released, and reprints the
-  PNR in a banner on every other outcome. It transmits a cancel, so it needs
-  credentials for the account holding the reservation.
+```bash
+SRT_MOBILE_API_LIVE=1 SRT_LIVE_MUTATION=1 \
+SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... SRT_TEST_DATE=YYYYMMDD \
+python3 scripts/verify_reserve_cancel_roundtrip.py
+```
+
+It reads the same journey variables as the live smoke runner
+(`SRT_DEPARTURE_STATION_CODE`, `SRT_ARRIVAL_STATION_CODE`, `SRT_DEPARTURE_TIME`,
+the station names and passenger counts), through that module's own helpers. It
+refuses to proceed if no train is reservable, prints the raw `strResult`/`msgCd`
+for both operations, and exits non-zero on any failure. Everything after a
+successful reserve is wrapped so that a failed cancel is retried and, if that
+also fails, the PNR is printed in a banner together with the exact recovery
+command.
+
+`scripts/recover_hold.py` is that recovery command — it cancels one hold given
+nothing but its PNR:
+
+```bash
+SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... python3 scripts/recover_hold.py <PNR>
+```
+
+It exits 0 only when the server reports the hold released, and reprints the PNR
+in a banner on every other outcome. Neither script ever prints the password.
 
 ## Scope
 

@@ -32,9 +32,11 @@ from srt_mobile_api import (
 
 ROOT = Path(__file__).resolve().parents[1]
 RECOVER_PATH = ROOT / "scripts/recover_hold.py"
+ROUNDTRIP_PATH = ROOT / "scripts/verify_reserve_cancel_roundtrip.py"
 CANCEL_ROUTE = "/ard/selectListArd02045_n.do"
 FAKE_PNR = "SYNTHETIC_PNR_REFERENCE"
 SECRET_PASSWORD = "SYNTHETIC-PASSWORD-DO-NOT-PRINT"
+SECRET_LOGIN_ID = "synthetic-member-id"
 
 
 def _load(path: Path):
@@ -48,6 +50,11 @@ def _load(path: Path):
 @pytest.fixture(name="recover")
 def recover_module():
     return _load(RECOVER_PATH)
+
+
+@pytest.fixture(name="roundtrip")
+def roundtrip_module():
+    return _load(ROUNDTRIP_PATH)
 
 
 # --- import safety ----------------------------------------------------------
@@ -241,3 +248,327 @@ def test_recover_hold_main_requires_credentials(recover, monkeypatch, capsys):
 
     assert recover.main([FAKE_PNR]) == 2
     assert fake.logged_in_as is None
+
+
+# ===========================================================================
+# verify_reserve_cancel_roundtrip.py
+# ===========================================================================
+
+
+def test_roundtrip_is_import_safe(monkeypatch):
+    # Importing a script that can CREATE a real reservation must do nothing.
+    def _explode(*args, **kwargs):  # pragma: no cover - only runs on failure
+        raise AssertionError("import performed I/O")
+
+    monkeypatch.setattr(httpx.Client, "send", _explode)
+    module = _load(ROUNDTRIP_PATH)
+    assert hasattr(module, "main")
+
+
+def test_roundtrip_guards_its_entrypoint():
+    tree = ast.parse(ROUNDTRIP_PATH.read_text(encoding="utf-8"))
+    calls_at_module_scope = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+    ]
+    assert calls_at_module_scope == []
+
+
+# --- the two opt-ins --------------------------------------------------------
+
+
+def test_roundtrip_refuses_without_the_live_flag(roundtrip, monkeypatch, capsys):
+    monkeypatch.delenv("SRT_MOBILE_API_LIVE", raising=False)
+    monkeypatch.setenv("SRT_LIVE_MUTATION", "1")
+
+    assert roundtrip.main([]) == 2
+    assert "SRT_MOBILE_API_LIVE" in capsys.readouterr().err
+
+
+def test_roundtrip_refuses_without_the_mutation_opt_in(roundtrip, monkeypatch, capsys):
+    # THE point of the second flag: a normal live smoke run sets
+    # SRT_MOBILE_API_LIVE, and that must never be enough to create a booking.
+    monkeypatch.setenv("SRT_MOBILE_API_LIVE", "1")
+    monkeypatch.delenv("SRT_LIVE_MUTATION", raising=False)
+
+    assert roundtrip.main([]) == 2
+    assert "SRT_LIVE_MUTATION=1" in capsys.readouterr().err
+
+
+def test_roundtrip_mutation_flag_requires_exactly_one(roundtrip, monkeypatch):
+    monkeypatch.setenv("SRT_LIVE_MUTATION", "true")
+    assert roundtrip.mutation_enabled() is False
+    monkeypatch.setenv("SRT_LIVE_MUTATION", "1")
+    assert roundtrip.mutation_enabled() is True
+
+
+def test_roundtrip_refuses_arguments(roundtrip, monkeypatch, capsys):
+    monkeypatch.setenv("SRT_MOBILE_API_LIVE", "1")
+    monkeypatch.setenv("SRT_LIVE_MUTATION", "1")
+    assert roundtrip.main(["--yolo"]) == 2
+
+
+# --- consents ---------------------------------------------------------------
+
+
+def test_roundtrip_consents_are_separate_and_minimal(roundtrip):
+    reserve = roundtrip.build_reserve_consent()
+    cancel = roundtrip.build_cancel_consent()
+
+    # Neither call carries the other's authority.
+    assert (reserve.allow_reserve, reserve.allow_cancel) == (True, False)
+    assert (cancel.allow_cancel, cancel.allow_reserve) == (True, False)
+    for consent in (reserve, cancel):
+        assert consent.dry_run is False
+        assert consent.allow_payment is False
+        assert consent.allow_refund is False
+
+
+def test_roundtrip_masks_the_login_id_and_never_the_password(roundtrip):
+    masked = roundtrip.mask_login_id(SECRET_LOGIN_ID)
+    assert SECRET_LOGIN_ID not in masked
+    assert masked.startswith(SECRET_LOGIN_ID[0])
+    assert masked.endswith(SECRET_LOGIN_ID[-1])
+    assert roundtrip.mask_login_id("ab") == "**"
+
+
+# --- the flow ---------------------------------------------------------------
+
+
+def _train(**overrides):
+    from srt_mobile_api import TrainSummary
+
+    base = dict(
+        train_no="303",
+        service_class_code="17",
+        train_group_code="300",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+        departure_date="20990101",
+        departure_time="060000",
+        arrival_time="083000",
+        departure_station_name="수서",
+        arrival_station_name="부산",
+        departure_run_order="1",
+        arrival_run_order="10",
+        departure_consist_order="1",
+        arrival_consist_order="2",
+        general_seat_availability="예약가능",
+        special_seat_availability="매진",
+    )
+    base.update(overrides)
+    return TrainSummary(**base)
+
+
+class _RoundTripClient:
+    """Drives run_roundtrip without any transport at all."""
+
+    def __init__(
+        self,
+        *,
+        trains=None,
+        hold=None,
+        cancel_results=None,
+        cancel_errors=None,
+        ticket_body="no trace here",
+    ):
+        from srt_mobile_api import SrtReservationHold
+
+        self.trains = [_train()] if trains is None else trains
+        self.hold = (
+            SrtReservationHold(pnr_no=FAKE_PNR, raw={"resultMap": [{"strResult": "SUCC", "msgCd": "R-OK"}]})
+            if hold is None
+            else hold
+        )
+        self.cancel_results = list(cancel_results or [])
+        self.cancel_errors = list(cancel_errors or [])
+        self.ticket_body = ticket_body
+        self.cancel_calls: list[str] = []
+        self.reserve_calls = 0
+        self.closed = False
+
+    def login(self, login_id, password, **kwargs):
+        return SrtSession(login_id=login_id, user_map={})
+
+    def search_trains(self, query):
+        class _Result:
+            pass
+
+        result = _Result()
+        result.trains = self.trains
+        return result
+
+    def reserve(self, train, *, consent, **kwargs):
+        self.reserve_calls += 1
+        return self.hold
+
+    def cancel(self, reservation, *, consent, **kwargs):
+        self.cancel_calls.append(reservation)
+        if self.cancel_errors:
+            error = self.cancel_errors.pop(0)
+            if error is not None:
+                raise error
+        if self.cancel_results:
+            return self.cancel_results.pop(0)
+        return SrtCancelResult(status="SUCC", message_code="C-OK")
+
+    def get_ticket_list(self, page_no: int = 0):
+        from srt_mobile_api.models import HtmlPage
+
+        return HtmlPage(text=self.ticket_body, raw=self.ticket_body)
+
+    def close(self):
+        self.closed = True
+
+
+def _run_roundtrip(roundtrip, monkeypatch, client):
+    monkeypatch.setenv("SRT_TEST_DATE", "20990101")
+    return roundtrip.run_roundtrip(
+        client, login_id=SECRET_LOGIN_ID, password=SECRET_PASSWORD
+    )
+
+
+def test_roundtrip_happy_path_reserves_cancels_and_verifies(
+    roundtrip, monkeypatch, capsys
+):
+    client = _RoundTripClient()
+
+    assert _run_roundtrip(roundtrip, monkeypatch, client) == 0
+
+    out = capsys.readouterr().out
+    # The PNR is printed the moment it exists.
+    assert FAKE_PNR in out
+    # Raw confirmation codes for BOTH operations are the evidence of the run.
+    assert "R-OK" in out and "C-OK" in out
+    assert "strResult" in out
+    # Exactly one reserve, exactly one cancel: the finally block must not
+    # cancel a second time once the first succeeded.
+    assert client.reserve_calls == 1
+    assert client.cancel_calls == [FAKE_PNR]
+    assert SECRET_PASSWORD not in out
+    assert SECRET_LOGIN_ID not in out
+
+
+def test_roundtrip_refuses_when_no_train_is_reservable(
+    roundtrip, monkeypatch, capsys
+):
+    # Sold out everywhere: nothing may be sent.
+    client = _RoundTripClient(
+        trains=[
+            _train(general_seat_availability="매진", special_seat_availability="매진")
+        ]
+    )
+
+    assert _run_roundtrip(roundtrip, monkeypatch, client) == 1
+
+    assert client.reserve_calls == 0
+    assert client.cancel_calls == []
+    assert "REFUSING TO PROCEED" in capsys.readouterr().err
+
+
+def test_roundtrip_strands_loudly_when_the_cancel_is_refused(
+    roundtrip, monkeypatch, capsys
+):
+    # The worst realistic case: a real hold exists and the server will not
+    # release it. The PNR and the exact recovery command must be unmissable.
+    client = _RoundTripClient(
+        cancel_results=[
+            SrtCancelResult(status="FAIL", message_code="C-NO"),
+            SrtCancelResult(status="FAIL", message_code="C-NO-AGAIN"),
+        ]
+    )
+
+    assert _run_roundtrip(roundtrip, monkeypatch, client) == 1
+
+    out = capsys.readouterr().out
+    assert "STRANDED" in out.upper()
+    assert FAKE_PNR in out
+    assert "scripts/recover_hold.py" in out
+    assert f"recover_hold.py {FAKE_PNR}" in out
+    # The finally block retried before giving up.
+    assert client.cancel_calls == [FAKE_PNR, FAKE_PNR]
+    assert SECRET_PASSWORD not in out
+
+
+def test_roundtrip_finally_retries_and_can_still_succeed(
+    roundtrip, monkeypatch, capsys
+):
+    # First cancel raises, the finally-block retry succeeds. The run still
+    # fails (the round trip did not complete cleanly) but no hold is left.
+    client = _RoundTripClient(
+        cancel_errors=[RuntimeError("synthetic cancel failure"), None],
+        cancel_results=[SrtCancelResult(status="SUCC", message_code="C-RETRY")],
+    )
+
+    assert roundtrip.main is not None
+    monkeypatch.setenv("SRT_TEST_DATE", "20990101")
+    with pytest.raises(RuntimeError, match="synthetic cancel failure"):
+        roundtrip.run_roundtrip(
+            client, login_id=SECRET_LOGIN_ID, password=SECRET_PASSWORD
+        )
+
+    out = capsys.readouterr().out
+    assert FAKE_PNR in out
+    assert "C-RETRY" in out or "retry" in out.lower()
+    assert client.cancel_calls == [FAKE_PNR, FAKE_PNR]
+
+
+def test_roundtrip_strands_when_both_the_cancel_and_the_retry_raise(
+    roundtrip, monkeypatch, capsys
+):
+    client = _RoundTripClient(
+        cancel_errors=[
+            RuntimeError("synthetic first failure"),
+            RuntimeError("synthetic retry failure"),
+        ]
+    )
+
+    monkeypatch.setenv("SRT_TEST_DATE", "20990101")
+    with pytest.raises(RuntimeError, match="synthetic first failure"):
+        roundtrip.run_roundtrip(
+            client, login_id=SECRET_LOGIN_ID, password=SECRET_PASSWORD
+        )
+
+    out = capsys.readouterr().out
+    assert "STRANDED" in out.upper()
+    assert FAKE_PNR in out
+    assert f"recover_hold.py {FAKE_PNR}" in out
+
+
+def test_roundtrip_fails_when_the_pnr_still_appears_after_cancel(
+    roundtrip, monkeypatch, capsys
+):
+    # The server said SUCC but the ticket list still shows it: do not report
+    # success on the strength of the envelope alone.
+    client = _RoundTripClient(ticket_body=f"...{FAKE_PNR}...")
+
+    assert _run_roundtrip(roundtrip, monkeypatch, client) == 1
+
+    out = capsys.readouterr().out
+    assert "STILL LISTED" in out.upper()
+    assert FAKE_PNR in out
+
+
+def test_roundtrip_main_reports_a_failure_without_a_traceback(
+    roundtrip, monkeypatch, capsys
+):
+    monkeypatch.setenv("SRT_MOBILE_API_LIVE", "1")
+    monkeypatch.setenv("SRT_LIVE_MUTATION", "1")
+    monkeypatch.setenv("SRT_LOGIN_ID", SECRET_LOGIN_ID)
+    monkeypatch.setenv("SRT_LOGIN_PASSWORD", SECRET_PASSWORD)
+    monkeypatch.setenv("SRT_TEST_DATE", "20990101")
+
+    client = _RoundTripClient()
+    monkeypatch.setattr(roundtrip, "SrtClient", lambda *a, **k: client)
+    monkeypatch.setattr(
+        roundtrip,
+        "run_roundtrip",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("synthetic boom")),
+    )
+
+    assert roundtrip.main([]) == 1
+    err = capsys.readouterr().err
+    assert "synthetic boom" in err
+    assert SECRET_PASSWORD not in err
+    assert client.closed is True
