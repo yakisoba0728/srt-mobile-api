@@ -180,7 +180,9 @@ def test_live_result_contains_counts_not_ticket_text():
     client.get_date_selector.assert_called_once_with("20260710")
     client.get_passenger_selector.assert_called_once_with(query.passengers)
     client.get_seat_option_selector.assert_called_once_with(request_seat_attr_code="015")
-    client.get_train_group_selector.assert_called_once_with("900", "KTX+SRT")
+    # The query above takes TrainSearchQuery's default train_group_code, which is
+    # the app's booking-screen default "109"/전체 (ara0101v.js:85-86, :98-99).
+    client.get_train_group_selector.assert_called_once_with("109", "전체")
     method_order = [call[0] for call in client.method_calls]
     assert method_order.index("get_booking_page") < method_order.index("get_station_selector")
     assert method_order.index("get_train_group_selector") < method_order.index("search_trains")

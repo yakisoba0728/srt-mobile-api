@@ -75,7 +75,18 @@ class TrainSearchQuery:
     departure_date: str
     departure_time: str = "060000"
     passengers: PassengerCounts = field(default_factory=PassengerCounts)
-    train_group_code: str = "900"
+    # 열차그룹코드. "109" (전체) is the app's own booking-screen default, seeded
+    # twice on load: ara0101v.js:85-86 sets the picker button
+    # ($("#btn_trnGpCd").val("109"), text "전체", with the comment
+    # "300: SRT, 900: KTX+SRT, 109: 전체") and :98-99 seeds the reservation state
+    # ("trnGpCd1": "109", "trnGpNm1": "전체"). All three values are legitimate on
+    # the wire, so this is a default CHOICE, not a wire correctness question --
+    # and the app's choice is 전체. It also removes an internal inconsistency:
+    # SrtClient.get_train_group_selector and train_group_selector_payload
+    # already default to "109"/"전체". TRAIN_GROUP_OPTIONS pairs it with
+    # stlbTrnClsfCd "05" (역무차종별코드 05:전체), which is what ara0101v.js:87
+    # seeds alongside it.
+    train_group_code: str = "109"
     seat_attr_code: str = "015"
     departure_station_name: str | None = None
     arrival_station_name: str | None = None

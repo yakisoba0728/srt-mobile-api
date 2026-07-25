@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `TrainSearchQuery.train_group_code` now defaults to `"109"` (전체), the app's
+  own booking-screen default, instead of `"900"` (KTX+SRT). `ara0101v.js:85-86`
+  sets the picker to `"109"`/전체 on load and `:98-99` seeds
+  `trnGpCd1="109"`/`trnGpNm1="전체"`. All three codes are legitimate on the wire,
+  so this is a default *choice* rather than a wire error — but the old value had
+  no evidence comment and disagreed with two other defaults in this same
+  codebase (`SrtClient.get_train_group_selector` and
+  `train_group_selector_payload` both already used `"109"`/`"전체"`). `"300"` and
+  `"900"` remain constructible.
 - `SrtClient.get_seat_page` derives `choiceSeatCount` from the passenger total
   instead of hardcoding one seat. The app sends
   `choiceSeatCount: lfn_getRsv("totPrnb")` (`ara1001l.js:1511`) — the party size

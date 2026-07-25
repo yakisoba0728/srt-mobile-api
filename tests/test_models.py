@@ -26,6 +26,7 @@ from srt_mobile_api.models import (
     TrainSearchResult,
     TrainSummary,
 )
+from srt_mobile_api.payloads import TRAIN_GROUP_OPTIONS
 
 
 def test_public_exports_are_available():
@@ -172,6 +173,30 @@ def test_passenger_counts_reject_boolean_values(kwargs):
 def test_search_query_rejects_invalid_contract(kwargs):
     with pytest.raises(ValueError):
         TrainSearchQuery(**kwargs)
+
+
+def test_search_query_defaults_train_group_to_the_apps_booking_screen_default():
+    # The app's booking screen loads on 전체, seeded twice: ara0101v.js:85-86
+    # sets $("#btn_trnGpCd").val("109") with text "전체" (its own comment reads
+    # "300: SRT, 900: KTX+SRT, 109: 전체"), and :98-99 seeds trnGpCd1="109" /
+    # trnGpNm1="전체". All three codes are legitimate on the wire, so this pins a
+    # default CHOICE, not a wire fix -- and it is the same "109" that
+    # SrtClient.get_train_group_selector and train_group_selector_payload have
+    # always defaulted to.
+    query = TrainSearchQuery("0551", "0020", "20260710")
+
+    assert query.train_group_code == "109"
+    # The paired 역무차종별코드 the app seeds alongside it (ara0101v.js:87,
+    # stlbTrnClsfCd1 "05" = 전체).
+    assert TRAIN_GROUP_OPTIONS[query.train_group_code] == ("전체", "05")
+    # The other two stay constructible: this changes which is default, nothing else.
+    for code in ("300", "900"):
+        assert (
+            TrainSearchQuery(
+                "0551", "0020", "20260710", train_group_code=code
+            ).train_group_code
+            == code
+        )
 
 
 def test_search_query_accepts_optional_station_names():
