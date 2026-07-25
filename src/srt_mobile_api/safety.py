@@ -1,7 +1,7 @@
 from collections import Counter
 from dataclasses import dataclass
 import re
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 
@@ -11,6 +11,13 @@ from .errors import SrtProtocolError
 
 @dataclass(frozen=True)
 class ReadOnlyRoute:
+    method: str
+    host_kind: str
+    path: str
+
+
+@dataclass(frozen=True)
+class MutationRoute:
     method: str
     host_kind: str
     path: str
@@ -83,6 +90,84 @@ READ_ONLY_ROUTES = frozenset(
         ReadOnlyRoute("GET", "netfunnel", "/ts.wseq"),
     }
 )
+
+
+# Documentation-level tiering of the state-changing routes. These are the four
+# core SRT mutation endpoints (one per category), taken from srtgo API_ENDPOINTS
+# (srt.py:89-103). They are deliberately kept OUT of READ_ONLY_ROUTES so the
+# read-only allowlist and its guarantee stay fully intact:
+# ``assert_read_only_request`` rejects every one of these (none is callable via a
+# read path). This is a classification only. Of the four, ONLY the reserve route
+# is reached by a callable method (SrtClient.reserve, dry-run by default via the
+# double-gated mutation send path). cancel/payment/refund are tiered here for
+# completeness but have NO callable method: their SRT response shapes are not in
+# the offline evidence bundle and are deferred until live capture. Each host is
+# "app" (POST). The trailing comment names the consent category the route gates.
+SRT_MUTATION_ROUTES = frozenset(
+    {
+        # reserve
+        MutationRoute("POST", "app", "/arc/selectListArc05013_n.do"),
+        # cancel (tiered only; not callable)
+        MutationRoute("POST", "app", "/ard/selectListArd02045_n.do"),
+        # payment (tiered only; not callable)
+        MutationRoute("POST", "app", "/ata/selectListAta09036_n.do"),
+        # refund (tiered only; not callable)
+        MutationRoute("POST", "app", "/atc/selectListAtc02063_n.do"),
+    }
+)
+
+# The consent category each mutation route belongs to. The mutation send path
+# cross-checks the caller-supplied category against the route so a consent for
+# one category (e.g. "reserve") can never be used to POST a different category's
+# route (e.g. the refund route).
+SRT_MUTATION_ROUTE_CATEGORIES = {
+    "/arc/selectListArc05013_n.do": "reserve",
+    "/ard/selectListArd02045_n.do": "cancel",
+    "/ata/selectListAta09036_n.do": "payment",
+    "/atc/selectListAtc02063_n.do": "refund",
+}
+
+
+def assert_mutation_route(method: str, path: str) -> None:
+    """Allow only the four evidenced state-changing routes (host "app", POST).
+
+    This is the mutation counterpart to :func:`assert_read_only_request`, used
+    solely by the dedicated mutation send path. A route must be an exact member
+    of :data:`SRT_MUTATION_ROUTES`; anything else — including a read-only route —
+    is rejected, so the mutation send path can never be repurposed to reach an
+    arbitrary or read endpoint.
+    """
+    parsed = urlsplit(path)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        raise SrtProtocolError(
+            "SRT request target is not a registered relative path: "
+            f"{parsed.path}"
+        )
+    route = MutationRoute(method.upper(), "app", parsed.path)
+    if route not in SRT_MUTATION_ROUTES:
+        raise SrtProtocolError(
+            f"SRT mutation route is not allowed: {route.method} {route.path}"
+        )
+
+
+def assert_mutation_route_category(path: str, category: str) -> None:
+    """Ensure ``category`` is the one that owns mutation route ``path``.
+
+    Raises :class:`SrtProtocolError` when the path is not a known mutation route
+    or when the caller's category does not match the route's category, so a
+    per-category consent cannot be redirected to a different category's route.
+    """
+    parsed_path = urlsplit(path).path
+    expected = SRT_MUTATION_ROUTE_CATEGORIES.get(parsed_path)
+    if expected is None:
+        raise SrtProtocolError(
+            f"SRT mutation route is not allowed: POST {parsed_path}"
+        )
+    if category != expected:
+        raise SrtProtocolError(
+            f"SRT mutation category {category!r} does not match route "
+            f"{parsed_path} (expected {expected!r})"
+        )
 
 
 def _same_origin(left: httpx.URL, right: httpx.URL) -> bool:

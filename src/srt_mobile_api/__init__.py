@@ -1,9 +1,11 @@
 from .client import SrtClient
 from .config import SrtConfig
+from .consent import MutationConsent, MutationPreview, require_mutation_consent
 from .errors import (
     SrtApiError,
     SrtAppError,
     SrtAuthError,
+    SrtMutationNotAllowedError,
     SrtNetFunnelError,
     SrtProtocolError,
     SrtSessionExpiredError,
@@ -21,6 +23,8 @@ from .models import (
     ReservationRecord,
     ReservationTrain,
     SeatSelectionPage,
+    SeatType,
+    SrtReservationHold,
     SrtSession,
     TimetablePage,
     TimetableRow,
@@ -29,14 +33,21 @@ from .models import (
     TrainSearchResult,
     TrainSummary,
 )
-from .parsers import parse_reservation_attempt_response
+from .parsers import (
+    parse_reservation_attempt_response,
+    parse_reservation_hold_response,
+)
 
 __all__ = [
     "SrtClient",
     "SrtConfig",
+    "MutationConsent",
+    "MutationPreview",
+    "require_mutation_consent",
     "SrtApiError",
     "SrtAppError",
     "SrtAuthError",
+    "SrtMutationNotAllowedError",
     "SrtNetFunnelError",
     "SrtProtocolError",
     "SrtSessionExpiredError",
@@ -49,10 +60,13 @@ __all__ = [
     "NoticeListResult",
     "PassengerCounts",
     "parse_reservation_attempt_response",
+    "parse_reservation_hold_response",
     "ReservationAttemptResult",
     "ReservationRecord",
     "ReservationTrain",
     "SeatSelectionPage",
+    "SeatType",
+    "SrtReservationHold",
     "SrtSession",
     "TimetablePage",
     "TimetableRow",

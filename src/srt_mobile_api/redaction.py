@@ -34,6 +34,23 @@ SENSITIVE_KEYS = frozenset(
         "commandMap",
         "mutMrkVrfCd",
         "verification_code",
+        # Payment card fields (srtgo pay_with_card, srt.py:1184-1216). A mutation
+        # preview must never expose card data even though no callable method sends
+        # them here. CARD_RE only masks bare PANs; these mask the keyed
+        # PAN/password/expiry/auth/installment/input-way variants CARD_RE misses,
+        # plus the membership card number carried on the same form.
+        "stlCrCrdNo1",
+        "vanPwd1",
+        "crdVlidTrm1",
+        "athnVal1",
+        "athnDvCd1",
+        "ismtMnthNum1",
+        "crdInpWayCd1",
+        "mbCrdNo",
+        # Reservation identity carried on the reserve/cancel/payment forms
+        # (srtgo srt.py:1006/1138/1199). pnrNo is already covered above; these are
+        # the settlement-target and change-number identifiers.
+        "rsvChgTno",
     }
 )
 CARD_RE = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
@@ -119,3 +136,20 @@ def redact_value(value: Any, *, key: str | None = None) -> Any:
 
 def redact_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
     return {name: redact_value(item, key=str(name)) for name, item in data.items()}
+
+
+def redact_payload(payload: Mapping[str, str]) -> dict[str, str]:
+    """Redact a mutation form/payload mapping for a ``MutationPreview``.
+
+    Every sensitive key (card fields, PII, PNR, NetFunnel key) becomes
+    ``[REDACTED]``; every remaining value is card-masked via
+    :func:`redact_text` so a raw PAN can never surface in a preview even when it
+    appears under an unexpected key. The result is a plain ``dict[str, str]``
+    safe to log or display.
+    """
+    return {
+        str(key): "[REDACTED]"
+        if str(key).casefold() in SENSITIVE_KEYS
+        else redact_text(str(value))
+        for key, value in payload.items()
+    }

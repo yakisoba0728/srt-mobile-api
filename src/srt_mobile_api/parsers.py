@@ -19,6 +19,7 @@ from .models import (
     ReservationRecord,
     ReservationTrain,
     SearchPageState,
+    SrtReservationHold,
     SeatSelectionPage,
     TimetablePage,
     TimetableRow,
@@ -635,6 +636,24 @@ def parse_reservation_attempt_response(
         message=message,
         temporary_job_sequence=temporary_job_sequence,
         command=dict(command_row),
+        raw=data,
+    )
+
+
+def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
+    """Parse a successful reserve response into a minimal cancelable hold.
+
+    Reuses :func:`parse_reservation_attempt_response` for the full success
+    gating (resultMap strResult/msgCd, S111 session-expiry, app-error wrappers)
+    and validated container shapes, then keeps only the identity srtgo keeps
+    from a live reserve (``reservListMap[0].pnrNo``, srt.py:1006). A FAIL or
+    malformed response raises before any hold is built.
+    """
+    result = parse_reservation_attempt_response(data)
+    return SrtReservationHold(
+        pnr_no=result.reservation.pnr_number,
+        journey_list_key=result.reservation.journey_list_key,
+        total_seat_count=result.reservation.total_seat_count,
         raw=data,
     )
 

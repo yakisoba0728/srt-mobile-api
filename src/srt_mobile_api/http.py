@@ -4,16 +4,22 @@ from typing import Any, Mapping
 
 import httpx
 
-from .config import APP_ORIGIN, SrtConfig
+from .config import APP_ORIGIN, NETFUNNEL_ORIGIN, SrtConfig
+from .consent import MutationConsent, require_mutation_consent
 from .errors import (
     SrtAppError,
     SrtAuthError,
+    SrtMutationNotAllowedError,
     SrtProtocolError,
     SrtSessionExpiredError,
     SrtTransportError,
 )
 from .parsers import is_login_form
-from .safety import assert_read_only_request
+from .safety import (
+    assert_mutation_route,
+    assert_mutation_route_category,
+    assert_read_only_request,
+)
 
 
 LOGIN_PAGE_PATH = "/login/login.do"
@@ -206,6 +212,101 @@ class SrtHttpClient:
         if referer:
             headers["Referer"] = referer
         return self._request("POST", path, data=dict(data or {}), headers=headers)
+
+    def _send_mutation_request(
+        self,
+        path: str,
+        *,
+        data: Mapping[str, Any],
+        headers: Mapping[str, str],
+    ) -> httpx.Response:
+        # Mirrors _request's transport/redirect/error handling, but WITHOUT
+        # assert_read_only_request (which would reject a mutation route). The
+        # mutation gating happens in post_mutation_form before we reach here.
+        request = self._client.build_request(
+            "POST", path, data=dict(data), headers=headers
+        )
+        try:
+            response = self._client.send(request)
+        except httpx.HTTPError:
+            raise SrtTransportError(
+                f"SRT transport failed for POST {request.url.path}"
+            ) from None
+        if response.is_redirect:
+            location = response.headers.get("location", "")
+            if _is_login_redirect(request.url, location):
+                raise SrtSessionExpiredError("SRT session redirected to login")
+            raise SrtTransportError(
+                f"SRT HTTP {response.status_code} redirect for POST {request.url.path}"
+            )
+        if response.is_error:
+            raise SrtTransportError(
+                f"SRT HTTP {response.status_code} for POST {request.url.path}"
+            )
+        return response
+
+    def post_mutation_form(
+        self,
+        path: str,
+        data: Mapping[str, Any],
+        *,
+        consent: MutationConsent,
+        category: str,
+        referer: str | None = None,
+        accept: str = "application/json, text/javascript, */*; q=0.01",
+    ) -> dict[str, Any]:
+        """Send a state-changing form to an evidenced SRT mutation route.
+
+        This is the ONLY method that transmits to a mutation route, and it is
+        triple-gated: ``require_mutation_consent`` must pass for ``category``,
+        ``consent.dry_run`` must be ``False`` (a dry-run preview never reaches
+        the network), and ``assert_mutation_route`` + ``assert_mutation_route_category``
+        restrict the target to :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES`
+        for exactly that category. The read-only path
+        (:meth:`assert_read_only_request`) still refuses these routes, so a
+        mutation can only leave the process through this gate. ``data`` (which
+        includes the reserve payload's ``netfunnelKey``) is sent verbatim via the
+        same request mechanics as :meth:`post_form`; no read-only field allowlist
+        applies. Returns the parsed JSON object response.
+        """
+        require_mutation_consent(consent, category)
+        if consent.dry_run:
+            raise SrtMutationNotAllowedError(
+                "post_mutation_form requires consent.dry_run=False; a dry-run "
+                "preview must never be transmitted"
+            )
+        # Defense-in-depth at the transmit boundary: a payment carries the PAN in
+        # the clear (srtgo pay_with_card), so the send gate itself refuses to
+        # transmit one unless fake_card_only is set. (No callable payment method
+        # exists yet; this keeps the invariant at the layer that actually sends.)
+        if category == "payment" and not consent.fake_card_only:
+            raise SrtMutationNotAllowedError(
+                "payment mutations require consent.fake_card_only=True; the PAN "
+                "is transmitted in the clear, so only non-chargeable test cards "
+                "are supported"
+            )
+        # Canonical-origin safety, matching the read-only guard's requirement.
+        if (
+            self.config.base_url != APP_ORIGIN
+            or self.config.netfunnel_url != NETFUNNEL_ORIGIN
+        ):
+            raise SrtProtocolError(
+                "SRT request configuration does not use canonical origins"
+            )
+        assert_mutation_route("POST", path)
+        assert_mutation_route_category(path, category)
+        if not isinstance(data, Mapping):
+            raise SrtProtocolError("SRT mutation form data must be a mapping")
+        headers = {
+            "Accept": accept,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin": self.config.base_url,
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        if referer:
+            headers["Referer"] = referer
+        response = self._send_mutation_request(path, data=data, headers=headers)
+        return self._parse_json_object(response)
 
     def post_html_form(
         self,

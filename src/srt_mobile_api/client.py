@@ -8,7 +8,13 @@ from typing import Any, Iterator
 import httpx
 
 from .config import SrtConfig
-from .errors import SrtNetFunnelError, SrtProtocolError, SrtSessionExpiredError
+from .consent import MutationConsent, MutationPreview, require_mutation_consent
+from .errors import (
+    SrtAuthError,
+    SrtNetFunnelError,
+    SrtProtocolError,
+    SrtSessionExpiredError,
+)
 from .http import SrtHttpClient
 from .models import (
     FarePage,
@@ -18,6 +24,8 @@ from .models import (
     PassengerCounts,
     SearchPageState,
     SeatSelectionPage,
+    SeatType,
+    SrtReservationHold,
     SrtSession,
     TimetablePage,
     TrainSearchQuery,
@@ -30,6 +38,7 @@ from .parsers import (
     parse_html_page,
     parse_mutual_verification_response,
     parse_notice_list_response,
+    parse_reservation_hold_response,
     parse_search_has_following_page,
     parse_search_page_state,
     parse_seat_selection_page,
@@ -41,6 +50,7 @@ from .payloads import (
     fare_payload,
     group_search_ajax_payload,
     passenger_selector_payload,
+    personal_reservation_payload,
     search_ajax_payload,
     search_continuation_payload,
     search_page_payload,
@@ -427,3 +437,74 @@ class SrtClient:
                 referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
             )["html"]
             return parse_fare_page(raw)
+
+    def reserve(
+        self,
+        train: TrainSummary,
+        *,
+        consent: MutationConsent,
+        passengers: PassengerCounts | None = None,
+        seat_type: SeatType = SeatType.GENERAL_FIRST,
+        window_seat: bool | None = None,
+        netfunnel_key: str | None = None,
+    ) -> MutationPreview | SrtReservationHold:
+        """Hold a personal (개인예약) SRT reservation under explicit consent.
+
+        Gated by ``require_mutation_consent(consent, "reserve")``: a default
+        :class:`~srt_mobile_api.consent.MutationConsent` (``allow_reserve=False``)
+        or ``None`` is denied with
+        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` before
+        anything is built. Requires an authenticated session. With the default
+        ``dry_run=True`` it validates ``train``/``passengers`` and returns a
+        :class:`~srt_mobile_api.consent.MutationPreview` of the exact form that
+        WOULD be POSTed (mirroring srtgo ``_reserve``), performing NO network I/O
+        — the NetFunnel key is left as the caller-supplied ``netfunnel_key`` (or
+        empty) and is redacted in the preview. With ``dry_run=False`` it obtains
+        a fresh ``act_10`` NetFunnel key when one is not supplied, performs the
+        live hold via the double-gated mutation send path, and returns the parsed
+        :class:`~srt_mobile_api.models.SrtReservationHold` (whose ``pnr_no`` is
+        the created reservation). Only ``reserve`` is implemented among the
+        tiered mutation routes; cancel/payment/refund remain classification-only
+        pending live response capture.
+        """
+        require_mutation_consent(consent, "reserve")
+        if self.session.current is None:
+            raise SrtAuthError("SRT reservation requires an authenticated session")
+        passengers = passengers or PassengerCounts()
+        route = "/arc/selectListArc05013_n.do"
+        if consent.dry_run:
+            form = personal_reservation_payload(
+                train,
+                passengers,
+                seat_type=seat_type,
+                netfunnel_key=netfunnel_key or "",
+                window_seat=window_seat,
+            )
+            return MutationPreview(
+                category="reserve",
+                method="POST",
+                route=route,
+                payload=form,
+            )
+        referer = f"{self.config.base_url}/ara/selectListAra10007_n.do"
+        with self._session_guard():
+            key = (
+                netfunnel_key
+                if netfunnel_key is not None
+                else self._get_act10_key(referer)
+            )
+            form = personal_reservation_payload(
+                train,
+                passengers,
+                seat_type=seat_type,
+                netfunnel_key=key,
+                window_seat=window_seat,
+            )
+            response = self.http.post_mutation_form(
+                route,
+                form,
+                consent=consent,
+                category="reserve",
+                referer=referer,
+            )
+            return parse_reservation_hold_response(response)

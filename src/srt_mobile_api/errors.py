@@ -52,6 +52,16 @@ class SrtAppError(SrtApiError):
         super().__init__(f"{safe_code}: {self.message}".strip())
 
 
+class SrtMutationNotAllowedError(SrtApiError):
+    """A state-changing request was attempted without matching consent.
+
+    Raised by ``require_mutation_consent`` when no ``MutationConsent`` is
+    supplied, when the supplied object is not a ``MutationConsent``, or when
+    the matching per-category ``allow_<category>`` opt-in is False. It fires
+    before any request is built or sent, keeping mutations off by default.
+    """
+
+
 class SrtNetFunnelError(SrtApiError):
     """NetFunnel token parsing or acquisition failed."""
 

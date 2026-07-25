@@ -1,14 +1,19 @@
 # srt-mobile-api
 
-This repository provides an installable read-only Python package for the
-evidenced SRT Android app WebView API surface. The retained APK specification
-and smoke tooling remain the evidence context for that package.
+This repository provides an installable read-only-by-default Python package for
+the evidenced SRT Android app WebView API surface. Unless a caller passes an
+explicit non-dry-run `MutationConsent`, the client transmits only login/read
+requests. A single consent-gated mutation method (`reserve`) exists;
+it builds and (with `dry_run=False`) sends a reservation via the dedicated
+`post_mutation_form` gate, while the read-only send path still refuses every
+mutation route. The retained APK specification and smoke tooling remain the
+evidence context for that package.
 
 The reviewed safety boundary contains 20 routes. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected`; after the additive reservation-attempt
-response parser landed, the current offline suite at HEAD is
-`625 passed, 1 deselected`. The deselected case is the explicitly opted-in
-live-service test.
+response parser and the consent-gated, dry-run-by-default reserve mutation
+surface landed, the current offline suite at HEAD is `707 passed, 1 deselected`.
+The deselected case is the explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
 
@@ -277,4 +282,4 @@ and the raw mapping are excluded from `repr()`. It adds no reservation route,
 request builder, NetFunnel `act_19` flow, client method, or live call, so the
 reviewed 20-route read-only boundary is unchanged.
 
-Reservation, payment, refund, cancellation, ARD, ATA, and native bridge flows are not implemented in this package version.
+A single consent-gated, dry-run-by-default reservation method (`reserve`, `arc/selectListArc05013_n.do`) is implemented (offline-verified; not yet live-run). Payment, refund, cancellation, and native bridge flows are not implemented in this package version — their routes are tiered but not callable and need live response capture (see docs/MUTATION_HANDOFF.md in the korail repo).

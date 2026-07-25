@@ -1,5 +1,19 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
+
+
+class SeatType(Enum):
+    """Seat-class preference for a reservation, mirroring srtgo (srt.py:413-417).
+
+    ``*_FIRST`` prefer one class but fall back to the other based on the train's
+    live availability; ``*_ONLY`` force one class regardless.
+    """
+
+    GENERAL_FIRST = 1  # 일반실 우선
+    GENERAL_ONLY = 2  # 일반실만
+    SPECIAL_FIRST = 3  # 특실 우선
+    SPECIAL_ONLY = 4  # 특실만
 
 
 @dataclass(frozen=True)
@@ -181,6 +195,23 @@ class ReservationAttemptResult:
     temporary_job_sequence: str = field(repr=False)
     command: dict[str, Any] = field(repr=False)
     raw: dict[str, Any] = field(repr=False)
+
+
+@dataclass(frozen=True)
+class SrtReservationHold:
+    """A created-but-unpaid reservation hold produced by a live ``reserve``.
+
+    Mirrors the identity srtgo keeps from a successful reserve
+    (``reservListMap[0].pnrNo``, srt.py:1006): the PNR that later feeds cancel or
+    payment. ``pnr_no`` and ``journey_list_key`` are secret-shaped and hidden
+    from ``repr``. A dry-run reserve returns a :class:`MutationPreview` instead;
+    this hold is only ever built on the (not-exercised-here) live send path.
+    """
+
+    pnr_no: str = field(repr=False)
+    journey_list_key: str = field(default="", repr=False)
+    total_seat_count: str = ""
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
 @dataclass(frozen=True)

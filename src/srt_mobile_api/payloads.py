@@ -1,7 +1,22 @@
 import re
 
-from .models import PassengerCounts, TrainSearchQuery, TrainSummary
+from .models import PassengerCounts, SeatType, TrainSearchQuery, TrainSummary
 from .stations import station_name_by_code
+
+
+# jobId for a personal (개인예약) reservation (srtgo RESERVE_JOBID["PERSONAL"],
+# srt.py:31). STANDBY (1102) is intentionally NOT implemented here.
+RESERVE_PERSONAL_JOBID = "1101"
+
+# WINDOW_SEAT mapping (srtgo srt.py:86): None -> "000" (no preference),
+# True -> "012" (window), False -> "013" (aisle). Fed into locSeatAttCd1.
+_WINDOW_SEAT_CODES = {None: "000", True: "012", False: "013"}
+
+# The SRT train class code (stlbTrnClsfCd) whose TRAIN_NAME is "SRT" (srtgo
+# TRAIN_NAME "17" -> "SRT", srt.py:82). srtgo's _reserve refuses any train whose
+# train_name != "SRT" (srt.py:950-951); this is the equivalent evidence-based
+# SRT-only guard for the reservation route.
+_SRT_TRAIN_CLASS_CODE = "17"
 
 
 TRAIN_GROUP_OPTIONS = {
@@ -419,4 +434,152 @@ def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, 
     for index in range(1, len(PASSENGER_TYPE_CODES) + 1):
         count = compacted[index - 1] if index <= len(compacted) else 0
         payload[f"passenger{index}"] = str(count)
+    return payload
+
+
+def _general_seat_available(train: TrainSummary) -> bool:
+    # srtgo general_seat_available(): "예약가능" in gnrmRsvPsbStr (srt.py:486-487).
+    return "예약가능" in (train.general_seat_availability or "")
+
+
+def _special_seat_available(train: TrainSummary) -> bool:
+    # srtgo special_seat_available(): "예약가능" in sprmRsvPsbStr (srt.py:489-490).
+    return "예약가능" in (train.special_seat_availability or "")
+
+
+def _resolve_special_seat(train: TrainSummary, seat_type: SeatType) -> bool:
+    # srtgo is_special_seat dispatch (srt.py:955-960): *_ONLY force a class;
+    # *_FIRST fall back based on the train's live availability strings.
+    if not isinstance(seat_type, SeatType):
+        raise ValueError("seat_type must be a SeatType")
+    return {
+        SeatType.GENERAL_ONLY: False,
+        SeatType.SPECIAL_ONLY: True,
+        SeatType.GENERAL_FIRST: not _general_seat_available(train),
+        SeatType.SPECIAL_FIRST: _special_seat_available(train),
+    }[seat_type]
+
+
+def _reservation_passenger_fields(
+    passengers: PassengerCounts,
+    *,
+    special_seat: bool,
+    window_seat: bool | None,
+) -> dict[str, str]:
+    # Mirrors srtgo Passenger.get_passenger_dict (srt.py:179-204): the seat/class
+    # constants plus ONLY the filled psgTpCd/psgInfoPerPrnb slots (enumerate over
+    # the combined passengers) — NOT the 5 padded slots the search payload sends.
+    slots = _compact_passenger_slots(passengers)
+    fields: dict[str, str] = {
+        "totPrnb": str(passengers.total),
+        "psgGridcnt": str(len(slots)),
+        "locSeatAttCd1": _WINDOW_SEAT_CODES.get(window_seat, "000"),
+        "rqSeatAttCd1": "015",
+        "dirSeatAttCd1": "009",
+        "smkSeatAttCd1": "000",
+        "etcSeatAttCd1": "000",
+        "psrmClCd1": "2" if special_seat else "1",
+    }
+    for index, (type_code, count) in enumerate(slots, start=1):
+        fields[f"psgTpCd{index}"] = type_code
+        fields[f"psgInfoPerPrnb{index}"] = str(count)
+    return fields
+
+
+def personal_reservation_payload(
+    train: TrainSummary,
+    passengers: PassengerCounts,
+    *,
+    seat_type: SeatType = SeatType.GENERAL_FIRST,
+    netfunnel_key: str,
+    window_seat: bool | None = None,
+) -> dict[str, str]:
+    """Build the personal (개인예약) reservation form, mirroring srtgo _reserve.
+
+    Reproduces the srtgo ``_reserve`` wire for ``jobId=1101`` (srt.py:962-997)
+    EXACTLY, sourcing the train/station/time/order fields from ``train`` and the
+    passenger dict from ``passengers`` (mapped to SRT psgTpCd via the same
+    compaction the search payloads use). ``netfunnel_key`` is placed verbatim
+    into ``netfunnelKey``. ``mblPhone`` is omitted (srtgo passes ``None``, which
+    requests drops from the wire for a personal reservation).
+    """
+    if type(train) is not TrainSummary:
+        raise ValueError("reservation requires an exact TrainSummary")
+    if not isinstance(netfunnel_key, str):
+        raise ValueError("netfunnel_key must be a string")
+    # SRT-only guard (srtgo train_name != "SRT" check): stlbTrnClsfCd must be the
+    # SRT class code "17".
+    if train.service_class_code != _SRT_TRAIN_CLASS_CODE:
+        raise ValueError(
+            "reservation requires an SRT train (service_class_code '17')"
+        )
+
+    train_no = _required_digits(train.train_no, "train_no", max_length=5).zfill(5)
+    departure_date = _required_digits(train.departure_date, "departure_date", length=8)
+    departure_time = _required_digits(train.departure_time, "departure_time", length=6)
+    arrival_time = _required_digits(train.arrival_time, "arrival_time", length=6)
+    departure_station_code = _required_digits(
+        train.departure_station_code, "departure_station_code", length=4
+    )
+    arrival_station_code = _required_digits(
+        train.arrival_station_code, "arrival_station_code", length=4
+    )
+    departure_consist_order = _required_digits(
+        train.departure_consist_order, "departure_consist_order"
+    )
+    arrival_consist_order = _required_digits(
+        train.arrival_consist_order, "arrival_consist_order"
+    )
+    departure_run_order = _required_digits(
+        train.departure_run_order, "departure_run_order"
+    )
+    arrival_run_order = _required_digits(
+        train.arrival_run_order, "arrival_run_order"
+    )
+    departure_station_name = train.departure_station_name or station_name_by_code(
+        train.departure_station_code
+    )
+    arrival_station_name = train.arrival_station_name or station_name_by_code(
+        train.arrival_station_code
+    )
+
+    special_seat = _resolve_special_seat(train, seat_type)
+
+    payload = {
+        "jobId": RESERVE_PERSONAL_JOBID,
+        "jrnyCnt": "1",
+        "jrnyTpCd": "11",
+        "jrnySqno1": "001",
+        "stndFlg": "N",
+        "trnGpCd1": "300",
+        "trnGpCd": "109",
+        "grpDv": "0",
+        "rtnDv": "0",
+        "stlbTrnClsfCd1": train.service_class_code,
+        "dptRsStnCd1": departure_station_code,
+        "dptRsStnCdNm1": departure_station_name,
+        "arvRsStnCd1": arrival_station_code,
+        "arvRsStnCdNm1": arrival_station_name,
+        "dptDt1": departure_date,
+        "dptTm1": departure_time,
+        "arvTm1": arrival_time,
+        "trnNo1": train_no,
+        # srtgo sends runDt1 = train.dep_date (SRTTrain has no separate run date);
+        # departure_date is the faithful reproduction of the srtgo wire.
+        "runDt1": departure_date,
+        "dptStnConsOrdr1": departure_consist_order,
+        "arvStnConsOrdr1": arrival_consist_order,
+        "dptStnRunOrdr1": departure_run_order,
+        "arvStnRunOrdr1": arrival_run_order,
+        "netfunnelKey": netfunnel_key,
+        # reserveType is set only for a personal reservation (srtgo srt.py:990-991).
+        "reserveType": "11",
+    }
+    payload.update(
+        _reservation_passenger_fields(
+            passengers,
+            special_seat=special_seat,
+            window_seat=window_seat,
+        )
+    )
     return payload

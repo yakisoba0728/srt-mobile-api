@@ -32,6 +32,7 @@ def test_client_public_method_set_is_stable():
         "login",
         "logout",
         "iter_train_search_pages",
+        "reserve",
         "search_group_trains",
         "search_trains",
     }
