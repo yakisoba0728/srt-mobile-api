@@ -973,6 +973,71 @@ def test_get_seat_page_posts_once_and_returns_inert_page(load_text_fixture):
     assert posted["seatAttCd"] == "015"
 
 
+def _seat_page_client(requests: list[httpx.Request], html: str) -> SrtClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200, text=html, headers={"Content-Type": "text/html; charset=UTF-8"}
+        )
+
+    return SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+
+
+def _posted_seat_count(request: httpx.Request) -> str:
+    return dict(parse_qsl(request.content.decode(), keep_blank_values=True))[
+        "choiceSeatCount"
+    ]
+
+
+def test_get_seat_page_derives_choice_seat_count_from_the_passenger_total(
+    load_text_fixture,
+):
+    # choiceSeatCount is the PARTY SIZE, not a constant: the app sends
+    # choiceSeatCount = lfn_getRsv("totPrnb") (ara1001l.js:1511), and totPrnb is
+    # the booking screen's passenger total (ara0101v.js:794/:809,
+    # getPsgTotCnt()). It used to be a hardcoded "1" with nothing wired to it.
+    requests: list[httpx.Request] = []
+    client = _seat_page_client(requests, load_text_fixture("seat_selection_page.html"))
+    try:
+        client.get_seat_page(
+            _complete_seat_train(),
+            passengers=PassengerCounts(adult=2, child=1),
+        )
+    finally:
+        client.close()
+
+    assert _posted_seat_count(requests[0]) == "3"
+
+
+def test_get_seat_page_seat_count_overrides_the_passenger_total(load_text_fixture):
+    # The explicit override is kept and wins, so a caller can still ask for a
+    # specific count without constructing a PassengerCounts.
+    requests: list[httpx.Request] = []
+    client = _seat_page_client(requests, load_text_fixture("seat_selection_page.html"))
+    try:
+        client.get_seat_page(
+            _complete_seat_train(), "1", "4", passengers=PassengerCounts(adult=2)
+        )
+    finally:
+        client.close()
+
+    assert _posted_seat_count(requests[0]) == "4"
+
+
+def test_get_seat_page_defaults_to_one_seat_with_neither_argument(load_text_fixture):
+    # With no party and no override the count is "1" -- the single traveller
+    # PassengerCounts() itself defaults to -- so the previous behaviour is the
+    # fallback rather than the only option.
+    requests: list[httpx.Request] = []
+    client = _seat_page_client(requests, load_text_fixture("seat_selection_page.html"))
+    try:
+        client.get_seat_page(_complete_seat_train())
+    finally:
+        client.close()
+
+    assert _posted_seat_count(requests[0]) == "1"
+
+
 def test_get_seat_page_rejects_incomplete_train_before_transport():
     called = False
 

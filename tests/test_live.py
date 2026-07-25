@@ -195,7 +195,11 @@ def test_live_result_contains_counts_not_ticket_text():
     )
     assert "mutual-secret" not in repr(result)
     assert "mutMrkVrfCd" not in repr(result)
-    client.get_seat_page.assert_called_once_with(train)
+    # The seat page must be read for the SAME party the smoke searched with: the
+    # app sends choiceSeatCount = lfn_getRsv("totPrnb") (ara1001l.js:1511). The
+    # smoke previously passed query.passengers to search_trains and then took
+    # get_seat_page's hardcoded one-seat default.
+    client.get_seat_page.assert_called_once_with(train, passengers=query.passengers)
     assert "korail.com" not in repr(result)
 
 

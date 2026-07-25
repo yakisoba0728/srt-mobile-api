@@ -35,9 +35,12 @@ and its transport-layer gate are recorded under `## Unreleased` in
   behavior and made no live request.
 - The authenticated physical seat-selection page read is implemented as
   `get_seat_page(train) -> SeatSelectionPage`.
-- Its request is fixed to general class and one seat. Prepared-request
-  validation requires no query and exactly thirteen unique allowlisted form
-  fields before the single POST is sent.
+- Its request defaults to general class, and its `choiceSeatCount` is derived
+  from the passenger total (`passengers=`), matching the app's
+  `choiceSeatCount: lfn_getRsv("totPrnb")` (`ara1001l.js:1511`), with
+  `seat_count=` as an explicit override and one seat as the fallback.
+  Prepared-request validation requires no query and exactly thirteen unique
+  allowlisted form fields before the single POST is sent.
 - The manual mutual-verification method and repr-safe result are implemented.
 - Version `0.2.0` adds
   `iter_train_search_pages(query, *, group=False, max_pages=10)` as a bounded,
@@ -343,7 +346,7 @@ car/seat response or availability contract.
   the explicit live-service test. No live request or credential access occurred.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate and the
-  consent-gated cancel surface: `909 passed, 1 deselected`; the deselected case
+  consent-gated cancel surface: `912 passed, 1 deselected`; the deselected case
   remains the explicit live-service opt-in. No live mutation was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `SrtClient.get_seat_page` derives `choiceSeatCount` from the passenger total
+  instead of hardcoding one seat. The app sends
+  `choiceSeatCount: lfn_getRsv("totPrnb")` (`ara1001l.js:1511`) — the party size
+  the booking screen collected (`ara0101v.js:794`/`:809`) — and
+  `safety.SEAT_PAGE_VALUE_PATTERNS` already validated the field as any positive
+  integer for that reason, but nothing was wired to it. New keyword-only
+  `passengers=`; `seat_count=` is kept as the explicit override and now defaults
+  to `None` ("not overridden") rather than `"1"`. With neither, the count is
+  still one seat. `run_live_smoke` had the same bug — it searched with
+  `query.passengers` and then read the seat page for one seat — and now passes
+  the party through.
 - `personal_reservation_payload` now sends `arvDt1` (도착일자), which it omitted
   entirely. The app writes it in the same block as the `dptDt1`/`dptTm1`/
   `arvTm1` we already sent (`ara1001l.js:1464`), and srtgo omits it only because

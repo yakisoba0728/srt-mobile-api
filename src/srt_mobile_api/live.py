@@ -128,7 +128,15 @@ def run_live_smoke(
     tickets = client.get_ticket_list()
     personal = client.search_trains(query)
     seat_train = _first_complete_srt_seat_train(personal.trains)
-    seat_page = client.get_seat_page(seat_train) if seat_train is not None else None
+    # The seat page's choiceSeatCount is the party size (ara1001l.js:1511 sends
+    # lfn_getRsv("totPrnb")). The smoke searches with query.passengers, so it
+    # must read the seat page for the same party rather than silently asking for
+    # one seat.
+    seat_page = (
+        client.get_seat_page(seat_train, passengers=query.passengers)
+        if seat_train is not None
+        else None
+    )
     mutual = client.get_mutual_verification()
     # Group search requires >= 10 passengers (the app blocks smaller groups
     # client-side, ara0101v.js:551-554); the individual query above may carry a

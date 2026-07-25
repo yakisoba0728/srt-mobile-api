@@ -137,10 +137,17 @@ def test_seat_page_method_type_and_export_are_stable():
         "train",
         "cabin_class",
         "seat_count",
+        "passengers",
         "seat_attr_code",
     ]
     assert signature.parameters["cabin_class"].default == "1"
-    assert signature.parameters["seat_count"].default == "1"
+    # choiceSeatCount is the party size (app: lfn_getRsv("totPrnb"),
+    # ara1001l.js:1511), so the count is DERIVED from `passengers` rather than
+    # pinned to a constant. `seat_count` stays as the explicit override and
+    # therefore defaults to None (= "not overridden"), not to "1".
+    assert signature.parameters["seat_count"].default is None
+    assert signature.parameters["passengers"].default is None
+    assert signature.parameters["passengers"].kind is inspect.Parameter.KEYWORD_ONLY
     # seatAttCd is a request-side constant (app default "015"), not a response-row value.
     assert signature.parameters["seat_attr_code"].default == "015"
     assert signature.parameters["seat_attr_code"].kind is inspect.Parameter.KEYWORD_ONLY

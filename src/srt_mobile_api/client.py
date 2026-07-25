@@ -403,10 +403,26 @@ class SrtClient:
         self,
         train: TrainSummary,
         cabin_class: str = "1",
-        seat_count: str = "1",
+        seat_count: str | None = None,
         *,
+        passengers: PassengerCounts | None = None,
         seat_attr_code: str = "015",
     ) -> SeatSelectionPage:
+        """Read the seat-selection page for one complete server-returned SRT row.
+
+        ``choiceSeatCount`` is the PARTY SIZE, not a constant: the app sends
+        ``choiceSeatCount: lfn_getRsv("totPrnb")`` (``ara1001l.js:1511``), and
+        ``totPrnb`` is the passenger total the booking screen collected
+        (``ara0101v.js:794``/``:809``, ``getPsgTotCnt()``). So pass
+        ``passengers`` and the count is derived from it. ``seat_count`` remains
+        available as an explicit override for a caller who wants a specific
+        count without constructing a
+        :class:`~srt_mobile_api.models.PassengerCounts`; it wins when both are
+        given. With neither, the count falls back to ``"1"`` — the same single
+        traveller ``PassengerCounts()`` itself defaults to.
+        """
+        if seat_count is None:
+            seat_count = str((passengers or PassengerCounts()).total)
         with self._session_guard():
             raw = self.http.post_html_form(
                 "/arc/selectListArc02012_n.do",

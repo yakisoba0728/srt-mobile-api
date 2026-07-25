@@ -47,7 +47,7 @@ reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
 surface, the two-category live enablement and the operator scripts landed, the
 current offline suite at HEAD is
-`909 passed, 1 deselected`. The deselected case is the
+`912 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -238,9 +238,12 @@ remain outside the read-only allowlist.
 
 `SrtClient.get_seat_page(train)` performs one authenticated read of the
 internal SRT seat-selection HTML page for a complete server-returned SRT row.
-The request is fixed to general class and one seat, carries exactly thirteen
-allowlisted form fields, and returns `SeatSelectionPage` after requiring the
-`좌석선택` marker.
+The request defaults to general class, carries exactly thirteen allowlisted form
+fields, and returns `SeatSelectionPage` after requiring the `좌석선택` marker.
+Its `choiceSeatCount` is the party size, as the app's is
+(`choiceSeatCount: lfn_getRsv("totPrnb")`, `ara1001l.js:1511`): pass
+`passengers=` and the count is derived from the total, or `seat_count=` to
+override it explicitly. With neither it is one seat.
 
 This method does not select or hold a seat. It does not call NetFunnel
 `act_19`, submit a reservation, follow the external Korail seat map, execute
