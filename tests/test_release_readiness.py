@@ -848,7 +848,7 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     # whenever the suite grows. (The README also cites the historical 0.2.0
     # figure; that one is labelled as historical and is not asserted here,
     # because a frozen number can never fail.)
-    assert "836 passed" in readme and "1 deselected" in readme
+    assert "837 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in readme.casefold()
     assert "personal and group each returned two pages" in readme.casefold()
@@ -910,3 +910,51 @@ def test_repository_truth_and_full_mutation_policy() -> None:
         "explicit user authorization",
     ):
         assert requirement in policy
+
+
+# The cancel surface is the only documented method whose WIRE SHAPE this
+# repository has never seen: it comes from srtgo's live runs, and its route is
+# 0-hit across all 21,673 files of the v2.0.41 offline bundle. That caveat IS
+# the honesty of the cancel documentation, and nothing pinned it, so a later
+# edit could quietly promote "srtgo says so" into "verified".
+CANCEL_ROUTE_TOKEN = "ard02045"
+# Substance, not a sentence: each element may be reworded, but all three have to
+# stay attached to the route. "unverified" is deliberately NOT accepted as the
+# not-confirmed claim -- the surrounding prose already calls reserve's NetFunnel
+# wiring unverified, so accepting it would let the cancel caveat be deleted
+# without failing.
+CANCEL_NOT_CONFIRMED_PHRASES = (
+    "unconfirmed",
+    "not confirmed",
+    "never been confirmed",
+    "not been confirmed",
+)
+CANCEL_ZERO_EVIDENCE_PHRASES = ("0-hit", "0 hits", "zero hits", "zero-hit")
+CANCEL_PROVENANCE_WINDOW = 700
+CANCEL_PROVENANCE_DOCUMENTS = (
+    "README.md",
+    "docs/IMPLEMENTATION_PROGRESS.md",
+    "CHANGELOG.md",
+)
+
+
+def test_cancel_provenance_stays_documented_as_srtgo_attested_and_unconfirmed() -> None:
+    for document in CANCEL_PROVENANCE_DOCUMENTS:
+        flat = " ".join((ROOT / document).read_text().casefold().split())
+        assert CANCEL_ROUTE_TOKEN in flat, document
+        # A window around each mention of the cancel route, so the caveat has to
+        # stay ATTACHED to it rather than merely coexist in the same file:
+        # "srtgo" and "2.0.41" are named all over these documents for other
+        # reasons.
+        windows = [
+            flat[max(0, offset - CANCEL_PROVENANCE_WINDOW) : offset + CANCEL_PROVENANCE_WINDOW]
+            for offset in range(len(flat))
+            if flat.startswith(CANCEL_ROUTE_TOKEN, offset)
+        ]
+        assert any(
+            "srtgo" in window
+            and "2.0.41" in window
+            and any(phrase in window for phrase in CANCEL_NOT_CONFIRMED_PHRASES)
+            and any(phrase in window for phrase in CANCEL_ZERO_EVIDENCE_PHRASES)
+            for window in windows
+        ), document
