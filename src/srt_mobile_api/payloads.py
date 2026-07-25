@@ -88,6 +88,29 @@ def date_selector_payload(date: str) -> dict[str, str]:
     }
 
 
+def reservation_list_payload(page_no: int = 0) -> dict[str, str]:
+    """The body of the 예약/발권 목록 read (``/atc/selectListAtc14016_n.do``).
+
+    One field, ``pageNo``, and that is the whole form. It is the same parameter
+    the app puts in the query string when its WebView opens this path
+    (``SRForegroundDialogActivity.java:31``,
+    ``https://app.srail.co.kr/neo/atc/selectListAtc14016_n.do?pageNo=0``; and the
+    leftover ``data-url`` on ``sub/ticketList.html:405``) and the same body srtgo
+    POSTs (``srt.py`` ``get_reservations``: ``data = {"pageNo": "0"}``). The live
+    server echoed it back verbatim on 2026-07-26 as
+    ``commandMap: {"pageNo": "0"}``, which is the strongest available
+    confirmation that the field name is right: the response quotes the request.
+
+    ``page_no`` is stringified rather than validated against a range, because
+    the response tells the caller how many pages exist (``totPageCnt``) and
+    nothing in the bundle or in any observed response bounds it from our side.
+    A negative or non-integer value is refused, since neither can mean a page.
+    """
+    if type(page_no) is not int or page_no < 0:
+        raise ValueError("page_no must be a non-negative non-boolean integer")
+    return {"pageNo": str(page_no)}
+
+
 def passenger_selector_payload(passengers: PassengerCounts) -> dict[str, str]:
     # passengerN is keyed by SRT passenger type code N (commCode.js psgTpCd:
     # 1=adult, 2=disability_1_to_3, 3=disability_4_to_6, 4=senior, 5=child).

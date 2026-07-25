@@ -243,6 +243,91 @@ class SrtReservationHold:
 
 
 @dataclass(frozen=True)
+class SrtReservationSummary:
+    """One row of the 예약/발권 목록 (``/atc/selectListAtc14016_n.do``).
+
+    Built by zipping two parallel containers by index — ``trainListMap[i]``
+    (journey identity) with ``payListMap[i]`` (settlement state) — which is how
+    srtgo reads this endpoint (``srt.py:1069-1082``).
+
+    **Only ``pnr_no`` is required.** It is the identity that feeds
+    :meth:`~srt_mobile_api.client.SrtClient.cancel` and
+    ``scripts/recover_hold.py``, and it is the entire reason this read exists.
+    Every other field is optional and defaults to ``None``, because the
+    NON-EMPTY row shape has never been observed by this repository: the account
+    used for live verification has no reservations, so the 2026-07-26 probe saw
+    ``trainListMap: []`` / ``payListMap: []``. The field names below therefore
+    come from srtgo's live runs, NOT from our v2.0.41 bundle — where
+    ``payListMap``, ``tkSpecNum``, ``iseLmtTm`` and ``stlFlg`` all have zero
+    hits. ``iseLmtDt``, ``rcvdAmt``, ``seatNum``, ``pnrNo``, ``rsvChgTno`` and
+    ``jrnyCnt`` DO appear, in the live 승차권 확인 page's own inline JavaScript
+    (``gotoDetailARD02018(...)``, ``gotoDetailARD0201V(...)``), so those names
+    are corroborated by the app while their placement in these two containers is
+    not.
+
+    Treat a ``None`` here as "the server did not send this field under this
+    name", not as "the reservation has no such value", and read
+    :attr:`raw_train` / :attr:`raw_pay` when you need the ground truth.
+    """
+
+    pnr_no: str = field(repr=False)
+    # trainListMap[i] — srtgo srt.py:1069-1082
+    received_amount: str | None = None  # rcvdAmt
+    ticket_special_number: str | None = None  # tkSpecNum
+    seat_number: str | None = field(default=None, repr=False)  # seatNum
+    # payListMap[i] — srtgo srt.py:1069-1082
+    service_class_code: str | None = None  # stlbTrnClsfCd
+    train_no: str | None = None  # trnNo
+    departure_date: str | None = None  # dptDt
+    departure_time: str | None = None  # dptTm
+    departure_station_code: str | None = None  # dptRsStnCd
+    arrival_time: str | None = None  # arvTm
+    arrival_station_code: str | None = None  # arvRsStnCd
+    payment_limit_date: str | None = None  # iseLmtDt
+    payment_limit_time: str | None = None  # iseLmtTm
+    settlement_flag: str | None = None  # stlFlg
+    raw_train: dict[str, Any] = field(default_factory=dict, repr=False)
+    raw_pay: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class SrtReservationListResult:
+    """The parsed 예약/발권 목록, plus the envelope the server sent with it.
+
+    ``reservations`` is empty for an account with nothing booked. That case is
+    live-verified (2026-07-26) and is NOT spelled the way an empty train search
+    is: the search answers ``strResult=FAIL`` / ``WRG000000``, whereas this
+    endpoint answers ``resultMap[0].strResult="SUCC"`` / ``IRZ000005`` /
+    "조회할 자료가 없습니다." with genuinely empty arrays. See
+    :func:`~srt_mobile_api.parsers.parse_reservation_list_response` for the
+    second envelope (``rsMap``) that says FAIL on the very same response, and
+    why it is deliberately not read as a failure.
+
+    ``row_count`` / ``total_page_count`` are ``rowCnt`` / ``totPageCnt``, sent as
+    JSON integers (both ``0`` in the observed empty response); they are ``None``
+    when absent.
+    """
+
+    reservations: tuple[SrtReservationSummary, ...]
+    status: str
+    message_code: str = ""
+    message: str = field(default="", repr=False)
+    row_count: int | None = None
+    total_page_count: int | None = None
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def pnr_numbers(self) -> tuple[str, ...]:
+        """Every PNR in the list, in server order.
+
+        The recovery-shaped view: ``scripts/recover_hold.py --list`` prints
+        exactly this, so an operator who lost a PNR can get it back without
+        knowing anything about the row layout.
+        """
+        return tuple(item.pnr_no for item in self.reservations)
+
+
+@dataclass(frozen=True)
 class SrtCancelResult:
     """The parsed envelope of an unpaid-reservation cancel (예약취소).
 

@@ -93,6 +93,7 @@ def test_capture_script_calls_only_public_read_methods():
         "get_notice_list",
         "get_typed_notice_list",
         "get_ticket_list",
+        "get_reservations",
         "get_station_selector",
         "get_station_map_selector",
         "get_date_selector",

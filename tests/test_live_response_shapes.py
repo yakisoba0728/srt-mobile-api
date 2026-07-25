@@ -657,3 +657,49 @@ def test_search_rows_do_carry_seat_att_cd():
     """
     train = parse_train_search_response(_live_shape_search_response()).trains[0]
     assert train.seat_attr_code == "015"
+
+
+def test_two_endpoints_spell_an_empty_result_two_different_ways(load_json_fixture):
+    """LIVE, 2026-07-26. "Nothing found" is not one shape on this server.
+
+    The train search answers an empty window with strResult=FAIL / WRG000000 /
+    "조회 결과가 없습니다." -- an app-level ERROR. The reservation list
+    (/atc/selectListAtc14016_n.do) answers an empty account with
+    strResult=SUCC / IRZ000005 / "조회할 자료가 없습니다." and genuinely empty
+    arrays, while a SECOND envelope on the same response (rsMap) says
+    FAIL / WRT300005.
+
+    Both were captured against the real server. Pinned together because the
+    tempting generalisation -- "an empty SRT result is a FAIL" -- is false, and
+    acting on it would turn "you have no reservations" into an exception on the
+    one read whose entire job is answering that question.
+    """
+    from srt_mobile_api.parsers import parse_reservation_list_response
+
+    with pytest.raises(SrtAppError) as search_failure:
+        parse_train_search_response(
+            {
+                "ErrorCode": "0",
+                "ErrorMsg": "",
+                "outDataSets": {
+                    "dsOutput0": [
+                        {
+                            "msgCd": "WRG000000",
+                            "strResult": "FAIL",
+                            "msgTxt": "조회 결과가 없습니다.",
+                            "qryCnqeCnt": 0,
+                        }
+                    ],
+                    "dsOutput1": [],
+                },
+            }
+        )
+    assert search_failure.value.code == "WRG000000"
+
+    reservations = parse_reservation_list_response(
+        load_json_fixture("reservation_list_empty.json")
+    )
+    assert reservations.status == "SUCC"
+    assert reservations.message_code == "IRZ000005"
+    assert reservations.reservations == ()
+    assert reservations.raw["rsMap"][0]["strResult"] == "FAIL"

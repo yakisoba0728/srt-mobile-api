@@ -27,6 +27,7 @@ from .models import (
     SeatType,
     SrtCancelResult,
     SrtReservationHold,
+    SrtReservationListResult,
     SrtSession,
     TimetablePage,
     TrainSearchQuery,
@@ -40,6 +41,7 @@ from .parsers import (
     parse_mutual_verification_response,
     parse_notice_list_response,
     parse_reservation_hold_response,
+    parse_reservation_list_response,
     parse_search_has_following_page,
     parse_search_page_state,
     parse_seat_selection_page,
@@ -53,6 +55,7 @@ from .payloads import (
     group_search_ajax_payload,
     passenger_selector_payload,
     personal_reservation_payload,
+    reservation_list_payload,
     search_ajax_payload,
     search_continuation_payload,
     search_page_payload,
@@ -134,6 +137,44 @@ class SrtClient:
         with self._session_guard():
             raw = self.http.get_text("/atc/selectListAtc14017_n.do", params={"pageNo": str(page_no)})
             return parse_html_page(raw, context="ticket list", require_authenticated=True)
+
+    def get_reservations(self, page_no: int = 0) -> SrtReservationListResult:
+        """Read the account's 예약/발권 목록 as structured rows.
+
+        This is the only read that ENUMERATES reservations. Without it the sole
+        way back to a hold whose PNR was lost is to type the PNR into
+        ``scripts/recover_hold.py`` — which requires already knowing it. That is
+        why the parser is written to surrender a PNR under almost any shape
+        surprise (see
+        :func:`~srt_mobile_api.parsers.parse_reservation_list_response`) and why
+        ``scripts/recover_hold.py --list`` calls this.
+
+        ``get_ticket_list`` is NOT the same read. It GETs the neighbouring
+        ``/atc/selectListAtc14017_n.do`` page and returns HTML; this POSTs
+        ``/atc/selectListAtc14016_n.do`` and returns rows. The app reaches the
+        16 path too (``SRForegroundDialogActivity.java:31``), just as a WebView
+        page rather than as an XHR.
+
+        **Live-verified on 2026-07-26 for an account with no reservations**: the
+        server answered ``resultMap[0].strResult="SUCC"`` / ``IRZ000005`` /
+        "조회할 자료가 없습니다." with ``trainListMap: []`` and
+        ``payListMap: []``, and this returned an empty
+        :class:`~srt_mobile_api.models.SrtReservationListResult`. The populated
+        shape is UNVERIFIED here and its row field names come from srtgo
+        (``srt.py:1069-1082``), not from our bundle.
+
+        ``page_no`` goes on the wire as ``pageNo``; the result's
+        ``total_page_count`` (``totPageCnt``) says how many pages exist.
+        """
+        with self._session_guard():
+            return parse_reservation_list_response(
+                self.http.post_form(
+                    "/atc/selectListAtc14016_n.do",
+                    reservation_list_payload(page_no),
+                    accept="application/json, text/javascript, */*; q=0.01",
+                    referer=f"{self.config.base_url}/main/main.do",
+                )
+            )
 
     def _get_selector_page(
         self,

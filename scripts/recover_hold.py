@@ -10,6 +10,18 @@ process that made the hold is gone.
 
     SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... python3 scripts/recover_hold.py <PNR>
 
+And when the PNR itself is what was lost, ``--list`` enumerates the account's
+reservations instead of cancelling anything:
+
+    SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... python3 scripts/recover_hold.py --list
+
+``--list`` is a pure READ (``SrtClient.get_reservations`` ->
+``POST /atc/selectListAtc14016_n.do``, on the read-only allowlist) and
+constructs no consent at all, so it cannot cancel, reserve, pay or refund. It
+exists because until it did, the recovery path had a hole in exactly the shape
+of its own worst case: the tool for a lost hold required you to already know
+the hold's identity. Run it, read the PNR, then run the cancel form above.
+
 Exit code 0 means the server reported the hold cancelled. ANY other outcome
 exits non-zero and reprints the PNR, because an operator who loses the PNR has
 no way back to the reservation.
@@ -32,6 +44,7 @@ from srt_mobile_api import (
     SrtCancelResult,
     SrtClient,
     SrtConfig,
+    SrtReservationListResult,
 )
 from srt_mobile_api.live import read_credentials_from_env
 
@@ -77,11 +90,87 @@ def cancel_hold(client: SrtClient, pnr: str) -> SrtCancelResult:
     return result
 
 
+def list_holds(client: SrtClient) -> SrtReservationListResult:
+    """Read the account's reservations on an already-authenticated ``client``.
+
+    Deliberately a bare read with NO consent object anywhere near it: listing
+    must never be able to change state, not even by a later refactor that
+    reaches for the consent this module already builds for the cancel path.
+    """
+    return client.get_reservations()
+
+
+def _print_holds(result: SrtReservationListResult) -> None:
+    """Print every PNR the server returned, or say plainly that there are none.
+
+    The PNRs ARE printed, for the same reason the cancel path prints one: this
+    is the account holder looking at their own reservations, and a masked PNR is
+    useless to the person who needs to type it into the cancel command.
+    """
+    if not result.reservations:
+        print("No reservations on this account.")
+        return
+    print(f"{len(result.reservations)} reservation(s):")
+    for item in result.reservations:
+        detail = " ".join(
+            part
+            for part in (
+                f"train={item.train_no}" if item.train_no else "",
+                f"dep={item.departure_date}/{item.departure_time}"
+                if item.departure_date or item.departure_time
+                else "",
+                f"payBy={item.payment_limit_date}{item.payment_limit_time or ''}"
+                if item.payment_limit_date
+                else "",
+            )
+            if part
+        )
+        print(f"  PNR: {item.pnr_no}" + (f"  ({detail})" if detail else ""))
+    print("")
+    print("Cancel one with:")
+    print(f"  python3 scripts/recover_hold.py {result.reservations[0].pnr_no}")
+
+
+def _mask_login_id(login_id: str) -> str:
+    if len(login_id) <= 2:
+        return "*" * len(login_id)
+    return f"{login_id[0]}{'*' * (len(login_id) - 2)}{login_id[-1]}"
+
+
+def _run_list(client: SrtClient, login_id: str, password: str) -> int:
+    """The ``--list`` mode: log in, read, print, exit. Cancels nothing."""
+    try:
+        client.login(login_id, password)
+        print(f"Logged in as {_mask_login_id(login_id)}")
+        result = list_holds(client)
+    except Exception as exc:  # noqa: BLE001 - report, never traceback at an operator
+        print(f"ERROR: could not list reservations: {type(exc).__name__}: {exc}")
+        return 1
+    finally:
+        client.close()
+    _print_holds(result)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Cancel one unpaid SRT reservation hold by PNR",
     )
-    parser.add_argument("pnr", help="the PNR of the hold to cancel")
+    parser.add_argument(
+        "pnr",
+        nargs="?",
+        default=None,
+        help="the PNR of the hold to cancel",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_holds",
+        help=(
+            "list the account's reservations and their PNRs, then exit; "
+            "cancels nothing"
+        ),
+    )
     parser.add_argument(
         "--device-key",
         default=None,
@@ -89,8 +178,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    pnr = args.pnr.strip()
-    if not pnr:
+    # Exactly one mode. Accepting both would make "which one wins?" a question
+    # an operator has to guess at while a real hold is outstanding.
+    if args.list_holds and args.pnr is not None:
+        print("ERROR: --list takes no PNR", file=sys.stderr)
+        return 2
+    if not args.list_holds and args.pnr is None:
+        print("ERROR: a PNR is required (or use --list)", file=sys.stderr)
+        return 2
+
+    pnr = "" if args.pnr is None else args.pnr.strip()
+    if not args.list_holds and not pnr:
         print("ERROR: PNR is empty", file=sys.stderr)
         return 2
 
@@ -106,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
         else SrtConfig()
     )
     client = SrtClient(config)
+    if args.list_holds:
+        return _run_list(client, login_id, password)
     print(f"Recovering hold PNR={pnr}")
     try:
         client.login(login_id, password)

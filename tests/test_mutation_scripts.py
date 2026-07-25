@@ -251,6 +251,120 @@ def test_recover_hold_main_requires_credentials(recover, monkeypatch, capsys):
     assert fake.logged_in_as is None
 
 
+# --- --list: the mode for when the PNR itself is what was lost ---------------
+
+
+def _reservation_list(*pnrs):
+    from srt_mobile_api import SrtReservationListResult, SrtReservationSummary
+
+    return SrtReservationListResult(
+        reservations=tuple(
+            SrtReservationSummary(pnr_no=pnr, train_no="00301") for pnr in pnrs
+        ),
+        status="SUCC",
+        message_code="IRZ000005",
+    )
+
+
+class _ListingClient(_FakeClient):
+    """A _FakeClient that also answers get_reservations, recording the calls."""
+
+    def __init__(self, listing, *, list_error=None):
+        super().__init__(SrtCancelResult(status="SUCC"))
+        self._listing = listing
+        self._list_error = list_error
+        self.cancel_calls = 0
+        self.list_calls = 0
+
+    def get_reservations(self, page_no=0):
+        self.list_calls += 1
+        if self._list_error is not None:
+            raise self._list_error
+        return self._listing
+
+    def cancel(self, reservation, *, consent, **kwargs):  # pragma: no cover
+        self.cancel_calls += 1
+        return super().cancel(reservation, consent=consent, **kwargs)
+
+
+def test_recover_hold_list_prints_every_pnr_and_cancels_nothing(
+    recover, monkeypatch, capsys
+):
+    # The point of --list is that the PNR is what was lost, so the PNRs are
+    # PRINTED -- a masked one is useless to the person who has to type it.
+    fake = _ListingClient(_reservation_list(FAKE_PNR, "SYNTHETIC_PNR_SECOND"))
+
+    assert _run_main(recover, monkeypatch, fake, argv=["--list"]) == 0
+
+    out = capsys.readouterr().out
+    assert FAKE_PNR in out and "SYNTHETIC_PNR_SECOND" in out
+    assert fake.list_calls == 1
+    # Listing must never be able to change state.
+    assert fake.cancel_calls == 0
+    assert fake.closed is True
+
+
+def test_recover_hold_list_says_plainly_when_there_is_nothing(
+    recover, monkeypatch, capsys
+):
+    fake = _ListingClient(_reservation_list())
+
+    assert _run_main(recover, monkeypatch, fake, argv=["--list"]) == 0
+
+    assert "No reservations" in capsys.readouterr().out
+
+
+def test_recover_hold_list_reports_a_failure_without_a_traceback(
+    recover, monkeypatch, capsys
+):
+    fake = _ListingClient(None, list_error=RuntimeError("server said no"))
+
+    assert _run_main(recover, monkeypatch, fake, argv=["--list"]) == 1
+
+    out = capsys.readouterr().out
+    assert "could not list reservations" in out
+    assert fake.closed is True
+
+
+def test_recover_hold_requires_exactly_one_mode(recover, monkeypatch, capsys):
+    # Both, or neither, is refused: an operator with a real hold outstanding
+    # must not have to guess which one wins.
+    fake = _ListingClient(_reservation_list(FAKE_PNR))
+    assert _run_main(recover, monkeypatch, fake, argv=["--list", FAKE_PNR]) == 2
+    assert _run_main(recover, monkeypatch, fake, argv=[]) == 2
+    assert fake.list_calls == 0
+    assert fake.cancel_calls == 0
+    assert fake.logged_in_as is None
+
+
+def test_recover_hold_list_builds_no_consent_at_all(recover):
+    """The listing path must not go anywhere near a MutationConsent.
+
+    Checked in the source, so it holds for paths no test drives: neither
+    ``list_holds`` nor ``_run_list`` may mention consent, and ``list_holds``
+    may only call the read.
+    """
+    tree = ast.parse(RECOVER_PATH.read_text(encoding="utf-8"))
+    listing = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"list_holds", "_run_list", "_print_holds"}
+    ]
+    assert len(listing) == 3
+    for node in listing:
+        names = {
+            child.id for child in ast.walk(node) if isinstance(child, ast.Name)
+        } | {
+            child.attr for child in ast.walk(node) if isinstance(child, ast.Attribute)
+        }
+        assert "MutationConsent" not in names
+        assert "build_cancel_consent" not in names
+        assert "cancel" not in names
+        assert "cancel_hold" not in names
+        assert "post_mutation_form" not in names
+
+
 # ===========================================================================
 # verify_reserve_cancel_roundtrip.py
 # ===========================================================================

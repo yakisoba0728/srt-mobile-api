@@ -27,6 +27,8 @@ from .models import (
     SeatType,
     SrtCancelResult,
     SrtReservationHold,
+    SrtReservationListResult,
+    SrtReservationSummary,
     SrtSession,
     TimetablePage,
     TimetableRow,
@@ -38,6 +40,7 @@ from .models import (
 from .parsers import (
     parse_reservation_attempt_response,
     parse_reservation_hold_response,
+    parse_reservation_list_response,
     parse_unpaid_cancel_response,
 )
 
@@ -64,6 +67,7 @@ __all__ = [
     "PassengerCounts",
     "parse_reservation_attempt_response",
     "parse_reservation_hold_response",
+    "parse_reservation_list_response",
     "parse_unpaid_cancel_response",
     "ReservationAttemptResult",
     "ReservationRecord",
@@ -73,6 +77,8 @@ __all__ = [
     "SeatType",
     "SrtCancelResult",
     "SrtReservationHold",
+    "SrtReservationListResult",
+    "SrtReservationSummary",
     "SrtSession",
     "TimetablePage",
     "TimetableRow",

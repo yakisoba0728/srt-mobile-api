@@ -41,13 +41,13 @@ implementing each (neither exists) and live-verifying its own wire format. The
 retained APK specification and smoke tooling remain the evidence context for
 that package.
 
-The reviewed safety boundary contains 20 routes. The integrated 0.2.0 gate
+The reviewed safety boundary contains 21 routes. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
-surface, the two-category live enablement and the operator scripts landed, the
-current offline suite at HEAD is
-`983 passed, 1 deselected`. The deselected case is the
+surface, the two-category live enablement, the operator scripts and the
+reservation-list read landed, the current offline suite at HEAD is
+`1030 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -152,6 +152,53 @@ SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... python3 scripts/recover_hold.py <PNR>
 
 It exits 0 only when the server reports the hold released, and reprints the PNR
 in a banner on every other outcome. Neither script ever prints the password.
+
+When the PNR *itself* is what was lost, `--list` enumerates the account's
+reservations instead of cancelling anything:
+
+```bash
+SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... python3 scripts/recover_hold.py --list
+```
+
+`--list` is a pure read (`SrtClient.get_reservations`) and constructs no consent
+at all, so it cannot cancel, reserve, pay or refund. It closed a hole in the
+recovery path shaped exactly like the path's own worst case: the tool for a lost
+hold used to require you to already know the hold's identity.
+
+### Reservation list read
+
+`SrtClient.get_reservations(page_no=0)` POSTs `/atc/selectListAtc14016_n.do`
+with `pageNo` and returns an `SrtReservationListResult` of typed
+`SrtReservationSummary` rows — the only read that ENUMERATES reservations.
+`get_ticket_list` is a different read: it GETs the neighbouring
+`/atc/selectListAtc14017_n.do` page and returns HTML.
+
+**Live-verified on 2026-07-26, for the EMPTY case only.** The account has no
+reservations, and the server answered `resultMap[0].strResult=SUCC` /
+`IRZ000005` / "조회할 자료가 없습니다." with `trainListMap: []`,
+`payListMap: []`, `rowCnt: 0`, `totPageCnt: 0`. Two things about that response
+are load-bearing and both are pinned by tests:
+
+- an empty result here is an empty **array**, not a failure. The train search
+  answers an empty window with `strResult=FAIL` / `WRG000000`; this endpoint
+  does not, so "you have no reservations" must never surface as an exception;
+- the same successful response carries a **second** envelope, `rsMap[0]`, that
+  says `FAIL` / `WRT300005` "조회자료가 없습니다.". The parser reads `resultMap`
+  and only `resultMap`; `rsMap` stays reachable through `.raw`.
+
+**The populated row shape is unverified here.** The two-parallel-container
+layout (`trainListMap[i]` zipped with `payListMap[i]`) and every row field name
+come from srtgo's live runs (`srt.py:1069-1082`), not from our v2.0.41 bundle,
+where `payListMap`, `tkSpecNum`, `iseLmtTm` and `stlFlg` are 0-hit. Our bundle
+attests the route and its `pageNo` parameter only, and as a WebView **GET**
+(`SRForegroundDialogActivity.java:31`; the leftover `data-url` on
+`sub/ticketList.html:405`) — the JSON-over-POST spelling is srtgo's. Both were
+confirmed against the live server on 2026-07-26; only the POST is allowlisted,
+because only the JSON is machine readable. Rows are therefore parsed
+permissively: only `pnrNo` is required, an unexpected field type is dropped
+rather than raised on, asymmetric containers do not truncate the tail, and a
+response carrying rows we cannot read a PNR out of fails loudly rather than
+reporting an empty account.
 
 ## Scope
 

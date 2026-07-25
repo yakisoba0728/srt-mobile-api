@@ -1,0 +1,27 @@
+{
+  "payListMap": [],
+  "rsListMap": null,
+  "rsMap": [
+    {
+      "msgCd": "WRT300005",
+      "strResult": "FAIL",
+      "msgTxt": "조회자료가 없습니다."
+    }
+  ],
+  "resultMap": [
+    {
+      "msgCd": "IRZ000005",
+      "wctNo": "SYNTHETIC-WCT",
+      "strResult": "SUCC",
+      "msgTxt": "조회할 자료가 없습니다.",
+      "uuid": "SYNTHETIC-UUID",
+      "cgPsId": "korail",
+      "totPageCnt": 0,
+      "rowCnt": 0
+    }
+  ],
+  "commandMap": {
+    "pageNo": "0"
+  },
+  "trainListMap": []
+}

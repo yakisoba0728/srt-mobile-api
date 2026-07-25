@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- New read: `SrtClient.get_reservations(page_no=0)` — `POST
+  /atc/selectListAtc14016_n.do` with `pageNo`, returning typed
+  `SrtReservationSummary` rows in an `SrtReservationListResult`. This is the
+  first read that ENUMERATES reservations; before it, the only way back to a
+  hold whose PNR had been lost was to type the PNR into
+  `scripts/recover_hold.py`, which required already knowing it. That script
+  gains `--list`, a pure read that constructs no consent and prints the
+  candidate PNRs.
+  **Live-verified 2026-07-26 for the EMPTY case only** (the account has no
+  reservations): `resultMap[0].strResult=SUCC` / `IRZ000005` /
+  "조회할 자료가 없습니다." with `trainListMap: []`, `payListMap: []`,
+  `rowCnt: 0`, `totPageCnt: 0`. Two verified oddities are pinned by tests: an
+  empty result here is an empty *array*, not the `strResult=FAIL` /
+  `WRG000000` the train search uses; and the same successful response carries a
+  second envelope, `rsMap[0]`, saying `FAIL` / `WRT300005`, which is
+  deliberately not read as a failure. The POPULATED row shape is **unverified**
+  — the container pairing and every row field name come from srtgo
+  (`srt.py:1069-1082`), and `payListMap`, `tkSpecNum`, `iseLmtTm` and `stlFlg`
+  are 0-hit in the v2.0.41 bundle. Our bundle attests the route and `pageNo`
+  only, as a WebView GET (`SRForegroundDialogActivity.java:31`,
+  `sub/ticketList.html:405`); the JSON-over-POST spelling is srtgo's. Both were
+  confirmed live; only the POST is allowlisted, taking `READ_ONLY_ROUTES` from
+  20 routes to 21.
+
 - A NetFunnel bypass (`kTsBypass` = 300) is now accepted without a key.
   `SUCCESS_CODES` already held `{"200", "300"}`, but the key check below it was
   unconditional, so the acceptance of 300 was unreachable for the only response

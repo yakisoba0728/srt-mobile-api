@@ -56,6 +56,7 @@ def _seat_request(
         ("GET", "/ara/ara0101v.do"),
         ("POST", "/main/noticeList.do"),
         ("GET", "/atc/selectListAtc14017_n.do"),
+        ("POST", "/atc/selectListAtc14016_n.do"),
         ("GET", "/ara/selectListAra10007_n.do"),
         ("POST", "/ara/selectListAra10007_n.do"),
         ("POST", "/ara/selectListAra10130_n.do"),
@@ -145,7 +146,7 @@ def test_selector_policy_rejects_wrong_method_legacy_neighbor_and_seat_page(meth
 
 
 def test_route_registry_has_exact_expanded_size():
-    assert len(READ_ONLY_ROUTES) == 20
+    assert len(READ_ONLY_ROUTES) == 21
 
 
 @pytest.mark.parametrize(

@@ -74,6 +74,18 @@ READ_ONLY_ROUTES = frozenset(
         ReadOnlyRoute("GET", "app", "/ara/ara0101v.do"),
         ReadOnlyRoute("POST", "app", "/main/noticeList.do"),
         ReadOnlyRoute("GET", "app", "/atc/selectListAtc14017_n.do"),
+        # 예약/발권 목록 (JSON). The app's own WebView loads this path as an HTML
+        # page (SRForegroundDialogActivity.java:31 and the leftover
+        # data-url="/srail-app/atc/selectListAtc14016_n.do?pageNo=0" on
+        # sub/ticketList.html:405, both GET-shaped), while srtgo POSTs it as an
+        # XHR and gets JSON back. Both are true of the live server -- a probe on
+        # 2026-07-26 got 99,246 bytes of 승차권 확인 HTML from the GET and a
+        # 338-byte JSON object from the POST -- and only the JSON is machine
+        # readable, so only the POST is registered. This mirrors
+        # /ara/selectListAra10007_n.do, whose GET (hydration page) and POST
+        # (ajax) are two different reads of one path; here we simply do not need
+        # the HTML one, since get_ticket_list already reads the atc14017 page.
+        ReadOnlyRoute("POST", "app", "/atc/selectListAtc14016_n.do"),
         ReadOnlyRoute("GET", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10130_n.do"),

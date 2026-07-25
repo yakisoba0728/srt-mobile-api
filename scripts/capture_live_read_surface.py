@@ -380,6 +380,19 @@ def run_capture(
         client.get_ticket_list,
         describe=lambda page: f"text={len(page.text)} raw={len(page.raw)}",
     )
+    capture.run_step(
+        "get_reservations",
+        client.get_reservations,
+        # Counts and envelope codes only. The rows carry PNRs and, on a
+        # populated account, the seat the holder is sitting in; those belong in
+        # the raw capture file (which never leaves the operator's disk), not on
+        # a stdout line that is meant to be pasteable into a report.
+        describe=lambda result: (
+            f"reservations={len(result.reservations)} "
+            f"strResult={result.status!r} msgCd={result.message_code!r} "
+            f"rowCnt={result.row_count} totPageCnt={result.total_page_count}"
+        ),
+    )
 
     capture.run_step(
         "get_station_selector",

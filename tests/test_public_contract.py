@@ -23,6 +23,7 @@ def test_client_public_method_set_is_stable():
         "get_notice_list",
         "get_typed_notice_list",
         "get_passenger_selector",
+        "get_reservations",
         "get_seat_page",
         "get_seat_option_selector",
         "get_station_map_selector",

@@ -159,7 +159,7 @@ their own category. See the next section.
   formatting difference can never make a hold uncancellable.
 - `payment` and `refund` have no client method at all.
 - The four state-changing routes are tiered in `safety.SRT_MUTATION_ROUTES` and
-  deliberately kept out of `READ_ONLY_ROUTES`, so the 20-route read-only
+  deliberately kept out of `READ_ONLY_ROUTES`, so the 21-route read-only
   allowlist and its guarantee are unchanged and `assert_read_only_request`
   refuses each of them. `SRT_MUTATION_ROUTE_CATEGORIES` binds each route to one
   consent category.
@@ -359,9 +359,24 @@ car/seat response or availability contract.
   general seat): reserve `SUCC`/`IRR000018`, cancel `SUCC`/`IRG000000`, ticket
   list clean afterwards. No payment or refund call was made and no hold was left
   outstanding.
+- Reservation-list read (`POST /atc/selectListAtc14016_n.do`) added and
+  live-verified 2026-07-26 for the EMPTY case: `SrtClient.get_reservations` is
+  the first read that enumerates reservations, and `scripts/recover_hold.py
+  --list` now prints candidate PNRs instead of requiring one to be typed in.
+  The server answered `resultMap[0].strResult=SUCC` / `IRZ000005` /
+  "조회할 자료가 없습니다." with `trainListMap: []`, `payListMap: []`,
+  `rowCnt: 0`, `totPageCnt: 0` — and a SECOND envelope, `rsMap[0]`, saying
+  `FAIL` / `WRT300005` on that same successful response. The POPULATED row
+  shape is unverified: every row field name comes from srtgo
+  (`srt.py:1069-1082`), and `payListMap`, `tkSpecNum`, `iseLmtTm` and `stlFlg`
+  are 0-hit in the v2.0.41 bundle. The bundle attests only the route and its
+  `pageNo` parameter, as a WebView GET (`SRForegroundDialogActivity.java:31`,
+  `sub/ticketList.html:405`); the JSON-over-POST spelling is srtgo's, and both
+  were confirmed live on 2026-07-26. Only the POST is allowlisted.
 - Current full offline gate (`pytest -q -m "not live"`), after the
-  consent-gated mutation port, the transport-layer live-mutation gate and the
-  consent-gated cancel surface: `983 passed, 1 deselected`; the deselected case
+  consent-gated mutation port, the transport-layer live-mutation gate, the
+  consent-gated cancel surface and the reservation-list read:
+  `1030 passed, 1 deselected`; the deselected case
   remains the explicit live-service opt-in. No live mutation was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.

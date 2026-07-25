@@ -23,6 +23,8 @@ from .models import (
     SeatSelectionPage,
     SrtCancelResult,
     SrtReservationHold,
+    SrtReservationListResult,
+    SrtReservationSummary,
     TimetablePage,
     TimetableRow,
     TrainSearchMetadata,
@@ -1210,6 +1212,236 @@ def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
         status=status,
         message_code=code,
         message=message,
+        raw=data,
+    )
+
+
+def _reservation_list_container(
+    data: dict[str, Any],
+    name: str,
+) -> list[dict[str, Any]]:
+    """One of the two parallel row containers, normalised to a list of objects.
+
+    ``null`` is accepted as "empty" because this very response uses it: the
+    2026-07-26 probe carried ``"rsListMap": null`` alongside
+    ``"trainListMap": []``, i.e. the server spells absence both ways within a
+    single body. Anything else present but not a list is a genuine surprise and
+    raises.
+    """
+    value = data.get(name)
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise SrtProtocolError(
+            f"SRT reservation list {name} must be a list",
+            raw=data,
+        )
+    rows: list[dict[str, Any]] = []
+    for row in value:
+        if not isinstance(row, dict):
+            raise SrtProtocolError(
+                f"SRT reservation list {name} contained a non-object row",
+                raw=data,
+            )
+        rows.append(row)
+    return rows
+
+
+def _reservation_list_optional_string(
+    row: dict[str, Any],
+    key: str,
+) -> str | None:
+    """A row field, or ``None`` when absent — never an exception.
+
+    Deliberately more forgiving than :func:`_optional_row_string`, which raises
+    on a present non-string. The non-empty row shape here has never been
+    observed by this repository (see
+    :class:`~srt_mobile_api.models.SrtReservationSummary`), so a field arriving
+    as a number instead of a string is a live-shape unknown rather than a
+    protocol violation — and raising over one cosmetic field would cost the
+    caller the PNRs of every reservation in the list, which is the one outcome
+    this read exists to prevent. An unexpected type is dropped from the typed
+    field and stays readable through ``raw_train`` / ``raw_pay``.
+    """
+    value = row.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _reservation_list_count(
+    row: dict[str, Any],
+    key: str,
+    *,
+    raw: Any,
+) -> int | None:
+    """``rowCnt`` / ``totPageCnt``, which arrive as JSON integers.
+
+    Both were integers (``0``) in the observed empty response. A digit string is
+    also accepted, because the neighbouring SRT reads mix the two spellings
+    freely and a count is not worth failing a list over. ``bool`` is rejected
+    outright: ``True`` is an ``int`` in Python and would silently become 1.
+    """
+    if key not in row or row[key] is None:
+        return None
+    value = row[key]
+    if type(value) is int:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    raise SrtProtocolError(
+        f"SRT reservation list {key} must be an integer",
+        raw=raw,
+    )
+
+
+def parse_reservation_list_response(
+    data: dict[str, Any],
+) -> SrtReservationListResult:
+    """Parse the 예약/발권 목록 response of ``/atc/selectListAtc14016_n.do``.
+
+    **Live-verified for the EMPTY case only, on 2026-07-26.** A POST of
+    ``pageNo=0`` on an account with no reservations answered, in full::
+
+        {"payListMap": [],
+         "rsListMap": null,
+         "rsMap": [{"msgCd": "WRT300005", "strResult": "FAIL",
+                    "msgTxt": "조회자료가 없습니다."}],
+         "resultMap": [{"msgCd": "IRZ000005", "wctNo": "...", "strResult": "SUCC",
+                        "msgTxt": "조회할 자료가 없습니다.", "uuid": "...",
+                        "cgPsId": "korail", "totPageCnt": 0, "rowCnt": 0}],
+         "commandMap": {"pageNo": "0"},
+         "trainListMap": []}
+
+    Three things in that response drive this parser.
+
+    1. **Empty here is an empty ARRAY, not a FAIL.** The train search answers an
+       empty result with ``strResult=FAIL`` / ``WRG000000``; this endpoint does
+       not. It reports ``SUCC`` and sends ``[]``. So an empty list must come
+       back as an empty list — raising :class:`SrtAppError` for "you have no
+       reservations" would make the recovery path useless exactly when someone
+       is checking whether a hold survived.
+
+    2. **``rsMap`` says FAIL on that same successful response.** It is a second,
+       narrower envelope (``WRT300005`` "조회자료가 없습니다."), and it is
+       present precisely BECAUSE the list is empty. Gating on "any FAIL
+       anywhere" — or on ``rsMap`` — would classify the verified empty response
+       as an error. This parser reads ``resultMap`` and only ``resultMap``,
+       which is also what srtgo does (``SRTResponseData`` prefers ``resultMap``
+       when present). ``rsMap`` stays available through ``raw``.
+
+    3. **``rsListMap`` is ``null`` while ``trainListMap`` is ``[]``**, so
+       ``null`` and ``[]`` both mean empty in this response — see
+       :func:`_reservation_list_container`.
+
+    The NON-EMPTY shape remains UNVERIFIED by this repository. The two-parallel-
+    container layout (``trainListMap[i]`` zipped with ``payListMap[i]``) and
+    every row field name come from srtgo's live runs; the containers exist in
+    the verified response, the row fields do not. Rows are therefore built as
+    permissively as is compatible with never inventing a reservation: a row is
+    kept when it has a non-empty ``pnrNo`` (checked in ``trainListMap[i]`` first,
+    then in the paired ``payListMap[i]``, so a swapped layout still yields the
+    identity), and if NO row in a non-empty container carries one,
+    :class:`SrtProtocolError` is raised with the whole response attached rather
+    than a silently empty list being returned — "you have no reservations" is
+    too dangerous a thing to say by accident.
+
+    The two containers are zipped by index up to the shorter one, but iterated
+    over ``trainListMap`` in full, so an asymmetric response still surfaces
+    every PNR it carries instead of truncating the tail away.
+    """
+    if not isinstance(data, dict) or not data:
+        raise SrtProtocolError(
+            "SRT reservation list response must be a non-empty JSON object",
+            raw=data,
+        )
+    _validate_error_code_wrapper(data, context="reservation list")
+    result_row = _first_row(data.get("resultMap"))
+    if not result_row:
+        raise SrtProtocolError(
+            "SRT reservation list response must contain a resultMap result row",
+            raw=data,
+        )
+    status = result_row.get("strResult")
+    if not isinstance(status, str) or not status:
+        raise SrtProtocolError(
+            "SRT reservation list resultMap strResult must be a non-empty string",
+            raw=data,
+        )
+    code = result_row.get("msgCd", "")
+    message = result_row.get("msgTxt", "")
+    if not isinstance(code, str) or not isinstance(message, str):
+        raise SrtProtocolError(
+            "SRT reservation list resultMap msgCd and msgTxt must be strings",
+            raw=data,
+        )
+    if status == "FAIL":
+        # Gated on == "FAIL" rather than != "SUCC", matching the app's own habit
+        # everywhere else in this file: an unrecognised third status is not a
+        # declared failure, and treating it as one would hide a list that exists.
+        raise SrtAppError(code or None, message or status, raw=data)
+
+    train_rows = _reservation_list_container(data, "trainListMap")
+    pay_rows = _reservation_list_container(data, "payListMap")
+    reservations: list[SrtReservationSummary] = []
+    for index, train_row in enumerate(train_rows):
+        pay_row = pay_rows[index] if index < len(pay_rows) else {}
+        pnr = _reservation_list_optional_string(
+            train_row, "pnrNo"
+        ) or _reservation_list_optional_string(pay_row, "pnrNo")
+        if pnr is None or not pnr.strip():
+            continue
+        reservations.append(
+            SrtReservationSummary(
+                pnr_no=pnr.strip(),
+                received_amount=_reservation_list_optional_string(
+                    train_row, "rcvdAmt"
+                ),
+                ticket_special_number=_reservation_list_optional_string(
+                    train_row, "tkSpecNum"
+                ),
+                seat_number=_reservation_list_optional_string(
+                    train_row, "seatNum"
+                ),
+                service_class_code=_reservation_list_optional_string(
+                    pay_row, "stlbTrnClsfCd"
+                ),
+                train_no=_reservation_list_optional_string(pay_row, "trnNo"),
+                departure_date=_reservation_list_optional_string(pay_row, "dptDt"),
+                departure_time=_reservation_list_optional_string(pay_row, "dptTm"),
+                departure_station_code=_reservation_list_optional_string(
+                    pay_row, "dptRsStnCd"
+                ),
+                arrival_time=_reservation_list_optional_string(pay_row, "arvTm"),
+                arrival_station_code=_reservation_list_optional_string(
+                    pay_row, "arvRsStnCd"
+                ),
+                payment_limit_date=_reservation_list_optional_string(
+                    pay_row, "iseLmtDt"
+                ),
+                payment_limit_time=_reservation_list_optional_string(
+                    pay_row, "iseLmtTm"
+                ),
+                settlement_flag=_reservation_list_optional_string(
+                    pay_row, "stlFlg"
+                ),
+                raw_train=train_row,
+                raw_pay=pay_row,
+            )
+        )
+    if train_rows and not reservations:
+        raise SrtProtocolError(
+            "SRT reservation list carried rows but no pnrNo could be read from "
+            "any of them; the full response is attached so the PNR is not lost",
+            raw=data,
+        )
+    return SrtReservationListResult(
+        reservations=tuple(reservations),
+        status=status,
+        message_code=code,
+        message=message,
+        row_count=_reservation_list_count(result_row, "rowCnt", raw=data),
+        total_page_count=_reservation_list_count(
+            result_row, "totPageCnt", raw=data
+        ),
         raw=data,
     )
 
