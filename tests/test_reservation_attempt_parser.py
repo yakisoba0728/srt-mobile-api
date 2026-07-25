@@ -13,8 +13,12 @@ from srt_mobile_api.models import (
     ReservationAttemptResult,
     ReservationRecord,
     ReservationTrain,
+    SrtReservationHold,
 )
-from srt_mobile_api.parsers import parse_reservation_attempt_response
+from srt_mobile_api.parsers import (
+    parse_reservation_attempt_response,
+    parse_reservation_hold_response,
+)
 from srt_mobile_api.redaction import redact_value
 
 
@@ -254,3 +258,122 @@ def test_reservation_attempt_model_is_exported():
         srt_mobile_api.parse_reservation_attempt_response
         is parse_reservation_attempt_response
     )
+
+
+# --- the hold parser must never lose a PNR to a strict-validation failure -----
+#
+# A live reserve can create a real hold on the server BEFORE we parse its
+# response, so a strict-validation failure on an unrelated field would leave an
+# uncancellable reservation on a real account. korail hit exactly this class of
+# problem and answered it with a minimal-hold fallback
+# (KorailClient._hold_from_reservation_response); this is the SRT equivalent.
+
+
+def _hold_payload_missing(load_json_fixture, container_name, field_name):
+    payload = deepcopy(load_json_fixture("reservation_attempt_success.json"))
+    del payload[container_name][0][field_name]
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("container_name", "field_name"),
+    [
+        ("resultMap", "totRcvdAmt"),
+        ("resultMap", "tmpJobSqno1"),
+        ("reservListMap", "arvDt"),
+        ("reservListMap", "lumpStlTgtNo"),
+        ("trainListMap", "seatNo"),
+        ("trainListMap", "scarNo"),
+    ],
+)
+def test_hold_parser_keeps_the_pnr_when_strict_parsing_fails(
+    load_json_fixture,
+    container_name,
+    field_name,
+):
+    payload = _hold_payload_missing(load_json_fixture, container_name, field_name)
+
+    # Strict parsing rejects the payload outright ...
+    with pytest.raises(SrtProtocolError):
+        parse_reservation_attempt_response(payload)
+
+    # ... but the hold parser still returns the identity needed to cancel.
+    hold = parse_reservation_hold_response(payload)
+
+    assert isinstance(hold, SrtReservationHold)
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
+    assert hold.raw is payload
+    assert "NOT-A-REAL-PNR" not in repr(hold)
+
+
+def test_hold_parser_fallback_tolerates_a_malformed_optional_field(
+    load_json_fixture,
+):
+    payload = deepcopy(load_json_fixture("reservation_attempt_success.json"))
+    payload["reservListMap"][0]["JRNYLIST_KEY"] = 7
+    payload["reservListMap"][0]["totSeatNum"] = None
+
+    hold = parse_reservation_hold_response(payload)
+
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
+    # A non-string optional value is dropped, not propagated and not fatal.
+    assert hold.journey_list_key == ""
+    assert hold.total_seat_count == ""
+
+
+def test_hold_parser_reraises_when_there_is_no_pnr_to_lose(load_json_fixture):
+    payload = deepcopy(load_json_fixture("reservation_attempt_success.json"))
+    del payload["reservListMap"][0]["pnrNo"]
+
+    # No PNR means no hold can be orphaned, so the strict error stands.
+    with pytest.raises(SrtProtocolError, match="pnrNo"):
+        parse_reservation_hold_response(payload)
+
+
+@pytest.mark.parametrize("pnr", ["", "   ", 7, None])
+def test_hold_parser_reraises_for_an_unusable_pnr(load_json_fixture, pnr):
+    payload = deepcopy(load_json_fixture("reservation_attempt_success.json"))
+    del payload["trainListMap"][0]["seatNo"]
+    payload["reservListMap"][0]["pnrNo"] = pnr
+
+    with pytest.raises(SrtProtocolError):
+        parse_reservation_hold_response(payload)
+
+
+def test_hold_parser_does_not_salvage_a_business_failure():
+    # A FAIL envelope means no reservation was created, so there is nothing to
+    # rescue: it must keep raising instead of manufacturing a hold.
+    payload = {
+        "resultMap": [
+            {
+                "strResult": "FAIL",
+                "msgCd": "WRR000100",
+                "msgTxt": "synthetic no seat",
+            }
+        ],
+        "reservListMap": [{"pnrNo": "NOT-A-REAL-PNR"}],
+    }
+
+    with pytest.raises(SrtAppError):
+        parse_reservation_hold_response(payload)
+
+
+def test_hold_parser_does_not_salvage_a_session_expiry(load_json_fixture):
+    payload = deepcopy(load_json_fixture("reserve_s111_relogin.json"))
+    payload["reservListMap"] = [{"pnrNo": "NOT-A-REAL-PNR"}]
+
+    with pytest.raises(SrtSessionExpiredError):
+        parse_reservation_hold_response(payload)
+
+
+def test_hold_parser_still_returns_the_strict_hold_for_a_clean_response(
+    load_json_fixture,
+):
+    payload = load_json_fixture("reservation_attempt_success.json")
+
+    hold = parse_reservation_hold_response(payload)
+
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
+    assert hold.journey_list_key == "SYNTHETIC-JOURNEY-KEY"
+    assert hold.total_seat_count == "1"
+    assert hold.raw is payload

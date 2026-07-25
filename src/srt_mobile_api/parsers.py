@@ -640,16 +640,60 @@ def parse_reservation_attempt_response(
     )
 
 
+def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
+    """Salvage the cancelable identity from a response strict parsing rejected.
+
+    Returns ``None`` when no usable ``reservListMap[0].pnrNo`` is present, i.e.
+    when there is no hold to lose. Every other field is taken only if it is
+    already a string, so one malformed optional value cannot cost us the PNR.
+    """
+    if not isinstance(data, dict):
+        return None
+    row = _first_row(data.get("reservListMap"))
+    pnr = row.get("pnrNo")
+    if not isinstance(pnr, str) or not pnr.strip():
+        return None
+    journey_list_key = row.get("JRNYLIST_KEY")
+    total_seat_count = row.get("totSeatNum")
+    return SrtReservationHold(
+        pnr_no=pnr,
+        journey_list_key=(
+            journey_list_key if isinstance(journey_list_key, str) else ""
+        ),
+        total_seat_count=(
+            total_seat_count if isinstance(total_seat_count, str) else ""
+        ),
+        raw=data,
+    )
+
+
 def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
-    """Parse a successful reserve response into a minimal cancelable hold.
+    """Parse a reserve response into a minimal cancelable hold.
 
     Reuses :func:`parse_reservation_attempt_response` for the full success
     gating (resultMap strResult/msgCd, S111 session-expiry, app-error wrappers)
     and validated container shapes, then keeps only the identity srtgo keeps
-    from a live reserve (``reservListMap[0].pnrNo``, srt.py:1006). A FAIL or
-    malformed response raises before any hold is built.
+    from a live reserve (``reservListMap[0].pnrNo``, srt.py:1006).
+
+    A live reserve may already have created a real hold on the server by the
+    time we parse, so this must NEVER discard the identity needed to cancel it.
+    Strict parsing raises :class:`SrtProtocolError` on any malformed field,
+    including one we do not need (a missing ``trainListMap`` seat number, say),
+    which would orphan an existing hold. When that happens and the response
+    still carries a PNR, fall back to a minimal hold built from
+    ``reservListMap[0]`` so the caller can still cancel; with no PNR there is no
+    hold to lose, so the original error is re-raised. A business FAIL
+    (:class:`SrtAppError`) and a session expiry
+    (:class:`SrtSessionExpiredError`) are NOT salvaged: those mean the
+    reservation was rejected, not that a hold exists behind a parse failure.
     """
-    result = parse_reservation_attempt_response(data)
+    try:
+        result = parse_reservation_attempt_response(data)
+    except SrtProtocolError:
+        hold = _minimal_hold_from_raw(data)
+        if hold is None:
+            raise
+        return hold
     return SrtReservationHold(
         pnr_no=result.reservation.pnr_number,
         journey_list_key=result.reservation.journey_list_key,
