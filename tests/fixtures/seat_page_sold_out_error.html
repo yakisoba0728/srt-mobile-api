@@ -1,0 +1,23 @@
+<!--
+  REDACTED reproduction of a REAL response, captured 2026-07-26 from
+  POST /arc/selectListArc02012_n.do for a train whose every class was 매진.
+
+  Verbatim structure. HTTP 200, text/html, 38506 bytes on the wire. There is no
+  car select, no <option>, no trnScarSeatFrm and no seat grid: the entire
+  content is the heading plus one trailing script holding the server's refusal.
+
+  The heading is the trap. "좌석선택" is the page TITLE, present on the working
+  page too, so a marker-only check reported this as a successfully read seat
+  page.
+-->
+<div data-role="page" id='page' class="jqm-demos">
+	<div id="selectTrainScarSeatList" class="layerPage ui-page-active" style="display: block;">
+		<div data-role="header" class="type2 ui-header ui-bar-inherit" role="banner">
+			<a id="backbtn" role="button" href="javascript:void(0);" class="ui-btn-left" data-rel="back"><img src="/images/common/btn_prev.png" alt="뒤로가기"></a>
+			<h1 class="ui-title" role="heading" aria-level="1">좌석선택</h1>
+		</div>
+	</div>
+</div>
+<script>
+	srtAlertBoxDivShow("알림", Sr.msgs.error001, null, "historyBack();");
+</script>

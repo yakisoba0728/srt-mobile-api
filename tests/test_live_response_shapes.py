@@ -13,13 +13,14 @@ import httpx
 import pytest
 
 from srt_mobile_api import SrtClient, SrtConfig
-from srt_mobile_api.errors import SrtSessionExpiredError
+from srt_mobile_api.errors import SrtAppError, SrtSessionExpiredError
 from srt_mobile_api.parsers import (
     is_login_form,
     is_login_redirect_page,
     is_unauthenticated_page,
     parse_fare_page,
     parse_html_page,
+    parse_seat_selection_page,
     parse_timetable_page,
 )
 
@@ -228,3 +229,86 @@ def test_timetable_row_codes_stay_aligned_when_one_row_lacks_a_script():
         ("", "Synthetic Unnamed"),
         ("0020", "부산"),
     ]
+
+
+# --------------------------------------------------------------------------
+# Seat page: a sold-out train is answered with an error shell that carries the
+# same heading as a working seat page.
+# --------------------------------------------------------------------------
+
+
+def test_seat_page_exposes_the_car_list_it_carries(load_text_fixture):
+    page = parse_seat_selection_page(load_text_fixture("seat_page_car_options.html"))
+
+    assert [(car.car_number, car.available_seat_count) for car in page.cars] == [
+        ("3", 11),
+        ("7", 2),
+    ]
+    assert page.cars[1].label == "7호차 (2석)"
+
+
+def test_seat_page_does_not_invent_a_seat_grid(load_text_fixture):
+    """The grid is not in this response; only the car list is.
+
+    The real page leaves ``<div id="trnScarSeatInfo">`` empty and loads the grid
+    separately. Pinning that keeps a future change from claiming otherwise.
+    """
+    html = load_text_fixture("seat_page_car_options.html")
+    assert '<div id="trnScarSeatInfo"' in html
+    assert "seatNo" not in html
+
+
+def test_sold_out_seat_page_is_refused_rather_than_returned(load_text_fixture):
+    with pytest.raises(SrtAppError) as excinfo:
+        parse_seat_selection_page(
+            load_text_fixture("seat_page_sold_out_error.html")
+        )
+    assert excinfo.value.code == "error001"
+
+
+def test_sold_out_seat_page_carries_the_same_heading_as_a_working_one(
+    load_text_fixture,
+):
+    """Why the old marker check passed it: 좌석선택 is the page TITLE."""
+    error_html = load_text_fixture("seat_page_sold_out_error.html")
+    working_html = load_text_fixture("seat_page_car_options.html")
+    assert "좌석선택" in error_html
+    assert "좌석선택" in working_html
+    assert "selectScarNo" not in error_html
+
+
+def test_seat_page_alerts_inside_function_bodies_are_not_a_refusal(
+    load_text_fixture,
+):
+    """A working page mentions srtAlertBoxDivShow too, inside its handlers."""
+    html = load_text_fixture("seat_page_car_options.html")
+    assert "srtAlertBoxDivShow" in html
+    assert "Sr.msgs.rsv046" in html
+    assert parse_seat_selection_page(html).cars
+
+
+def test_seat_page_end_to_end_refuses_the_sold_out_shape(load_text_fixture):
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text=load_text_fixture("seat_page_sold_out_error.html"),
+            headers={"content-type": "text/html; charset=utf-8"},
+        )
+
+    from srt_mobile_api.models import TrainSummary
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    train = TrainSummary(
+        train_no="999",
+        train_group_code="300",
+        service_class_code="17",
+        run_date="20990102",
+        departure_date="20990102",
+        departure_time="100000",
+        departure_station_code="0551",
+        arrival_station_code="0502",
+        departure_run_order="000001",
+        arrival_run_order="000002",
+    )
+    with pytest.raises(SrtAppError):
+        client.get_seat_page(train)

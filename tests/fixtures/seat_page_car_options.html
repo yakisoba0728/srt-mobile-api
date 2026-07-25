@@ -1,0 +1,87 @@
+<!--
+  REDACTED reproduction of a REAL response, captured 2026-07-26 from
+  POST /arc/selectListArc02012_n.do for a train the server reported bookable
+  (gnrmRsvPsbStr "예약가능").
+
+  Structure is verbatim; the train number, date, station codes and car figures
+  are synthetic. Two things it demonstrates that the offline bundle cannot:
+
+    * the ONLY inventory this response carries is the <select id="selectScarNo">
+      car list, each option naming the seats that car still has free;
+    * <div id="trnScarSeatInfo"> is EMPTY -- the seat grid is not in this
+      response at all, it is fetched separately once a car is chosen.
+
+  The srtAlertBoxDivShow calls below sit inside function bodies, exactly as on
+  the real page (Sr.msgs.rsv045/rsv046). They are kept because they are what
+  makes "the page mentions an alert" useless as a failure signal: only a script
+  whose WHOLE content is the alert call marks a refused page.
+-->
+<div data-role="page" id='page' class="jqm-demos">
+	<div id="selectTrainScarSeatList" class="layerPage ui-page-active" style="display: block;">
+		<div data-role="header" class="type2 ui-header ui-bar-inherit" role="banner">
+			<h1 class="ui-title" role="heading" aria-level="1">좌석선택</h1>
+		</div>
+		<div class="ui-content type2 fullSize" role="main">
+			<div id="trnScarSeatInfoList">
+				<div class="stationCheckBox">
+					<div class="ui-type-flex">
+						<p class="depa"><strong id="dptRsStnNm"></strong></p>
+						<p class="arri"><strong id="arvRsStnNm"></strong></p>
+					</div>
+					<script>
+						$("#dptRsStnNm").html(getStationNameByCode('0551'));
+						$("#arvRsStnNm").html(getStationNameByCode('0502'));
+					</script>
+
+					<div class="ui-type-flex">
+						<div class="ui-block-b">
+							<div class="ui-select">
+								<select id='selectScarNo' onchange='selectTrainScarChoice();' style='width:250px;'>
+									<option value='3'>
+										3호차
+										(11석)
+									</option>
+									<option value='7'>
+										7호차
+										(2석)
+									</option>
+								</select>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div id="trnScarSeatInfo" style='padding-left:1em;'>
+			</div>
+
+			<form name="trnScarSeatFrm" id="trnScarSeatFrm">
+				<input type="hidden" name="trnGpCd" value="300" />
+				<input type="hidden" name="runDt" value="20990102" />
+				<input type="hidden" name="trnNo" value="999" />
+				<input type="hidden" name="scarNo" id="getSeatTrnScarNo" value="" />
+				<input type="hidden" name="psrmClCd" value="1" />
+				<input type="hidden" name="dptRsStnCd" value="0551" />
+				<input type="hidden" name="arvRsStnCd" value="0502" />
+				<input type="hidden" name="seatAttCd" value="015" />
+				<input type="hidden" name="dptStnRunOrdr" value="000001" />
+				<input type="hidden" name="arvStnRunOrdr" value="000002" />
+				<input type="hidden" name="choiceSeatCount" id="choiceSeatCount" value="1" />
+			</form>
+		</div>
+	</div>
+</div>
+<script>
+	function showSelectTrainScarList() {
+		if (scarSeatArrayNo.length > 0) {
+			srtAlertBoxDivConfirmShow("알림", Sr.msgs.rsv045, null, "confirmSelectTrainScarList()");
+		}
+	}
+	function addSeat() {
+		if (selectScarSeatCount > totalCount) {
+			selectScarSeatCount--;
+			srtAlertBoxDivShow("알림", Sr.msgs.rsv046, null);
+			return;
+		}
+	}
+</script>

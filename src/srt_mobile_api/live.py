@@ -9,6 +9,7 @@ from typing import Any
 
 from .client import SrtClient
 from .config import SrtConfig
+from .errors import SrtAppError
 from .models import PassengerCounts, SeatSelectionPage, TrainSearchQuery, TrainSummary
 from .payloads import (
     TRAIN_GROUP_OPTIONS,
@@ -51,6 +52,16 @@ def _first_complete_srt_seat_train(
         if train.train_group_code == "300" and all(
             isinstance(value, str) and bool(value) for value in required
         ):
+            return train
+    return None
+
+
+def _first_reservable_srt_seat_train(
+    trains: Sequence[TrainSummary],
+) -> TrainSummary | None:
+    """The first completely-described SRT row the server also calls bookable."""
+    for train in trains:
+        if train_is_reservable(train) and _first_complete_srt_seat_train([train]):
             return train
     return None
 
@@ -127,16 +138,30 @@ def run_live_smoke(
     notices = client.get_typed_notice_list()
     tickets = client.get_ticket_list()
     personal = client.search_trains(query)
-    seat_train = _first_complete_srt_seat_train(personal.trains)
+    # Prefer a train the server currently reports as bookable, falling back to
+    # the first completely-described SRT row. A SOLD-OUT train is not answered
+    # with a seat map at all: the server returns an error shell, which
+    # parse_seat_selection_page now refuses (SrtAppError "error001"). Live
+    # capture 2026-07-26 found every train on 수서→부산 매진, so without this
+    # preference the smoke reads the error shape on any busy route.
+    seat_train = _first_reservable_srt_seat_train(
+        personal.trains
+    ) or _first_complete_srt_seat_train(personal.trains)
     # The seat page's choiceSeatCount is the party size (ara1001l.js:1511 sends
     # lfn_getRsv("totPrnb")). The smoke searches with query.passengers, so it
     # must read the seat page for the same party rather than silently asking for
     # one seat.
-    seat_page = (
-        client.get_seat_page(seat_train, passengers=query.passengers)
-        if seat_train is not None
-        else None
-    )
+    seat_page = None
+    seat_page_error: str | None = None
+    if seat_train is not None:
+        try:
+            seat_page = client.get_seat_page(seat_train, passengers=query.passengers)
+        except SrtAppError as exc:
+            # Reported, not raised. "Every train on this route is sold out" is
+            # the server telling the truth, and it must not read as a broken
+            # smoke run -- but it must not read as a successful seat read
+            # either, which is what the old marker-only parse produced.
+            seat_page_error = exc.code or "UNKNOWN"
     mutual = client.get_mutual_verification()
     # Group search requires >= 10 passengers (the app blocks smaller groups
     # client-side, ara0101v.js:551-554); the individual query above may carry a
@@ -156,6 +181,11 @@ def run_live_smoke(
         "seatSelectionMarkerPresent": bool(
             seat_page and "좌석선택" in seat_page.text
         ),
+        # The car list the seat page actually carries; 0 on a page that brought
+        # no inventory. seatPageErrorCode names the server's refusal instead
+        # (e.g. "error001" for a sold-out train) so the two are distinguishable.
+        "seatCarOptionCount": len(seat_page.cars) if seat_page else 0,
+        "seatPageErrorCode": seat_page_error,
         "externalSeatMapHandoffPresent": _external_seat_map_handoff_present(
             seat_page
         ),

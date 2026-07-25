@@ -261,8 +261,26 @@ class HtmlPage:
 
 
 @dataclass(frozen=True)
+class SeatCarOption:
+    """One 호차 the seat page offers, with the seats it still has free.
+
+    Read from the page's ``<select id="selectScarNo">`` — the only inventory the
+    seat page itself carries. The seat GRID is not in this response at all: the
+    real page leaves ``<div id="trnScarSeatInfo">`` empty and fetches the grid
+    separately once a car is chosen.
+    """
+
+    car_number: str
+    label: str
+    available_seat_count: int | None = None
+
+
+@dataclass(frozen=True)
 class SeatSelectionPage(HtmlPage):
-    pass
+    # The 호차 list in document order. Empty for a page that carried no car
+    # select at all; see parsers.parse_seat_selection_page, which refuses the
+    # server's error shell outright rather than returning it as an empty page.
+    cars: tuple[SeatCarOption, ...] = ()
 
 
 @dataclass(frozen=True)

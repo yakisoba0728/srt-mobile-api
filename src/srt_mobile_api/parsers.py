@@ -19,6 +19,7 @@ from .models import (
     ReservationRecord,
     ReservationTrain,
     SearchPageState,
+    SeatCarOption,
     SeatSelectionPage,
     SrtCancelResult,
     SrtReservationHold,
@@ -248,7 +249,118 @@ def parse_html_page(
     return HtmlPage(text=extract_text(html), raw=html)
 
 
+SEAT_CAR_SELECT_ID = "selectScarNo"
+_ALERT_CALL_PREFIX = "srtAlertBoxDivShow("
+_MESSAGE_KEY_RE = re.compile(r"Sr\.msgs\.(?P<key>\w+)")
+_SEAT_COUNT_RE = re.compile(r"\((?P<count>\d+)\s*석\)")
+
+
+class _SeatCarOptionParser(HTMLParser):
+    """The 호차 options, plus any page-level error alert the server attached.
+
+    Both come from the same pass because they are the two halves of one
+    question: did this page bring a seat map, or did it bring a refusal?
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cars: list[SeatCarOption] = []
+        self.error_message_key: str | None = None
+        self._in_target_select = False
+        self._option_value: str | None = None
+        self._option_parts: list[str] = []
+        self._in_script = False
+        self._script_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        name = tag.casefold()
+        values = {key.casefold(): value or "" for key, value in attrs}
+        if name == "script":
+            self._in_script = True
+            self._script_parts = []
+        elif name == "select" and values.get("id") == SEAT_CAR_SELECT_ID:
+            self._in_target_select = True
+        elif name == "option" and self._in_target_select:
+            self._option_value = values.get("value", "")
+            self._option_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._in_script:
+            self._script_parts.append(data)
+        elif self._option_value is not None:
+            self._option_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        name = tag.casefold()
+        if name == "script":
+            self._in_script = False
+            self._classify_script("".join(self._script_parts))
+            self._script_parts = []
+        elif name == "option" and self._option_value is not None:
+            self._append_car()
+        elif name == "select" and self._in_target_select:
+            if self._option_value is not None:
+                self._append_car()
+            self._in_target_select = False
+
+    def _append_car(self) -> None:
+        label = re.sub(r"\s+", " ", " ".join(self._option_parts)).strip()
+        value = (self._option_value or "").strip()
+        self._option_value = None
+        self._option_parts = []
+        if not value and not label:
+            return
+        match = _SEAT_COUNT_RE.search(label)
+        self.cars.append(
+            SeatCarOption(
+                car_number=value,
+                label=label,
+                available_seat_count=int(match.group("count")) if match else None,
+            )
+        )
+
+    def _classify_script(self, text: str) -> None:
+        # A page-level refusal is a script whose WHOLE content is the alert
+        # call. A genuine seat page also mentions srtAlertBoxDivShow, but only
+        # ever inside a function body (Sr.msgs.rsv045 in
+        # showSelectTrainScarList(), Sr.msgs.rsv046 in the seat-count handler),
+        # so those scripts never start with the call. That distinction needs no
+        # JavaScript scope analysis, which is why it is the one used.
+        stripped = text.strip()
+        if self.error_message_key is None and stripped.startswith(_ALERT_CALL_PREFIX):
+            match = _MESSAGE_KEY_RE.search(stripped)
+            self.error_message_key = match.group("key") if match else "UNKNOWN"
+
+
 def parse_seat_selection_page(html: str) -> SeatSelectionPage:
+    """Parse the 좌석선택 page, refusing the server's error shell.
+
+    **Live-captured 2026-07-26, on two trains that differ only in availability.**
+
+    For a train with seats free, POST /arc/selectListArc02012_n.do returns the
+    real page: a ``<select id="selectScarNo">`` listing each 호차 with the seats
+    it has left (``<option value='7'> 7호차 (2석) </option>``), and a hidden
+    ``trnScarSeatFrm`` carrying the identity for the follow-up seat-grid read.
+
+    For a SOLD-OUT train the server returns a shell instead: the same ``<h1>``
+    heading, no car select, no options, no form, and one script at the very end::
+
+        <script>
+        srtAlertBoxDivShow("알림", Sr.msgs.error001, null, "historyBack();");
+        </script>
+
+    The old check was for the visible marker "좌석선택" alone. That marker is the
+    page HEADING, so it is present on both — the error shell passed, and a caller
+    got a ``SeatSelectionPage`` for a page whose only content was "error, go
+    back". The capture logged it as a successful read of 38506 bytes.
+
+    So a declared failure now raises :class:`SrtAppError`, matching how every
+    other parser here treats a server-declared failure, and the car list is
+    returned as data instead of being left in ``raw`` for the caller to scrape.
+    The seat GRID is deliberately not parsed: it is not in this response. The
+    real page leaves ``<div id="trnScarSeatInfo">`` empty and loads the grid
+    separately once a car is picked.
+    """
     page = parse_html_page(
         html,
         context="seat selection page",
@@ -260,7 +372,21 @@ def parse_seat_selection_page(html: str) -> SeatSelectionPage:
         raise SrtProtocolError(
             "SRT seat selection page did not contain the required marker"
         )
-    return SeatSelectionPage(text=page.text, raw=page.raw)
+    car_parser = _SeatCarOptionParser()
+    car_parser.feed(html)
+    car_parser.close()
+    if car_parser.error_message_key is not None and not car_parser.cars:
+        raise SrtAppError(
+            car_parser.error_message_key,
+            "SRT seat selection page returned an error instead of a seat map "
+            "(no car is selectable; the train is typically sold out)",
+            raw=html,
+        )
+    return SeatSelectionPage(
+        text=page.text,
+        raw=page.raw,
+        cars=tuple(car_parser.cars),
+    )
 
 
 def parse_notice_list_response(data: dict[str, Any]) -> NoticeListResult:

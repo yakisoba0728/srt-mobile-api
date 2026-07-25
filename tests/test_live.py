@@ -139,6 +139,11 @@ def test_live_result_contains_counts_not_ticket_text():
         "personalTrainCount",
         "seatPageLoaded",
         "seatSelectionMarkerPresent",
+        # Added with the 2026-07-26 seat-page fix: a sold-out train is answered
+        # with an error shell, not a seat map, so "the page loaded" and "the page
+        # carried inventory" had to stop being the same claim.
+        "seatCarOptionCount",
+        "seatPageErrorCode",
         "externalSeatMapHandoffPresent",
         "embeddedSeatInventoryCandidatePresent",
         "mutualVerificationLoaded",
