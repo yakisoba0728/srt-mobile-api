@@ -44,7 +44,7 @@ recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated preview-only reserve
 mutation surface, the transport-layer live-mutation gate, and the consent-gated
 cancel surface landed, the current offline suite at HEAD is
-`841 passed, 1 deselected`. The deselected case is the
+`852 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -72,6 +72,18 @@ The final merged library-oriented specification is:
 The reusable read-only smoke runner is:
 
 - `scripts/srt_app_api_smoke.py`
+
+The operator recovery tool for a stranded unpaid hold is:
+
+- `scripts/recover_hold.py` — cancels one hold given nothing but its PNR:
+
+  ```bash
+  SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... python3 scripts/recover_hold.py <PNR>
+  ```
+
+  It exits 0 only when the server reports the hold released, and reprints the
+  PNR in a banner on every other outcome. It transmits a cancel, so it needs
+  credentials for the account holding the reservation.
 
 ## Scope
 

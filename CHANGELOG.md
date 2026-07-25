@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added `scripts/recover_hold.py`, the operator safety net for a stranded
+  unpaid hold. It takes a PNR on the command line, logs in from
+  `SRT_LOGIN_ID`/`SRT_LOGIN_PASSWORD`, and cancels that hold — deliberately
+  standalone, needing no hold object or state from the run that created it,
+  because the situation it exists for is the one where that run is gone. Its
+  consent is constructed explicitly and grants `cancel` only (never reserve,
+  payment or refund) with `dry_run=False`, since a dry run would preview and
+  release nothing. It exits 0 only when the server reports the hold released,
+  prints the raw `strResult`/`msgCd`, and reprints the PNR in a banner on every
+  other outcome, including any exception. The password is never printed.
 - **`SrtClient.reserve()` can now transmit.** It returns
   `MutationPreview | SrtReservationHold`: unchanged under the default
   `dry_run=True`, but a `dry_run=False` reserve consent now POSTs
