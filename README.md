@@ -78,9 +78,12 @@ The reusable read-only smoke runner is:
 
 ### Live reserve->cancel verification (operator-run)
 
-Two scripts exist for the one live run that would confirm the reserve and
-cancel wire shapes. **Neither has been run yet.** Both create or release real
-reservations on a real account.
+Two scripts exist for the live run that confirms the reserve and cancel wire
+shapes. **The round trip was run once, on 2026-07-25, and passed** (reserve
+`SUCC`/`IRR000018`, cancel `SUCC`/`IRG000000`, no trace left in the ticket
+list) — see the verification section above for its scope and limits. Both
+scripts create or release real reservations on a real account, so re-running
+either one is a real state change, not a test.
 
 `scripts/verify_reserve_cancel_roundtrip.py` performs the round trip: login,
 search, pick one train that actually has a seat, reserve one adult, print the
