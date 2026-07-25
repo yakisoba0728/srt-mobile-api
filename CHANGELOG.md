@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `personal_reservation_payload` now sends the OPERATING date in `runDt1`
+  (`TrainSummary.run_date`), not the departure date. The app writes the two from
+  different search-row fields in the same block — `ara1001l.js:1460`
+  `"runDt1": item.runDt` (운행일자) versus `:1462` `"dptDt1": item.dptDt`
+  (출발일자). srtgo sends `dep_date` for both only because `SRTTrain` carries no
+  run date, and reproducing that was indistinguishable for a same-day service
+  but wrong for a past-midnight one. We already parse `runDt`, and
+  `seat_page_payload`, `timetable_payload` and `fare_payload` already use it;
+  the reserve builder was the last one substituting the departure date. A row
+  that omits `runDt` still falls back to the departure date, so the srtgo-
+  equivalent case is unchanged; a `runDt` that is present but not an 8-digit
+  date is rejected rather than silently replaced.
 - Corrected the reservation-response polarity to the app's. The attempt parser
   failed on `strResult != "SUCC"`, but `ara1001l.js:1562` is
   `if (resultMap.strResult == "FAIL")` — it alerts and returns there, and any

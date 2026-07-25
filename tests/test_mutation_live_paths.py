@@ -171,6 +171,66 @@ def test_reserve_form_matches_the_srtgo_personal_reserve_wire():
     assert "mblPhone" not in form
 
 
+def test_reserve_form_sends_the_operating_date_in_run_dt1():
+    # The app writes runDt1 and dptDt1 from two DIFFERENT row fields in the same
+    # block: ara1001l.js:1460 `"runDt1": item.runDt` (운행일자) and :1462
+    # `"dptDt1": item.dptDt` (출발일자). srtgo could not distinguish them
+    # (SRTTrain has no run date), so this builder used to send the departure date
+    # for both. A past-midnight service is where that diverges: the train
+    # operates on the 1st and boards on the 2nd.
+    overnight = dataclasses.replace(
+        _eligible_train(),
+        run_date="20990101",
+        departure_date="20990102",
+    )
+
+    form = personal_reservation_payload(
+        overnight,
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+    )
+
+    assert form["runDt1"] == "20990101"
+    assert form["dptDt1"] == "20990102"
+
+
+def test_reserve_form_falls_back_to_the_departure_date_without_a_run_date():
+    # A row that omits runDt must still build a form -- refusing would mean a
+    # reservation that cannot be made -- so the departure date is the fallback,
+    # exactly as timetable_payload and fare_payload already do. This is also the
+    # srtgo-equivalent case, and the reason the wire-fidelity test above is
+    # unchanged: its fixture carries no run_date.
+    no_run_date = dataclasses.replace(_eligible_train(), run_date=None)
+
+    form = personal_reservation_payload(
+        no_run_date,
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+    )
+
+    assert form["runDt1"] == form["dptDt1"] == "20990101"
+
+    blank_run_date = dataclasses.replace(_eligible_train(), run_date="")
+    assert (
+        personal_reservation_payload(
+            blank_run_date, PassengerCounts(adult=1), netfunnel_key=SYNTHETIC_NF
+        )["runDt1"]
+        == "20990101"
+    )
+
+
+def test_reserve_form_rejects_a_malformed_run_date():
+    # Present but not an 8-digit date is a parse problem, not a missing field:
+    # do not silently substitute the departure date for it.
+    for bad in ("2099010", "20990101x", "abcdefgh"):
+        with pytest.raises(ValueError):
+            personal_reservation_payload(
+                dataclasses.replace(_eligible_train(), run_date=bad),
+                PassengerCounts(adult=1),
+                netfunnel_key=SYNTHETIC_NF,
+            )
+
+
 def test_reserve_form_special_only_sets_first_class_cabin():
     form = personal_reservation_payload(
         _eligible_train(),

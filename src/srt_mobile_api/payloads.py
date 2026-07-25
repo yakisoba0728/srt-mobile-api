@@ -524,6 +524,22 @@ def personal_reservation_payload(
     departure_date = _required_digits(train.departure_date, "departure_date", length=8)
     departure_time = _required_digits(train.departure_time, "departure_time", length=6)
     arrival_time = _required_digits(train.arrival_time, "arrival_time", length=6)
+    # 운행일자 (operating date), which the app keeps DISTINCT from the departure
+    # date: ara1001l.js:1460 is `"runDt1": item.runDt` while :1462 is
+    # `"dptDt1": item.dptDt`, two different row fields written in the same block.
+    # srtgo sends train.dep_date for both only because SRTTrain has no separate
+    # run date to send; that is indistinguishable for a same-day service and
+    # wrong for a train whose operating date differs from the boarding date
+    # (a past-midnight departure). We do parse the operating date
+    # (TrainSummary.run_date <- row runDt), and seat_page_payload,
+    # timetable_payload and fare_payload already use it, so this builder was the
+    # only one substituting the departure date. Fall back to the departure date
+    # only when the row omits runDt, matching what those builders do.
+    run_date = (
+        _required_digits(train.run_date, "run_date", length=8)
+        if train.run_date
+        else departure_date
+    )
     departure_station_code = _required_digits(
         train.departure_station_code, "departure_station_code", length=4
     )
@@ -570,9 +586,7 @@ def personal_reservation_payload(
         "dptTm1": departure_time,
         "arvTm1": arrival_time,
         "trnNo1": train_no,
-        # srtgo sends runDt1 = train.dep_date (SRTTrain has no separate run date);
-        # departure_date is the faithful reproduction of the srtgo wire.
-        "runDt1": departure_date,
+        "runDt1": run_date,
         "dptStnConsOrdr1": departure_consist_order,
         "arvStnConsOrdr1": arrival_consist_order,
         "dptStnRunOrdr1": departure_run_order,
