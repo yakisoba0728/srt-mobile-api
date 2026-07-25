@@ -344,6 +344,21 @@ car/seat response or availability contract.
   tracked fixture was byte-for-byte identical to the reviewed safe report.
 - Sanitized-fixture phase full offline gate: `512 passed, 1 deselected`; the deselected case is
   the explicit live-service test. No live request or credential access occurred.
+- Live read-surface capture and verification, 2026-07-26
+  (`scripts/capture_live_read_surface.py`, 21 of 22 steps reached across two
+  routes): the login-redirect page (an expired session read as an empty ticket
+  list), the fare page's placeholder transfer leg (three phantom `0원` fares
+  under real labels), the timetable whose station names are absent from the
+  markup, the sold-out seat page's error shell accepted as a seat page, JSON
+  nulls in search rows, and the LIVE page's own JavaScript refuting our
+  `trnSort` derivation and the fare form's passenger field names — the last of
+  which the server had been silently ignoring, computing the page's estimated
+  total as `0원`. Raw captures were written outside the repository; the
+  committed fixtures are redacted.
+- Live reserve->cancel round trip re-run 2026-07-26 (수서→천안아산, one adult,
+  general seat): reserve `SUCC`/`IRR000018`, cancel `SUCC`/`IRG000000`, ticket
+  list clean afterwards. No payment or refund call was made and no hold was left
+  outstanding.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate and the
   consent-gated cancel surface: `983 passed, 1 deselected`; the deselected case

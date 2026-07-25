@@ -792,7 +792,7 @@ def parse_mutual_verification_response(
     # documented dsOutput0 schema is {strResult, msgTxt, mutMrkVrfCd} with no
     # msgCd". The real row has SEVEN keys and msgCd is one of them:
     #
-    #   {"msgCd":"IRZ000008", "wctNo":"81301", "strResult":"SUCC",
+    #   {"msgCd":"IRZ000008", "wctNo":"<counter>", "strResult":"SUCC",
     #    "msgTxt":"정상적으로 처리 되었습니다.", "mutMrkVrfCd":"<30 chars>",
     #    "uuid":"APP...", "cgPsId":"korail"}
     #

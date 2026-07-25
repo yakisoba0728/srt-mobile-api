@@ -76,14 +76,51 @@ The reusable read-only smoke runner is:
 
 - `scripts/srt_app_api_smoke.py`
 
+### Live read-surface capture (operator-run)
+
+`scripts/capture_live_read_surface.py` drives the public read surface once
+against the real server and writes every RAW response to disk **before** it is
+parsed, so a parser that raises still leaves its evidence behind. It sends
+nothing that changes state: every call goes through the read-only allowlist,
+which rejects all four mutation routes by construction.
+
+```bash
+SRT_MOBILE_API_LIVE=1 SRT_LIVE_READ_CAPTURE=1 \
+SRT_LIVE_CAPTURE_DIR=/path/outside/this/repo \
+SRT_LOGIN_ID=... SRT_LOGIN_PASSWORD=... SRT_TEST_DATE=YYYYMMDD \
+python3 scripts/capture_live_read_surface.py
+```
+
+Three opt-ins, all explicit. `SRT_LIVE_CAPTURE_DIR` has no default and is
+**refused inside this repository**: raw captures carry the account's ticket
+history, member id and session ids, and must never be committed. Requests are
+spaced by `SRT_LIVE_CAPTURE_PACE_SECONDS` (default 2.5s, floor 1s) because
+NetFunnel queueing sits in front of search and macro-shaped traffic risks an IP
+ban; `SRT_LIVE_CAPTURE_STEPS` runs a named subset so a follow-up pass need not
+repeat the whole ~34-request walk. Everything it prints is redacted and the
+password is never printed.
+
+**Run on 2026-07-26**, 21 of 22 steps reached across two routes. It is what
+produced the live-response findings recorded through this README: the
+login-redirect page that made an expired session read as an empty ticket list,
+the fare page's placeholder transfer leg (three phantom `0원` fares under real
+labels), the timetable whose station names are not in the markup at all, the
+sold-out seat page's error shell, the JSON nulls the search rows really carry,
+and the live page's own JavaScript refuting our `trnSort` and fare passenger
+field names. The one step that did not complete was the deliberate empty-window
+search, which the server answers `strResult=FAIL` / `WRG000000` /
+"조회 결과가 없습니다." — the server telling the truth, not a parser fault.
+
 ### Live reserve->cancel verification (operator-run)
 
 Two scripts exist for the live run that confirms the reserve and cancel wire
-shapes. **The round trip was run once, on 2026-07-25, and passed** (reserve
-`SUCC`/`IRR000018`, cancel `SUCC`/`IRG000000`, no trace left in the ticket
-list) — see the verification section above for its scope and limits. Both
-scripts create or release real reservations on a real account, so re-running
-either one is a real state change, not a test.
+shapes. **The round trip has been run twice — 2026-07-25 and 2026-07-26 — and
+passed both times**, returning the identical codes on each (reserve
+`SUCC`/`IRR000018` "결제하지 않으면 예약이 취소됩니다.", cancel `SUCC`/`IRG000000`
+"정상처리되었습니다", no trace left in the ticket list) — see the verification
+section above for scope and limits. Both scripts create or release real
+reservations on a real account, so re-running either one is a real state change,
+not a test.
 
 `scripts/verify_reserve_cancel_roundtrip.py` performs the round trip: login,
 search, pick one train that actually has a seat, reserve one adult, print the
@@ -396,13 +433,24 @@ Two consent-gated methods are implemented and offline-tested:
   exercised one adult on a **single journey**, which is the only case for which
   `jrnyCnt="1"` is confirmed.
 
-The live verification (2026-07-25) was one run of
-`scripts/verify_reserve_cancel_roundtrip.py` against a real account: 수서→부산,
-one adult, general seat, one train. `reserve` returned `strResult=SUCC`,
+The live verification was two runs of
+`scripts/verify_reserve_cancel_roundtrip.py` against a real account, each one
+adult, general seat, one train: 수서→부산 on 2026-07-25 and 수서→천안아산 on
+2026-07-26. Both returned the same codes — `reserve` `strResult=SUCC`,
 `msgCd=IRR000018` ("결제하지 않으면 예약이 취소됩니다.") and a PNR; `cancel`
-returned `strResult=SUCC`, `msgCd=IRG000000`; the ticket list re-read afterwards
-contained no trace of it, re-verified independently in a later session. The hold
-was never paid, so nothing was charged. Incidentally, those two confirmation
+`strResult=SUCC`, `msgCd=IRG000000` ("정상처리되었습니다") — and in both the
+ticket list re-read afterwards contained no trace of the hold. Neither hold was
+paid, so nothing was charged, and none was left outstanding. The second run also
+independently confirms the route on a different origin-destination pair.
+
+Since 2026-07-26 the cancel body is no longer srtgo's word alone: the ticket-list
+page the LIVE server renders ships the call inline
+(`function cncConfirm(v_pnrNo, v_rsvChgTno, v_jrnyCnt)` POSTing exactly
+`pnrNo`/`rsvChgTno`/`jrnyCnt` to `/ard/selectListArd02045_n.do` and reading
+`data.resultMap[0].strResult`), so the route, all three field names and the
+response envelope are attested by the app itself. It is labelled 예약대기 취소,
+so it corroborates the wire shape rather than the exact use, and the
+0-hit-in-v2.0.41 fact above still stands. Incidentally, those two confirmation
 codes are the same ones korail's live-verified reserve and cancel return, which
 suggests the two operators share a reservation platform — an observation, not a
 proven fact about the backend. Not covered by that run: multi-leg (`jrnyCnt` >

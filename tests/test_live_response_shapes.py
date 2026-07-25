@@ -355,8 +355,8 @@ def _live_shape_search_response(row_overrides: dict | None = None) -> dict:
         "rsvWaitPsbCdNm": "신청하기",
         "stmpRsvPsbFlgCd": "YY",
         "stndRsvPsbCdNm": "예약하기",
-        "rcvdAmt": "00000000052900",
-        "rcvdFare": "00000000023800",
+        "rcvdAmt": "00000000099900",
+        "rcvdFare": "00000000011100",
         "trainDiscGenRt": "0000.00",
         "trnCpsCd1": "X",
         # Present in EVERY live row, always null.
@@ -628,7 +628,7 @@ def test_mutual_verification_accepts_the_real_seven_key_row():
                 "dsOutput0": [
                     {
                         "msgCd": "IRZ000008",
-                        "wctNo": "81301",
+                        "wctNo": "SYNTHETIC-WCT",
                         "strResult": "SUCC",
                         "msgTxt": "정상적으로 처리 되었습니다.",
                         "mutMrkVrfCd": "SYNTHETIC-VERIFICATION-CODE",
@@ -644,7 +644,7 @@ def test_mutual_verification_accepts_the_real_seven_key_row():
     assert result.status == "SUCC"
     assert result.verification_code == "SYNTHETIC-VERIFICATION-CODE"
     # Unmodelled columns stay reachable rather than lost.
-    assert result.raw["outDataSets"]["dsOutput0"][0]["wctNo"] == "81301"
+    assert result.raw["outDataSets"]["dsOutput0"][0]["wctNo"] == "SYNTHETIC-WCT"
     assert result.raw["outDataSets"]["dsOutput0"][0]["cgPsId"] == "korail"
 
 
