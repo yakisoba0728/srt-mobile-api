@@ -169,6 +169,54 @@ def _stranded(pnr: str, reason: str) -> None:
     )
 
 
+def _reserve_failed_check_for_orphan(
+    client: SrtClient, before: str | None, exc: Exception
+) -> None:
+    """After a reserve that raised, decide whether a hold exists anyway.
+
+    reserve() raising does NOT mean the server created nothing -- the request
+    may have been processed and only the response lost. This re-reads the
+    ticket list and compares it against the pre-reserve snapshot, so the
+    operator learns that a hold probably exists even though no PNR ever came
+    back through the API.
+    """
+    print(f"reserve raised {type(exc).__name__}: {exc}", flush=True)
+    if before is None:
+        _banner(
+            [
+                "RESERVE FAILED AND NO PRE-RESERVE SNAPSHOT EXISTS",
+                "A hold MAY have been created. Check the SRT app now.",
+            ]
+        )
+        return
+    try:
+        after = client.get_ticket_list().raw
+    except Exception as sweep_exc:  # noqa: BLE001
+        _banner(
+            [
+                "RESERVE FAILED AND THE TICKET LIST COULD NOT BE RE-READ",
+                f"sweep error: {type(sweep_exc).__name__}: {sweep_exc}",
+                "A hold MAY have been created. Check the SRT app now.",
+            ]
+        )
+        return
+    if after != before:
+        _banner(
+            [
+                "*** RESERVE FAILED BUT THE TICKET LIST CHANGED ***",
+                "A hold was very likely created and its PNR never reached us.",
+                "Open the SRT app NOW, read the PNR, and cancel it with:",
+                f"  python3 {RECOVERY_SCRIPT} <PNR>",
+            ]
+        )
+    else:
+        print(
+            "Ticket list is unchanged since before the reserve; "
+            "no hold appears to have been created.",
+            flush=True,
+        )
+
+
 def _cancel(client: SrtClient, pnr: str) -> SrtCancelResult:
     result = client.cancel(pnr, consent=build_cancel_consent())
     if not isinstance(result, SrtCancelResult):
@@ -209,13 +257,28 @@ def run_roundtrip(client: SrtClient, *, login_id: str, password: str) -> int:
         return 1
     print(f"Selected {_describe_train(train)}", flush=True)
 
+    # Snapshot the ticket list first. reserve() rescues a PNR out of a
+    # malformed response, but it cannot rescue one out of a response it never
+    # received: if the POST reaches the server, the hold is created, and the
+    # connection then dies, the PNR exists only on the server. Comparing the
+    # ticket list before and after is the only way left to notice that.
+    try:
+        before = client.get_ticket_list().raw
+    except Exception as exc:  # noqa: BLE001 - a failed snapshot must not block
+        print(f"(could not snapshot the ticket list: {exc})", flush=True)
+        before = None
+
     print("Reserving 1 adult (general seat preferred)...", flush=True)
-    hold = client.reserve(
-        train,
-        consent=build_reserve_consent(),
-        passengers=passengers,
-        seat_type=SeatType.GENERAL_FIRST,
-    )
+    try:
+        hold = client.reserve(
+            train,
+            consent=build_reserve_consent(),
+            passengers=passengers,
+            seat_type=SeatType.GENERAL_FIRST,
+        )
+    except Exception as exc:  # noqa: BLE001 - a hold may exist despite this
+        _reserve_failed_check_for_orphan(client, before, exc)
+        raise
     if not isinstance(hold, SrtReservationHold):
         print(
             "reserve returned a preview, not a hold; nothing was created",

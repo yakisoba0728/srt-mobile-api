@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -675,6 +676,9 @@ def test_roundtrip_end_to_end_against_a_real_client(
         "GET /ts.wseq",  # search's act_10
         "GET /ara/selectListAra10007_n.do",
         "POST /ara/selectListAra10007_n.do",
+        # Pre-reserve ticket-list snapshot: the baseline that lets a lost
+        # response still be noticed as a created hold.
+        "GET /atc/selectListAtc14017_n.do",
         "GET /ts.wseq",  # reserve's act_10 -- the SAME flow, not act_19
         "POST /arc/selectListArc05013_n.do",
         "POST /ard/selectListArd02045_n.do",
@@ -724,3 +728,45 @@ def test_roundtrip_end_to_end_strands_loudly_when_the_server_refuses(
     # Tried once, then once more from the finally block.
     assert len(sent["cancel"]) == 2
     assert SECRET_PASSWORD not in out
+
+
+def test_roundtrip_warns_when_reserve_raises_but_the_ticket_list_changed(
+    roundtrip, capsys
+):
+    """A lost reserve response must still surface as a probable hold.
+
+    reserve() can rescue a PNR out of a malformed response, but not out of one
+    it never received. The pre/post ticket-list comparison is the only signal
+    left, so it must produce a loud, actionable banner.
+    """
+
+    class _Sweeper:
+        def __init__(self, after):
+            self._after = after
+
+        def get_ticket_list(self):
+            return SimpleNamespace(raw=self._after)
+
+    roundtrip._reserve_failed_check_for_orphan(
+        _Sweeper("LIST WITH A NEW HOLD"),
+        "LIST BEFORE",
+        RuntimeError("connection reset"),
+    )
+    out = capsys.readouterr().out
+    assert "RESERVE FAILED BUT THE TICKET LIST CHANGED" in out
+    assert "recover_hold.py" in out
+
+
+def test_roundtrip_stays_quiet_when_reserve_raises_and_nothing_changed(
+    roundtrip, capsys
+):
+    class _Sweeper:
+        def get_ticket_list(self):
+            return SimpleNamespace(raw="LIST BEFORE")
+
+    roundtrip._reserve_failed_check_for_orphan(
+        _Sweeper(), "LIST BEFORE", RuntimeError("refused")
+    )
+    out = capsys.readouterr().out
+    assert "no hold appears to have been created" in out
+    assert "TICKET LIST CHANGED" not in out

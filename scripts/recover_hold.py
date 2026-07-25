@@ -109,7 +109,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Recovering hold PNR={pnr}")
     try:
         client.login(login_id, password)
-        print(f"Logged in as {login_id}")
+        masked = (
+            "*" * len(login_id)
+            if len(login_id) <= 2
+            else f"{login_id[0]}{'*' * (len(login_id) - 2)}{login_id[-1]}"
+        )
+        print(f"Logged in as {masked}")
         result = cancel_hold(client, pnr)
     except Exception as exc:  # noqa: BLE001 - the PNR must survive ANY failure
         _print_banner(
