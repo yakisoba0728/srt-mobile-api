@@ -534,6 +534,18 @@ def parse_reservation_attempt_response(
         container_name="resultMap",
         raw=data,
     )
+    # POLARITY: only an explicit "FAIL" is a failure, exactly as the app.
+    # ara1001l.js:1562 is `if (resultMap.strResult == "FAIL")` -- it alerts and
+    # returns there, and ANY other value falls straight through to :1577/:1609,
+    # which read reservListMap[0].pnrNo and proceed with a created reservation.
+    # So a third status value means "the hold exists"; treating it as failure
+    # would raise SrtAppError for a reservation that IS on the server. Worse, it
+    # would also make _declares_a_declared_failure below refuse the PNR salvage,
+    # producing precisely the orphaned hold this subsystem exists to prevent.
+    # This is the same fix already applied to the search parser for the same
+    # reason (parse_train_search_response, `if status == "FAIL"`), and the app
+    # is consistent about it: ara1001l.js:206, :234 and :1855 are all == "FAIL".
+    #
     # The DECLARED outcome is classified before any strict optional-field read.
     # A server that says FAIL is authoritative about the outcome whether or not
     # msgCd/msgTxt happen to be well formed, and callers distinguish "the
@@ -547,7 +559,8 @@ def parse_reservation_attempt_response(
     declared_message = result_row.get("msgTxt")
     code_hint = declared_code if isinstance(declared_code, str) else ""
     message_hint = declared_message if isinstance(declared_message, str) else ""
-    if status != "SUCC" and code_hint == "S111":
+    declared_failure = status == "FAIL"
+    if declared_failure and code_hint == "S111":
         # Bundled JS treats FAIL + msgCd "S111" as a session-expiry / re-login
         # signal (ara1001l.js:1562-1571; cross-validation-2026-07-21.md §2),
         # not a generic business error.
@@ -555,7 +568,13 @@ def parse_reservation_attempt_response(
             message_hint or "SRT reservation attempt session expired",
             raw=data,
         )
-    if code_hint == "WRP011002" or status != "SUCC":
+    # WRP011002 (passenger-count error) stays an independent failure signal
+    # rather than being folded into the status test: it was observed live
+    # alongside strResult=FAIL (srt-app-api-library-spec-2026-07-09.md §runtime
+    # probes), so it never contradicts the polarity above, and keeping it means
+    # a server that reports the rejection only in msgCd is still not read as a
+    # hold.
+    if code_hint == "WRP011002" or declared_failure:
         raise SrtAppError(code_hint, message_hint or status, raw=data)
 
     # Only a DECLARED SUCCESS reaches the strict reads: there the fields are
@@ -691,8 +710,8 @@ def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
     )
 
 
-def _declares_a_non_success(data: Any) -> bool:
-    """True when the payload itself declares an outcome that is not ``SUCC``.
+def _declares_a_declared_failure(data: Any) -> bool:
+    """True when the payload itself declares ``strResult == "FAIL"``.
 
     Read straight off the raw payload, deliberately duplicating the check
     :func:`parse_reservation_attempt_response` already performs. It is the
@@ -700,15 +719,20 @@ def _declares_a_non_success(data: Any) -> bool:
     into a hold: if that parser's ordering ever regresses so a malformed FAIL
     surfaces as :class:`SrtProtocolError` again, this still refuses to
     manufacture a hold for a reservation the server says does not exist.
-    Absent status means "not declared", which is a malformed response, not a
-    declared failure — that is precisely the case the salvage path exists for.
+
+    The test is ``== "FAIL"``, not ``!= "SUCC"``, and the distinction is
+    load-bearing here rather than cosmetic. The app fails a reservation only on
+    an explicit FAIL (``ara1001l.js:1562``) and otherwise reads
+    ``reservListMap[0].pnrNo`` as a created reservation (:1577/:1609), so a
+    third status value means a hold probably EXISTS — the one case where
+    suppressing the salvage is most damaging. Absent status likewise means "not
+    declared", which is a malformed response rather than a declared failure —
+    that too is precisely what the salvage path exists for.
     """
     if not isinstance(data, dict):
         return False
     row = normalize_result_row(data)
-    if "strResult" not in row:
-        return False
-    return row["strResult"] != "SUCC"
+    return row.get("strResult") == "FAIL"
 
 
 def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
@@ -734,12 +758,12 @@ def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
     losing one that does — they stop trying to recover — so that exclusion is
     enforced twice: by the declared-status classification inside
     :func:`parse_reservation_attempt_response`, and again by
-    :func:`_declares_a_non_success` on the raw payload here.
+    :func:`_declares_a_declared_failure` on the raw payload here.
     """
     try:
         result = parse_reservation_attempt_response(data)
     except SrtProtocolError:
-        if _declares_a_non_success(data):
+        if _declares_a_declared_failure(data):
             raise
         hold = _minimal_hold_from_raw(data)
         if hold is None:

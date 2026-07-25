@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Corrected the reservation-response polarity to the app's. The attempt parser
+  failed on `strResult != "SUCC"`, but `ara1001l.js:1562` is
+  `if (resultMap.strResult == "FAIL")` — it alerts and returns there, and any
+  other value falls through to `:1577`/`:1609`, which read
+  `reservListMap[0].pnrNo` and proceed with a created reservation. The app is
+  consistent about this (`:206`, `:234`, `:1855`), and the search parser was
+  already corrected the same way. The inverted test was duplicated in the
+  salvage gate, so a third status value raised `SrtAppError` **and**
+  simultaneously suppressed the PNR salvage — the exact orphaned hold that
+  subsystem exists to prevent. Both now test `== "FAIL"`
+  (`_declares_a_non_success` is renamed `_declares_a_declared_failure` to say
+  what it means). `WRP011002` stays an independent failure signal; it was
+  observed live alongside `strResult=FAIL`, so it never contradicts the
+  polarity. A genuine FAIL still raises, still authoritatively over malformed
+  `msgCd`/`msgTxt`, and is still refused by the salvage branch.
 - **The live reserve->cancel round trip was performed on 2026-07-25 and both
   halves succeeded.** One operator run of
   `scripts/verify_reserve_cancel_roundtrip.py` against the real server (수서 →
@@ -199,6 +214,11 @@
   and the salvage branch independently re-reads `strResult` off the raw payload
   and refuses to build a hold for any declared non-success. A declared SUCCESS
   is still validated strictly; only a declared failure short-circuits.
+  **Partially superseded within this same unreleased range**: "any declared
+  non-success" was the wrong set — it is now "a declared `FAIL`", matching the
+  app (see the polarity entry at the top of this section). The ordering fix
+  itself, and the guarantee that a declared FAIL is never salvaged however
+  malformed its optional fields, are unchanged.
 - Corrected the statements the cancel method falsified. `reserve`'s docstring
   and refusal message, `safety.SRT_MUTATION_ROUTES` /
   `SRT_LIVE_MUTATION_CATEGORIES`, and `post_mutation_form`'s refusal message

@@ -243,6 +243,93 @@ def test_parse_reservation_attempt_still_rejects_a_malformed_success_row(result_
         parse_reservation_attempt_response({"resultMap": [result_row]})
 
 
+# --- polarity: only an explicit FAIL is a failure -----------------------------
+#
+# ara1001l.js:1562 is `if (resultMap.strResult == "FAIL")` and returns there;
+# every other value falls through to :1577/:1609, which read
+# reservListMap[0].pnrNo and proceed with a created reservation. A third status
+# value therefore means the hold probably EXISTS, so raising on it would both
+# report a failure that did not happen and suppress the PNR salvage.
+
+# An EMPTY strResult is deliberately not in this list: the strict read treats it
+# as absent, i.e. malformed rather than declared, which is the salvage path's own
+# case and is pinned separately below.
+THIRD_STATUS_VALUES = ("PENDING", "SUCCESS", "succ", "WAIT")
+
+
+@pytest.mark.parametrize("status", THIRD_STATUS_VALUES)
+def test_parse_reservation_attempt_does_not_fail_a_third_status_value(
+    load_json_fixture,
+    status,
+):
+    # A well-formed response whose strResult is neither SUCC nor FAIL parses as
+    # the reservation the app would have proceeded with, rather than raising.
+    payload = load_json_fixture("reservation_attempt_success.json")
+    payload["resultMap"][0]["strResult"] = status
+
+    result = parse_reservation_attempt_response(payload)
+
+    assert result.status == status
+    assert result.reservation.pnr_number == "NOT-A-REAL-PNR"
+
+
+@pytest.mark.parametrize("status", THIRD_STATUS_VALUES)
+def test_hold_parser_yields_a_usable_hold_for_a_third_status_value(
+    load_json_fixture,
+    status,
+):
+    # The consequence that matters. Under the old `!= "SUCC"` polarity this
+    # raised SrtAppError AND _declares_a_declared_failure suppressed the salvage
+    # branch, orphaning a real hold -- exactly what this subsystem exists to
+    # prevent. Now the PNR survives even when an unrelated optional field is
+    # malformed enough to force the salvage path.
+    payload = load_json_fixture("reservation_attempt_success.json")
+    payload["resultMap"][0]["strResult"] = status
+    payload["trainListMap"] = [{}]  # forces the strict parse to fail
+
+    hold = parse_reservation_hold_response(payload)
+
+    assert hold.pnr_no == "NOT-A-REAL-PNR"
+
+
+@pytest.mark.parametrize("status", THIRD_STATUS_VALUES + ("", "SUCC"))
+def test_declared_failure_probe_ignores_a_third_status_value(status):
+    # The salvage gate itself, read straight off the raw payload. Only "FAIL"
+    # may close it -- an empty or absent status included, since neither declares
+    # anything.
+    assert not parsers._declares_a_declared_failure(
+        {"resultMap": [{"strResult": status}]}
+    )
+    assert not parsers._declares_a_declared_failure({"resultMap": [{}]})
+    assert parsers._declares_a_declared_failure({"resultMap": [{"strResult": "FAIL"}]})
+
+
+@pytest.mark.parametrize(
+    "result_row",
+    [
+        {"strResult": "FAIL", "msgCd": "WRP011002"},
+        {"strResult": "FAIL", "msgCd": 100},
+        {"strResult": "FAIL"},
+        {"strResult": "FAIL", "msgCd": "WRR000100", "msgTxt": "synthetic"},
+    ],
+)
+def test_a_genuine_fail_still_raises_after_the_polarity_change(result_row):
+    # Guards the cc1ad7a fix in the other direction: relaxing the polarity must
+    # not relax the declared FAIL. A FAIL is still authoritative over malformed
+    # msgCd/msgTxt and must surface as SrtAppError, never SrtProtocolError.
+    payload = {
+        "resultMap": [result_row],
+        "reservListMap": [{"pnrNo": "NOT-A-REAL-PNR"}],
+    }
+
+    with pytest.raises(SrtAppError):
+        parse_reservation_attempt_response(payload)
+    # And it must still be refused by the hold parser's salvage branch, so no
+    # hold is manufactured for a reservation the server rejected.
+    with pytest.raises(SrtAppError):
+        parse_reservation_hold_response(payload)
+
+
 @pytest.mark.parametrize(
     ("container_name", "replacement"),
     [
