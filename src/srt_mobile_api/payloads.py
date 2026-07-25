@@ -380,10 +380,71 @@ def seat_page_payload(
     }
 
 
+# getStlbTrnClsfCdNm(), lifted verbatim from the LIVE search page served on
+# 2026-07-26 by GET /ara/selectListAra10007_n.do. It maps 역무차종별코드
+# (stlbTrnClsfCd) to the display name the timetable and fare forms transmit as
+# trnSort. srtgo's TRAIN_NAME table (srt.py:82) agrees on "17" -> "SRT".
+STLB_TRAIN_CLASS_NAMES = {
+    "00": "KTX",
+    "01": "새마을호",
+    "02": "무궁화호",
+    "03": "통근열차",
+    "04": "누리로",
+    "05": "전체열차",
+    "06": "공항직통",
+    "07": "KTX-산천",
+    "08": "ITX-새마을",
+    "09": "ITX-청춘",
+    "10": "KTX-산천",
+    "15": "ITX-청춘",
+    "16": "KTX-이음",
+    "17": "SRT",
+    "18": "ITX-마음",
+    "19": "KTX-청룡",
+}
+
+
+def stlb_train_class_name(code: str | None) -> str:
+    """``getStlbTrnClsfCdNm``: the display name for a 역무차종별코드.
+
+    Returns ``""`` for an unknown code, exactly as the live function's trailing
+    ``else return "";`` does.
+    """
+    return STLB_TRAIN_CLASS_NAMES.get(code or "", "")
+
+
 def _train_sort(train: TrainSummary) -> str:
-    # The app sends trnSort = item.trnClsfCd (열차종별코드) from the search row,
-    # distinct from stlbTrnClsfCd/service_class_code (ara1001l.js:1184 & :1217).
-    return str(train.train_class_code or "")
+    """The ``trnSort`` the app puts on the timetable and fare forms.
+
+    **The live server refutes what this used to do, and this is the correction.**
+    Our source said ``trnSort = item.trnClsfCd`` (열차종별코드), citing
+    ``ara1001l.js:1184`` and ``:1217`` in the v2.0.41 offline bundle. The page
+    the server actually served on 2026-07-26 says otherwise, in both call sites::
+
+        function trainSchedule(trnSortNm, num, stTrnNm, dsTrnNm, qryDtFrom) {
+            var trnSortName = getStlbTrnClsfCdNm(trnSortNm);
+            var params = { stnCourseNm: ..., trnSort: trnSortName + "", ... }
+
+        var params = {
+            ...,
+            trnSort: getStlbTrnClsfCdNm(ds_list[rowIndex].stlbTrnClsfCd),
+            ...
+        }
+
+    So ``trnSort`` is a display NAME derived from ``stlbTrnClsfCd`` — "SRT" for
+    an SRT train — not a raw class code, and certainly not ``trnClsfCd``.
+
+    That distinction was invisible offline and expensive in practice: across all
+    40 dsOutput1 rows of the same capture, ``trnClsfCd`` was sent ZERO times.
+    The field simply is not in a search row. So ``train.train_class_code`` was
+    always ``None`` and every timetable and fare request we have ever issued
+    carried ``trnSort=`` empty — a value the app never sends.
+
+    ``train_class_code`` is still honoured as a fallback for a caller who set it
+    explicitly; it just no longer decides the common case.
+    """
+    name = stlb_train_class_name(train.service_class_code)
+    return name or str(train.train_class_code or "")
 
 
 def _station_course(train: TrainSummary) -> str:
@@ -403,17 +464,97 @@ def _station_course(train: TrainSummary) -> str:
     return f"{departure}-{arrival}"
 
 
+def _query_date(train: TrainSummary) -> str:
+    """The date the timetable and fare forms carry as ``runDt``.
+
+    **The live server's own page says this is the DEPARTURE date, not the
+    operating date.** From the search page served 2026-07-26::
+
+        trainSchedule(trnSortNm, num, stTrnNm, dsTrnNm, qryDtFrom)
+            ... runDt: qryDtFrom ...              (the queried date)
+
+        var params = { ..., runDt: ds_list[rowIndex].dptDt,
+                            runDt1: ds_list[rowIndex].dptDt, ... }
+
+    We sent ``run_date or departure_date``. The two are identical for a same-day
+    service — they were in every row of the capture — so this has never produced
+    a wrong request, and it is corrected rather than left because the one case
+    where they differ (a past-midnight departure, where runDt is the previous
+    day) is exactly the case a fare or timetable lookup would get wrong.
+
+    Note this does NOT generalise to the reserve form, which the same bundle
+    shows sending ``runDt1: item.runDt`` alongside ``dptDt1: item.dptDt`` —
+    two different row fields, deliberately. ``personal_reservation_payload``
+    keeps using the operating date, and that stays right.
+    """
+    return train.departure_date or train.run_date or ""
+
+
 def timetable_payload(train: TrainSummary) -> dict[str, str]:
     return {
         "stnCourseNm": _station_course(train),
         "trnSort": _train_sort(train),
-        "runDt": train.run_date or train.departure_date or "",
+        "runDt": _query_date(train),
         "trnNo": train.train_no.zfill(5),
     }
 
 
+# The live fare form carries SIX passenger slots, one more than the five SRT
+# passenger types. Slot 6 is transmitted EMPTY -- "psgTpCd6":"" with
+# "psgInfoPerPrnb6":"" (empty, not "0") -- which is exactly how the search
+# response's own commandMap echoed it back on 2026-07-26. It is a form slot, not
+# a sixth passenger type: SRT still has no infant type, and no code ever fills
+# it.
+_FARE_TRAILING_SLOT = 6
+
+
 def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, str]:
-    run_date = train.run_date or train.departure_date or ""
+    """Build the 운임요금 (Ara13010) form the live app transmits.
+
+    **Corrected against the live server on 2026-07-26.** This builder used to
+    send ``passenger1..5``, and its comment stated flatly that the form "carries
+    no psgTpCd*/psgInfoPerPrnb*/infantCnt", citing ``ara1001l.js:1219-1223``.
+    The page the server actually served says the opposite -- there is no
+    ``passenger1`` anywhere in it, and both fare call sites send::
+
+        var params = {
+            stnCourseNm: getStnNameByCd(dptRsStnCd) + "-" + getStnNameByCd(arvRsStnCd) + "",
+            trnSort: getStlbTrnClsfCdNm(stlbTrnClsfCd),
+            runDt: dptDt, trnNo: code, chtnDvCd: "1",
+            dptRsStnCd1: dptRsStnCd, arvRsStnCd1: arvRsStnCd,
+            runDt1: dptDt, trnNo1: code,
+            psgTpCd1: $('#psgTpCd1').val(), psgInfoPerPrnb1: $("#psgInfoPerPrnb1").val(),
+            ... through psgTpCd6 / psgInfoPerPrnb6 ...
+            dptRsStnCd2: '', arvRsStnCd2: '', runDt2: '', trnNo2: ''
+        }
+
+    Those DOM inputs are the compacted slots the booking screen seeds, which is
+    what ``_passenger_fields`` already produces, so the compaction reasoning was
+    right all along -- only the field NAMES were wrong.
+
+    **And the server was silently ignoring them.** The old form was never
+    rejected, because the tariff TABLE (adult/child/senior x special/standard)
+    does not depend on the party at all -- which is exactly why the divergence
+    survived every live smoke run. But the same page also renders an estimated
+    TOTAL, and sending the corrected form on 2026-07-26 changed the server's
+    answer for the identical journey::
+
+        - <p> 기준</p>                                     <- no party at all
+        - <span class="s-tit">특 &nbsp; 실</span><span>0원</span>
+        - <span class="s-tit">일반실</span><span>0원</span>
+        + <p>어른 1명 기준</p>
+        + <span class="s-tit">특 &nbsp; 실</span><span>16,300원</span>
+        + <span class="s-tit">일반실</span><span>11,200원</span>
+
+    With ``passenger1..5`` the server saw a party of NOBODY and computed a total
+    of zero. The ``trnSort`` correction shows in the same diff: the response
+    gained the train-class name it previously had nowhere to render.
+
+    (Both blocks sit inside markup this parser does not surface, so no caller
+    was ever shown the 0원 -- but the request was wrong, and only a live
+    round trip could show it.)
+    """
+    run_date = _query_date(train)
     train_no = train.train_no.zfill(5)
     payload = {
         "stnCourseNm": _station_course(train),
@@ -430,16 +571,9 @@ def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, 
         "runDt2": "",
         "trnNo2": "",
     }
-    # Ara13010 sends passenger1..5 = lfn_getRsv("psgInfoPerPrnb1..5"), i.e. the COMPACTED
-    # gds_rsv counts (ara1001l.js:1219-1223): only count>0 types packed contiguously in
-    # canonical psgTpCd order, with the trailing slots padded "0" (compaction at
-    # ara0101v.js:824-836). NOT one fixed slot per type. Example (1 adult + 1 child):
-    # passenger1=1, passenger2=1, passenger3=0, passenger4=0, passenger5=0. It carries no
-    # psgTpCd*/psgInfoPerPrnb*/infantCnt.
-    compacted = [count for _type_code, count in _compact_passenger_slots(passengers)]
-    for index in range(1, len(PASSENGER_TYPE_CODES) + 1):
-        count = compacted[index - 1] if index <= len(compacted) else 0
-        payload[f"passenger{index}"] = str(count)
+    payload.update(_passenger_fields(passengers))
+    payload[f"psgTpCd{_FARE_TRAILING_SLOT}"] = ""
+    payload[f"psgInfoPerPrnb{_FARE_TRAILING_SLOT}"] = ""
     return payload
 
 

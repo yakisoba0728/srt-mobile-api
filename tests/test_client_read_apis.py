@@ -1129,13 +1129,18 @@ def test_timetable_and_fare(load_text_fixture):
     assert "12,340원" in fare.text
     assert captured["/ara/selectListAra12009_n.do"]["stnCourseNm"] == ["수서-부산"]
     fare_form = captured["/ara/selectListAra13010_n.do"]
-    # passenger1..5 are COMPACTED (ara1001l.js:1219 + ara0101v.js:824-836): adult and child
-    # pack into the first two contiguous slots, so passenger1=1, passenger2=1, rest "0" —
-    # NOT positional passenger1=1 / passenger5=1.
-    assert fare_form["passenger1"] == ["1"]
-    assert fare_form["passenger2"] == ["1"]
-    assert fare_form["passenger5"] == ["0"]
-    assert "psgTpCd2" not in fare_form
+    # psgInfoPerPrnb1..5 are COMPACTED (ara0101v.js:824-836): adult and child pack
+    # into the first two contiguous slots, so psgInfoPerPrnb1=1, psgInfoPerPrnb2=1,
+    # rest "0" — NOT positional. The FIELD NAMES are the live page's
+    # (captured 2026-07-26); the passenger1..5 spelling appears nowhere in it.
+    assert fare_form["psgInfoPerPrnb1"] == ["1"]
+    assert fare_form["psgInfoPerPrnb2"] == ["1"]
+    assert fare_form["psgInfoPerPrnb5"] == ["0"]
+    assert fare_form["psgTpCd1"] == ["1"]
+    assert fare_form["psgTpCd2"] == ["5"]
+    assert fare_form["psgTpCd6"] == [""]
+    assert fare_form["psgInfoPerPrnb6"] == [""]
+    assert "passenger1" not in fare_form
     assert fare_form["dptRsStnCd2"] == [""]
     # B4: both requests originate from the search-results page, so the app sends
     # /ara/selectListAra10007_n.do as Referer (ara1001l.js:1188-1194 & :1228-1234),

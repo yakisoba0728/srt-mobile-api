@@ -483,3 +483,100 @@ def test_group_search_rows_omit_the_wait_and_standing_names():
     assert train.standing_availability is None
     assert train.standing_availability_name is None
     assert train.general_seat_availability_name == "좌석있음"
+
+
+# --------------------------------------------------------------------------
+# Timetable/fare forms: the LIVE search page's own JavaScript refutes the
+# bundle-derived field names we were sending.
+# --------------------------------------------------------------------------
+
+
+def test_trn_sort_is_the_display_name_of_the_service_class():
+    """getStlbTrnClsfCdNm(stlbTrnClsfCd), per the live page's two call sites."""
+    from srt_mobile_api.payloads import fare_payload, stlb_train_class_name, timetable_payload
+    from srt_mobile_api.models import PassengerCounts, TrainSummary
+
+    assert stlb_train_class_name("17") == "SRT"
+    assert stlb_train_class_name("00") == "KTX"
+    assert stlb_train_class_name("99") == ""
+
+    train = TrainSummary(
+        train_no="999",
+        service_class_code="17",
+        run_date="20990102",
+        departure_date="20990102",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+    )
+    assert timetable_payload(train)["trnSort"] == "SRT"
+    assert fare_payload(train, PassengerCounts(adult=1))["trnSort"] == "SRT"
+
+
+def test_trn_sort_does_not_depend_on_a_field_no_live_row_sends():
+    """trnClsfCd is 0-hit across all 40 live dsOutput1 rows.
+
+    Deriving trnSort from it meant every timetable and fare request we ever made
+    carried trnSort= empty.
+    """
+    from srt_mobile_api.payloads import timetable_payload
+    from srt_mobile_api.models import TrainSummary
+
+    train = TrainSummary(
+        train_no="999",
+        service_class_code="17",
+        train_class_code=None,
+        departure_date="20990102",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+    )
+    assert timetable_payload(train)["trnSort"] == "SRT"
+
+
+def test_fare_form_uses_the_live_passenger_field_names():
+    """passenger1..5 was ours; the live page sends psgTpCd*/psgInfoPerPrnb*.
+
+    Live-verified 2026-07-26: with the old names the server computed the page's
+    estimated total as 0원 under a "기준" line naming no party at all. With
+    these names the identical journey returned "어른 1명 기준" and real totals.
+    """
+    from srt_mobile_api.payloads import fare_payload
+    from srt_mobile_api.models import PassengerCounts, TrainSummary
+
+    train = TrainSummary(
+        train_no="999",
+        service_class_code="17",
+        departure_date="20990102",
+        departure_station_code="0551",
+        arrival_station_code="0502",
+    )
+    form = fare_payload(train, PassengerCounts(adult=1))
+
+    assert not any(key.startswith("passenger") for key in form)
+    assert form["psgTpCd1"] == "1"
+    assert form["psgInfoPerPrnb1"] == "1"
+    assert form["psgTpCd6"] == ""
+    assert form["psgInfoPerPrnb6"] == ""
+
+
+def test_timetable_and_fare_date_is_the_departure_date():
+    """The live form sends dptDt / qryDtFrom, not the operating date runDt.
+
+    They coincide for a same-day service, which is why this went unnoticed; they
+    do not for a past-midnight departure. The RESERVE form is unaffected and
+    still sends the operating date, which is what its own call site does.
+    """
+    from srt_mobile_api.payloads import fare_payload, timetable_payload
+    from srt_mobile_api.models import PassengerCounts, TrainSummary
+
+    overnight = TrainSummary(
+        train_no="999",
+        service_class_code="17",
+        run_date="20990101",
+        departure_date="20990102",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+    )
+    assert timetable_payload(overnight)["runDt"] == "20990102"
+    form = fare_payload(overnight, PassengerCounts(adult=1))
+    assert form["runDt"] == "20990102"
+    assert form["runDt1"] == "20990102"

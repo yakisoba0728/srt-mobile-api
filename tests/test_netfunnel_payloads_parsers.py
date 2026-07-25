@@ -895,13 +895,17 @@ def test_detail_parsers_reject_pages_without_required_structure():
 
 
 def test_fare_payload_uses_canonical_passenger_slots_and_row_train_class():
-    # Distinct counts so passengerN<->type mapping is unambiguous. trnSort must be
-    # the search row's trnClsfCd (열차종별코드), NOT literal 'SRT' or stlbTrnClsfCd.
+    # Distinct counts so the slot<->type mapping is unambiguous. trnSort must be
+    # the DISPLAY NAME getStlbTrnClsfCdNm(stlbTrnClsfCd) produces -- "SRT" for
+    # 역무차종별코드 17 -- as the live search page's own fare and timetable call
+    # sites do (captured 2026-07-26). It is NOT the raw code, and NOT trnClsfCd,
+    # which no live search row carries at all.
     train = TrainSummary(
         train_no="303",
         service_class_code="17",
         train_class_code="07",
         run_date="20260710",
+        departure_date="20260710",
         departure_station_code="0551",
         arrival_station_code="0020",
         departure_station_name="수서",
@@ -918,25 +922,36 @@ def test_fare_payload_uses_canonical_passenger_slots_and_row_train_class():
     payload = fare_payload(train, passengers)
     assert timetable == {
         "stnCourseNm": "수서-부산",
-        "trnSort": "07",
+        "trnSort": "SRT",
         "runDt": "20260710",
         "trnNo": "00303",
     }
-    assert payload["trnSort"] == "07"
-    # passenger1..5 are the COMPACTED psgInfoPerPrnb1..5 in canonical psgTpCd order
-    # (ara1001l.js:1219-1223 + compaction ara0101v.js:824-836). All five types are filled
-    # here, so the compacted order is the full canonical order: adult(1), dis1-3(4),
-    # dis4-6(5), senior(3), child(2). infant is not a psgTpCd type and never appears.
-    assert [payload[f"passenger{index}"] for index in range(1, 6)] == [
+    assert payload["trnSort"] == "SRT"
+    # psgInfoPerPrnb1..5 are COMPACTED in canonical psgTpCd order (compaction at
+    # ara0101v.js:824-836, unchanged). All five types are filled here, so the
+    # compacted order is the full canonical order: adult(1), dis1-3(4),
+    # dis4-6(5), senior(3), child(2).
+    assert [payload[f"psgInfoPerPrnb{index}"] for index in range(1, 6)] == [
         "1",
         "4",
         "5",
         "3",
         "2",
     ]
-    # Ara13010 does not carry psgTpCd*/psgInfoPerPrnb*/infantCnt.
-    assert not any(key.startswith("psgTpCd") for key in payload)
-    assert not any(key.startswith("psgInfoPerPrnb") for key in payload)
+    assert [payload[f"psgTpCd{index}"] for index in range(1, 6)] == [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+    ]
+    # The live form carries a sixth, always-EMPTY slot -- and psgInfoPerPrnb6 is
+    # "" rather than the "0" the other unfilled slots use, which is how the
+    # search response's own commandMap echoed it back.
+    assert payload["psgTpCd6"] == ""
+    assert payload["psgInfoPerPrnb6"] == ""
+    # passenger1..5 was our own invention; the live page contains no such field.
+    assert not any(key.startswith("passenger") for key in payload)
     assert "infantCnt" not in payload
     assert payload["trnNo"] == "00303"
     assert payload["stnCourseNm"] == "수서-부산"
@@ -946,13 +961,22 @@ def test_fare_payload_uses_canonical_passenger_slots_and_row_train_class():
     assert payload["trnNo2"] == ""
 
     # Gap case that distinguishes COMPACTED from positional: 1 adult + 1 child. The app
-    # compacts to passenger1=1, passenger2=1, passenger3..5=0 (child's count moves up into
-    # the second contiguous slot), NOT positional passenger1=1, passenger5=1.
+    # compacts to psgInfoPerPrnb1=1, psgInfoPerPrnb2=1, psgInfoPerPrnb3..5=0 (child's count
+    # moves up into the second contiguous slot), NOT positional slot 1 and slot 5.
     gap_payload = fare_payload(train, PassengerCounts(adult=1, child=1))
-    assert [gap_payload[f"passenger{index}"] for index in range(1, 6)] == [
+    assert [gap_payload[f"psgInfoPerPrnb{index}"] for index in range(1, 6)] == [
         "1",
         "1",
         "0",
         "0",
         "0",
+    ]
+    # ...and the type codes compact with them: adult stays "1", child's "5" moves
+    # into slot 2, the rest empty.
+    assert [gap_payload[f"psgTpCd{index}"] for index in range(1, 6)] == [
+        "1",
+        "5",
+        "",
+        "",
+        "",
     ]
