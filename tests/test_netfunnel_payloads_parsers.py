@@ -18,6 +18,7 @@ from srt_mobile_api.payloads import (
     fare_payload,
     group_search_ajax_payload,
     passenger_selector_payload,
+    personal_reservation_payload,
     search_ajax_payload,
     search_continuation_payload,
     search_page_payload,
@@ -79,6 +80,73 @@ def test_parse_netfunnel_response_requires_key():
 
     with pytest.raises(SrtNetFunnelError, match="key"):
         parse_netfunnel_response(body, action="act_10")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "NetFunnel.gControl.result='5101:300:opcode=5002&nwait=0&ip=127.0.0.1';",
+        "NetFunnel.gRtype=5101;NetFunnel.gControl.result='5101:300:nwait=0&nnext=0';",
+        "NetFunnel.gControl.result='5101:300:key=';",
+    ],
+)
+def test_parse_netfunnel_response_accepts_a_bypass_without_a_key(body):
+    # kTsBypass=300 means the queue was BYPASSED: there is no place in line, so
+    # there is nothing to issue a key for. The app's chkEnter handler sets
+    # PS_N_RUNNING, stores the result cookie and fires onBypass without ever
+    # reading getValue("key") (netfunnel.js, _showResultChkEnter). Accepting 300
+    # as a success while still demanding a key made that acceptance unreachable
+    # and aborted the search instead of proceeding.
+    token = parse_netfunnel_response(body, action="act_10")
+
+    assert token.code == "300"
+    assert token.key == ""
+
+
+def test_parse_netfunnel_response_still_requires_a_key_for_a_plain_success():
+    # Deliberately NOT relaxed for kSuccess=200: a queue pass is identified by
+    # its key, so a 200 without one stays anomalous.
+    with pytest.raises(SrtNetFunnelError, match="key"):
+        parse_netfunnel_response(
+            "NetFunnel.gControl.result='5101:200:nwait=0&nnext=0';", action="act_10"
+        )
+
+
+def test_an_empty_netfunnel_key_is_inert_in_every_request_builder():
+    # The other half of the relaxation: an absent key must not become a deferred
+    # failure in a later request. Every builder that consumes one places it
+    # verbatim, so a bypass yields netfunnelKey="" on the wire -- which is what
+    # our own app sends anyway, its NetFunnel integration being commented out
+    # (ara0101v.js:651-655, ara1001l.js:1734-1739 call netfunnel_callback()
+    # directly) and the string "netfunnelKey" appearing nowhere in the bundle.
+    query = TrainSearchQuery("0551", "0020", "20260710")
+
+    assert search_page_payload(query, "")["netfunnelKey"] == ""
+    assert search_ajax_payload(query, "", hydrated_fields={})["netfunnelKey"] == ""
+    reservable = TrainSummary(
+        train_no="303",
+        service_class_code="17",
+        train_group_code="300",
+        departure_station_code="0551",
+        arrival_station_code="0020",
+        departure_station_name="수서",
+        arrival_station_name="부산",
+        departure_date="20990101",
+        departure_time="060000",
+        arrival_time="083000",
+        departure_run_order="1",
+        arrival_run_order="10",
+        departure_consist_order="1",
+        arrival_consist_order="2",
+        general_seat_availability="예약가능",
+        special_seat_availability="매진",
+    )
+    assert (
+        personal_reservation_payload(
+            reservable, PassengerCounts(adult=1), netfunnel_key=""
+        )["netfunnelKey"]
+        == ""
+    )
 
 
 def test_build_act10_url_is_deterministic():

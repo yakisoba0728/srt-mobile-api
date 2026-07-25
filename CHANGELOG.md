@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A NetFunnel bypass (`kTsBypass` = 300) is now accepted without a key.
+  `SUCCESS_CODES` already held `{"200", "300"}`, but the key check below it was
+  unconditional, so the acceptance of 300 was unreachable for the only response
+  shape a bypass actually has. The app's `_showResultChkEnter` sets
+  `PS_N_RUNNING`, stores the result cookie and fires `onBypass` without ever
+  reading `getValue("key")` — a bypassed queue has no place in line to key. Our
+  `SrtNetFunnelError` escaped `SrtClient._get_act10_key` with code `None`, which
+  `_search_with_retry` does not match (it retries only `NET000001`), so a
+  bypassed queue aborted the search instead of searching. `kSuccess` (200) still
+  requires a key. An empty key is inert downstream — every builder that consumes
+  one emits `netfunnelKey=""`, verified by test, which is also what our own app
+  sends, its NetFunnel integration being commented out
+  (`ara0101v.js:651-655`, `ara1001l.js:1734-1739`) and `netfunnelKey` appearing
+  nowhere in the v2.0.41 bundle.
 - `TrainSearchQuery.train_group_code` now defaults to `"109"` (전체), the app's
   own booking-screen default, instead of `"900"` (KTX+SRT). `ara0101v.js:85-86`
   sets the picker to `"109"`/전체 on load and `:98-99` seeds

@@ -385,6 +385,45 @@ def test_search_uses_act10_and_search_endpoint(load_json_fixture, load_text_fixt
         assert payload["dptRsStnCdNm1"] == ["수서"]
 
 
+def test_search_proceeds_through_a_bypassed_netfunnel_queue(
+    load_json_fixture,
+    load_text_fixture,
+):
+    # kTsBypass=300 with no key. The app sets the running state and fires
+    # onBypass without reading a key (netfunnel.js, _showResultChkEnter), i.e. it
+    # simply proceeds. We used to raise SrtNetFunnelError out of _get_act10_key,
+    # and because that error carries code None rather than NET000001 it was not
+    # covered by _search_with_retry either -- so a bypassed queue aborted the
+    # search outright instead of searching.
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(
+                200,
+                text="NetFunnel.gRtype=5101;NetFunnel.gControl.result='5101:300:nwait=0&nnext=0';",
+            )
+        if request.method == "GET":
+            return httpx.Response(200, text=load_text_fixture("search_page.html"))
+        return httpx.Response(200, json=load_json_fixture("search_success.json"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    try:
+        result = client.search_trains(TrainSearchQuery("0551", "0020", "20260710"))
+    finally:
+        client.close()
+
+    assert result.trains[0].train_no == "303"
+    # One acquisition, one hydration, one search POST: the bypass costs no retry.
+    assert [request.url.path for request in calls].count("/ts.wseq") == 1
+    posts = [request for request in calls if request.method == "POST"]
+    assert len(posts) == 1
+    # The keyless bypass is sent as netfunnelKey="", not dropped and not invented.
+    posted = dict(parse_qsl(posts[0].content.decode(), keep_blank_values=True))
+    assert posted["netfunnelKey"] == ""
+
+
 def _paginated_search_response(
     departure_times: list[str | None],
     flag: object = "N",
