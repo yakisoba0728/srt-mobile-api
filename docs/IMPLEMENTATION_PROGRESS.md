@@ -876,7 +876,34 @@ off `rsvWaitPsbCd`, a column our app never reads for this and which the group
 search does not even return). Whether SRT offers 예약대기 at all on these
 routes is unknown; the code path remains offline-tested only.
 
-**Group — NOT ATTEMPTED, deliberately.** `ara1001l.js:1597-1610` shows the app
+**Group — ATTEMPTED 2026-07-26, REFUSED BY THE SERVER, nothing created.**
+Ten adults, 수서→동탄 20260809 train 315, selected from `search_group_trains`.
+The dry run showed the form the bundle prescribes — route
+`/arc/selectListArc06014_n.do`, `grpDv=1`, `jobId=1101` (groups keep the
+personal job id), `totPrnb=10`, `psgInfoPerPrnb1=10`. The live send came back
+with a WRAPPER-level failure, before any business envelope::
+
+    {"ERROR_CODE": "-1",
+     "ERROR_MSG": "조회 중 에러가 발생 하였습니다. 관리자에게 문의하십시오."}
+
+No `pnrNo`, no `tmpJobSqno1`, no `resultMap`. The account was then verified to
+hold zero reservations and zero tickets, so **the uncancellable-hold risk did
+not materialise: nothing was created.** The group *search* works fine on the
+same account and journey, so only the booking is refused.
+
+The cause is NOT established. The form matches what the bundle prescribes, and
+`ERROR_CODE: -1` is the generic wrapper failure rather than a field complaint,
+which is what one would expect from an account that is not entitled to book
+group tickets — SRT 단체승차권 is a contracted product — but it is equally
+consistent with a group-specific field the offline bundle does not reveal.
+Do not "fix" the payload on this evidence. Settling it needs either an account
+with group entitlement or a capture of the app performing a real group booking.
+
+Superseded note (kept for the reasoning): the risk below was why this was held
+back, and it remains the right caution for any future attempt that DOES get
+past the wrapper.
+
+**Group — the uncancellable-hold risk that justified holding this back.** `ara1001l.js:1597-1610` shows the app
 forces `pnrNo` to `-1` for a group reservation and identifies it by
 `resultMap.tmpJobSqno1` instead. If the live response really carries no PNR,
 `cancel` — which takes a PNR — would have nothing to act on, so a live group
