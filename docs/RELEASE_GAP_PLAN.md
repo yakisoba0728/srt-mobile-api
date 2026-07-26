@@ -101,11 +101,13 @@ cancel / change).
 > (still deliberately outside `READ_ONLY_ROUTES`, so §1.2's read-only allowlist
 > and its 20-route count are unchanged). What is enforced at the transport layer
 > rather than by the absence of code is **which** categories may transmit:
-> `SRT_LIVE_MUTATION_CATEGORIES` was an empty frozenset and now holds exactly
-> `{"reserve", "cancel"}`, so `post_mutation_form` and `_send_mutation_request`
-> still refuse `payment` and `refund` outright, while a consented non-dry-run
-> reserve or cancel does reach the network — and a live reserve->cancel round trip
-> was run once, on 2026-07-25 (see UPDATE 3 in the header). For the current state
+> `SRT_LIVE_MUTATION_CATEGORIES` was an empty frozenset, then held
+> `{"reserve", "cancel"}`, and as of 2026-07-26 holds all four —
+> `{"reserve", "cancel", "payment", "refund"}` — each because a live run answered
+> that category's own wire format (reserve/cancel 2026-07-25, payment/refund
+> 2026-07-26; see UPDATE 3 and UPDATE 4 in the header). `post_mutation_form` and
+> `_send_mutation_request` still refuse anything outside that set. For the current
+> state
 > read `CHANGELOG.md` (`## Unreleased`) and `docs/IMPLEMENTATION_PROGRESS.md`; the
 > rest of this document is left as the planning record it was.
 
@@ -803,6 +805,16 @@ until a live request/response shape is recorded and sanitized.
 > `ard02017/18` WebView page (TransKey keypad + FIDO + AppGuard). So P3 is **back to
 > capture-blocked** — treat the `ata09036` shape as a hypothesis to verify with a
 > live v2.0.41 capture before implementing, not a resolved route.
+>
+> **✅ UPDATE 4 (2026-07-26) — that live capture was performed.** The hypothesis
+> held. A free probe first: a fake card and a non-existent PNR drew a proper
+> business envelope (`strResult=FAIL`, `msgCd=WRT100170`), not a 404 or an HTML
+> shell, which established the route exists on v2.0.41 without spending anything.
+> Then a real charge: 수서→동탄, one adult, 7,500 KRW, `strResult=SUCC` /
+> `msgCd=IRT000000` — and refunded in the same run. `ata09036` moves from
+> hypothesis to **confirmed on the live server**; the 0-hit finding above is
+> unchanged, and the app's own `ard02017/18` WebView path stays out of scope. The
+> Stage-C fake-card step below was executed exactly as written.
 
 - [ ] Implement the `ata09036` JSON payment POST → parse `dsOutput0[0].strResult`
       (never auto-submit; default dry-run). Body fields per §3.3 new row /
@@ -830,6 +842,16 @@ until a live request/response shape is recorded and sanitized.
 > one-adult hold. Cancel is implemented, live-enabled and verified. **Refund
 > (`getListAtc14087`→`atc02063`) and change are untouched and still
 > capture-blocked**, and the 0-hit finding above stands for all of them.
+>
+> **✅ UPDATE 4 (2026-07-26) — refund captured too.** Step 1 answered a
+> non-existent PNR with a proper business envelope (`msgCd=WRT300005`, "조회자료가
+> 없습니다."), then returned a real ticket's identity; step 2 refunded it,
+> `strResult=SUCC` / `msgCd=IRT200277`, and the account was verified empty
+> afterwards from a separate session. It also settled srtgo's disputed step-2
+> spellings: `tkRetPwd`/`psgNm`/`pnr_no` are the names the server takes. Refund is
+> implemented, live-enabled and verified for the single-journey one-adult case.
+> **Change (변경) is still untouched and still capture-blocked**, and the 0-hit
+> finding above stands for all of these routes.
 
 - [ ] ~~🔒 First capture the cancel/refund/change shapes — ZERO static evidence.~~
       **UPDATE (2026-07-21): cancel & refund shapes are known** from srtgo's
@@ -1070,6 +1092,20 @@ implementable now: **individual reserve `arc05013`** with the existing `act_10` 
 > reserve `arc06014`** and 🔒 **the `arc02012` seat page** are unaffected and still
 > capture-blocked. Details: `docs/IMPLEMENTATION_PROGRESS.md` ("Live Reserve->Cancel
 > Verification") and `CHANGELOG.md` (Unreleased).
+
+> **✅ RESOLUTION for payment and refund (2026-07-26) — live capture performed.**
+> Same shape of result, one day later, and again the 0-hit finding above is
+> untouched. A free probe established that both `ata09036` and
+> `getListAtc14087`→`atc02063` answer business envelopes rather than 404s on
+> v2.0.41; a real round trip then charged 7,500 KRW (수서→동탄, one adult,
+> `SUCC`/`IRT000000`) and refunded it (`SUCC`/`IRT200277`), leaving the account
+> empty. Both move from hypothesis to **confirmed on the live server**, for a
+> SINGLE-journey, one-adult, general-seat ticket on one personal card in one lump
+> sum; group, multi-leg, corporate cards and instalments remain untested. Still
+> capture-blocked and unaffected: 🔒 **change (변경)**, 🔒 **group reserve
+> `arc06014`**, 🔒 **the `arc02012` seat page**. Details:
+> `docs/IMPLEMENTATION_PROGRESS.md` ("Card Payment and Refund") and `CHANGELOG.md`
+> (Unreleased).
 
 ---
 

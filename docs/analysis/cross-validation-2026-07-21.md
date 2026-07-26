@@ -29,9 +29,26 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 > no trace of it afterwards. So `Ard02045` is still ABSENT from our decompile
 > **and** now confirmed on the live server for our app version; the two statements
 > are about different evidence and both are true. The run covered ONE
-> single-journey, one-adult, general-seat reservation. **Payment (`Ata09036`),
-> refund (`Atc14087`→`Atc02063`), standby (`Ata01135`) and ticket-info
-> (`Ard02019`) were NOT captured and remain attested only by srtgo.** See
+> single-journey, one-adult, general-seat reservation. **Standby (`Ata01135`) and
+> ticket-info (`Ard02019`) were NOT captured and remain attested only by srtgo.**
+>
+> **✅ Update (2026-07-26) — payment and refund were captured too.** Same shape of
+> result, same day-later pattern, and again the 0-hit findings below are unchanged
+> facts about the offline bundle. A free probe first: a fake card and a
+> non-existent PNR drew proper business envelopes from both routes rather than
+> 404s — `Atc14087` returned `msgCd=WRT300005` / "조회자료가 없습니다.",
+> `Ata09036` returned `strResult=FAIL` / `msgCd=WRT100170` — which established that
+> both exist on v2.0.41 without spending anything. Then one real round trip:
+> 수서→동탄, one adult, 7,500 KRW, payment `strResult=SUCC` / `msgCd=IRT000000`,
+> two-step refund `strResult=SUCC` / `msgCd=IRT200277`, account verified empty
+> afterwards from a separate session. It also settled §4's `tkRetPwd` / `psgNm`
+> prefix-drift question: srtgo's step-2 spellings are the ones the server takes,
+> and the bare `retPwd` / `buyPsNm` forms in our offline ticket store really were
+> a local cache vocabulary rather than an API schema. So `Ata09036`,
+> `Atc14087` and `Atc02063` are still ABSENT from our decompile **and** now
+> confirmed on the live server; both statements are about different evidence.
+> Scope: one single-journey, one-adult, general-seat ticket on one personal card
+> in one lump sum. See
 > `docs/IMPLEMENTATION_PROGRESS.md` ("Live Reserve->Cancel Verification") and
 > `CHANGELOG.md` (Unreleased); the resolution is also noted at §4, at "Net changes"
 > #2 and at "Remaining open questions" #1.
@@ -208,7 +225,7 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 
 ### ⚠️ Corrections / discrepancies
 
-- **Re-confirmed absence (our static bundle proves none of it).** The three cancel/refund endpoints are DEFINITIVELY ABSENT from v2.0.41 — **0 hits across all 21,673 files** even grepping the exact paths: `selectListArd02045`=0, `getListAtc14087`=0, `selectListAtc02063`=0. These are runtime server-rendered WebView pages, never bundled. **✅ Resolution note (2026-07-25):** this absence is unchanged and still correct — but the missing evidence was obtained live for **cancel only**. `selectListArd02045` with `pnrNo`/`jrnyCnt="1"`/`rsvChgTno="0"` released a real unpaid hold on the live server (`strResult=SUCC`, `msgCd=IRG000000`, `msgTxt="정상처리되었습니다"`), which also settles the two bullets below for cancel: `rsvChgTno="0"` was accepted on the wire, and `jrnyCnt="1"` was accepted for a single-journey hold (multi-leg untested). `getListAtc14087` and `selectListAtc02063` were **not** exercised and remain uncorroborated.
+- **Re-confirmed absence (our static bundle proves none of it).** The three cancel/refund endpoints are DEFINITIVELY ABSENT from v2.0.41 — **0 hits across all 21,673 files** even grepping the exact paths: `selectListArd02045`=0, `getListAtc14087`=0, `selectListAtc02063`=0. These are runtime server-rendered WebView pages, never bundled. **✅ Resolution note (2026-07-25):** this absence is unchanged and still correct — but the missing evidence was obtained live for **cancel only**. `selectListArd02045` with `pnrNo`/`jrnyCnt="1"`/`rsvChgTno="0"` released a real unpaid hold on the live server (`strResult=SUCC`, `msgCd=IRG000000`, `msgTxt="정상처리되었습니다"`), which also settles the two bullets below for cancel: `rsvChgTno="0"` was accepted on the wire, and `jrnyCnt="1"` was accepted for a single-journey hold (multi-leg untested). **✅ Resolution note (2026-07-26):** `getListAtc14087` and `selectListAtc02063` were then exercised too, and the same split applies — still 0-hit in the bundle, now confirmed live. Step 1 answered a non-existent PNR with `msgCd=WRT300005` / "조회자료가 없습니다." and then returned a real ticket's identity; step 2 refunded it (`strResult=SUCC`, `msgCd=IRT200277`) with srtgo's `pnr_no`/`cnc_dmn_cont`/`saleDt`/`saleWctNo`/`saleSqno`/`tkRetPwd`/`psgNm` body, and the account was empty afterwards.
 - **Cancel param `rsvChgTno="0"`** (srtgo `srt.py:1138`) is ABSENT from our app (0 files). Cannot corroborate from static assets; would appear only at runtime.
 - **Refund step-2 underscore params `pnr_no` and `cnc_dmn_cont`** (srtgo `srt.py:1241-1242`) are ABSENT (0 files). OUR native store uses camelCase `pnrNo` (`b.smali:145`), never the underscore form — the underscore style is anomalous vs the rest of the API and unverifiable from our bundle.
 - **Refund reason literal `"승차권 환불로 취소"`** (srtgo `srt.py:1242`) is ABSENT (0 files). OUR `commCode.js:1423-1471` has refund STATUS codes (`반환접수신청/접수반환완료/반환/로칼반환`) but not that exact client-supplied demand-reason string.
@@ -350,7 +367,7 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 ## Net changes to our understanding
 
 1. **The hidden mobile-JSON API is real and well-matched.** Login (Apb01080), search (Ara10007), reserve (Arc05013), tickets (Atc14016), and the NetFunnel `act_10` queue all match srtgo on host, path, field names, and response envelope. srtgo is a **correct model of the individual flow** for v2.0.41.
-2. **Six endpoints are server-rendered and NOT in our bundle** (payment Ata09036, cancel Ard02045, refund Atc02063, standby-option Ata01135, reserve-info getListAtc14087, ticket-info Ard02019) — 0 hits across all 21,673 files. For v2.0.41 they are **attested only by srtgo's live runs**, not by our static code. This is the largest remaining verification gap. **✅ Resolution note (2026-07-25): one of the six is closed.** Cancel `Ard02045` was exercised against the live server in a reserve->cancel round trip (`SUCC`/`IRG000000`, single-journey one-adult hold), so it is now attested by a run of **ours** as well; it remains 0-hit in the bundle. The other five are untouched, and the gap stands for them.
+2. **Six endpoints are server-rendered and NOT in our bundle** (payment Ata09036, cancel Ard02045, refund Atc02063, standby-option Ata01135, reserve-info getListAtc14087, ticket-info Ard02019) — 0 hits across all 21,673 files. For v2.0.41 they are **attested only by srtgo's live runs**, not by our static code. This is the largest remaining verification gap. **✅ Resolution note (2026-07-25): one of the six is closed.** Cancel `Ard02045` was exercised against the live server in a reserve->cancel round trip (`SUCC`/`IRG000000`, single-journey one-adult hold), so it is now attested by a run of **ours** as well; it remains 0-hit in the bundle. **✅ Resolution note (2026-07-26): three more are closed.** Payment `Ata09036`, reserve-info `getListAtc14087` and refund `Atc02063` were exercised against the live server in a probe-then-real-round-trip (`SUCC`/`IRT000000` for the charge, `SUCC`/`IRT200277` for the refund, 7,500 KRW, one adult, refunded and confirmed gone). All three remain 0-hit in the bundle. Standby `Ata01135` and ticket-info `Ard02019` are untouched, and the gap stands for those two.
 3. **`ata09036` is not the v2.0.41 in-app payment route.** v2.0.41 pays via the **ard02017/18 WebView page** gated by TransKey + RaonSecure FIDO + AppGuard. The only `Ata####` payment endpoint actually present is **Ata01032** (discount / payable-card-company page), not Ata09036. OUR `RELEASE_GAP_PLAN.md` overreach on this is corrected.
 4. **srtgo misses a whole group / seat-map branch:** group search (Ara10082), group reserve (Arc06014), group payment (Ard02018), seat-map select (Arc02012), plus jobId `1103` (시트맵예약) and Korail-interop `mutMrkVrfCd` (Ara10130). Full bundled inventory = **exactly 14 `_n.do` endpoints**.
 5. **srtgo misses the alternate host** `app.srail.co.kr/neo/` (and dev `devapp.srail.co.kr/neo/`) which serves the same `_n.do` JSON.
@@ -360,7 +377,7 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 
 ## Remaining open questions (need a live v2.0.41 capture)
 
-1. **Can the request shapes for the six absent endpoints** (payment Ata09036, cancel Ard02045, refund Atc02063, standby Ata01135, reserve-info getListAtc14087, ticket-info Ard02019) be confirmed for v2.0.41? Absent from our decompile; only srtgo attests. **Biggest gap.** **✅ Answered for cancel (2026-07-25):** yes for `Ard02045` — the live server accepted `pnrNo`/`jrnyCnt="1"`/`rsvChgTno="0"` and released a real hold (`SUCC`/`IRG000000`) for our app version, in a single-journey one-adult round trip. Question 4 below (is `netfunnelKey` mandatory for `arc05013`?) is **not** answered: our reserve always sends an `act_10` key and the run therefore never tested omitting it. The remaining five endpoints are still open.
+1. **Can the request shapes for the six absent endpoints** (payment Ata09036, cancel Ard02045, refund Atc02063, standby Ata01135, reserve-info getListAtc14087, ticket-info Ard02019) be confirmed for v2.0.41? Absent from our decompile; only srtgo attests. **Biggest gap.** **✅ Answered for cancel (2026-07-25):** yes for `Ard02045` — the live server accepted `pnrNo`/`jrnyCnt="1"`/`rsvChgTno="0"` and released a real hold (`SUCC`/`IRG000000`) for our app version, in a single-journey one-adult round trip. Question 4 below (is `netfunnelKey` mandatory for `arc05013`?) is **not** answered: our reserve always sends an `act_10` key and the run therefore never tested omitting it. **✅ Also answered for payment, reserve-info and refund (2026-07-26):** yes for `Ata09036`, `getListAtc14087` and `Atc02063` — the live server accepted srtgo's shapes for all three, charging and then refunding a real 7,500 KRW ticket. Standby `Ata01135` and ticket-info `Ard02019` are still open.
 2. `reserve_info` uses `getListAtc14087.do` — NO `_n` suffix, `getList-` prefix, `.do` GET-style servlet (`srt.py:100`), unlike the `selectList...._n.do` family. Different servlet lineage? Not in our decompile to cross-check.
 3. **Are `mblPhone` and `reserveType` real hidden inputs** in the server-rendered JSP `#rsvForm`, or srtgo-only fields the server silently accepts? Unresolvable from our offline assets.
 4. **Is `netfunnelKey` mandatory for `arc05013` reserve**, or only for search? OUR `fn_callReserv` has NO netfunnel call and `BEGIN` is commented; srtgo sends a fresh act_10 key defensively (`srt.py:987`). Whether the live server rejects reserve without it is unverified.

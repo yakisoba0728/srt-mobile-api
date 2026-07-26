@@ -1,8 +1,8 @@
 # SRT Python Package Implementation Progress
 
-Last updated: 2026-07-25 KST (version `0.2.0`; the consent-gated mutation port
-and its transport-layer gate are recorded under `## Unreleased` in
-`CHANGELOG.md`). Entries dated before that describe the state at HEAD
+Last updated: 2026-07-26 KST (version `0.2.0`; the consent-gated mutation port,
+its transport-layer gate and the four-category live enablement are recorded
+under `## Unreleased` in `CHANGELOG.md`). Entries dated before that describe the state at HEAD
 `955de306` and are kept as the historical record.
 
 ## Current State
@@ -61,12 +61,12 @@ and its transport-layer gate are recorded under `## Unreleased` in
   read (`/atc/getListAtc14087.do`), classified as a read by inference rather
   than by proof -- see the comment on it in `safety.py`.
 - A consent-gated mutation surface was subsequently added (see "Consent-gated
-  mutation surface" below). `reserve` and `cancel` are live-enabled as a pair at
-  the transport layer. `payment` and `refund` now DO have client methods
-  (`pay_with_card`, `refund`, plus the refund's step-1 read
-  `get_refund_ticket_info`) and are still NOT live-enabled: implementing them
-  did not open the gate, and `post_mutation_form` refuses both however
-  permissive the consent is. See "Card payment and refund" below.
+  mutation surface" below). All four categories are live-enabled at the
+  transport layer: `reserve` and `cancel` as a pair (live-verified 2026-07-25),
+  `payment` and `refund` as a pair (live-verified 2026-07-26). Implementing
+  `pay_with_card`, `refund` and the refund's step-1 read
+  `get_refund_ticket_info` did not open the gate; the live verification did.
+  See "Card payment and refund" below.
 - The prior Task 4 verification gate remains recorded: its full offline suite,
   package build, isolated wheel import, exact static boundary, independent
   review, and bounded live gate all passed.
@@ -113,16 +113,18 @@ and its transport-layer gate are recorded under `## Unreleased` in
 - Seat-option preference selector popup read
 - Train-group selector popup read
 - Physical seat-selection page read returning `SeatSelectionPage`
+- Refund step 1, the issued ticket's identity read (`/atc/getListAtc14087.do`)
 
 The package also exports the offline `parse_reservation_attempt_response()`,
 `parse_reservation_hold_response()` and `parse_unpaid_cancel_response()`
 helpers; they perform no I/O and are not client routes.
 
-The transport currently allows 21 exact read-only app/NetFunnel routes.
-`act_19`, payment, refund, other ATA/ARD flows, native bridges, callbacks, and
-external seat-map calls are not callable. Preview-by-default `reserve` and
-`cancel` methods exist; both transmit under an explicit non-dry-run consent for
-their own category. See the next section.
+The transport currently allows 22 exact read-only app/NetFunnel routes.
+`act_19`, the app's own `Ard02017`/`Ard02018` WebView payment entry, other
+ATA/ARD flows, native bridges, callbacks, and external seat-map calls are not
+callable. Preview-by-default `reserve`, `cancel`, `pay_with_card` and `refund`
+methods exist; all four transmit under an explicit non-dry-run consent for their
+own category, and all four are live-verified. See the next section.
 
 ## Consent-gated Mutation Surface
 
@@ -163,44 +165,82 @@ their own category. See the next section.
   (the reserve response carries a seat count, not a journey count) and any
   supplied journey count is compared numerically, tolerating zero-padding, so a
   formatting difference can never make a hold uncancellable.
-- `payment` and `refund` now have client methods (`pay_with_card`, `refund`,
-  and the refund's step-1 read `get_refund_ticket_info`) and remain NOT
-  live-enabled; see "Card Payment and Refund" below.
+- `payment` and `refund` have client methods (`pay_with_card`, `refund`, and the
+  refund's step-1 read `get_refund_ticket_info`) and are live-enabled as of
+  2026-07-26; see "Card Payment and Refund" below.
 - The four state-changing routes are tiered in `safety.SRT_MUTATION_ROUTES` and
   deliberately kept out of `READ_ONLY_ROUTES`, so the 22-route read-only
   allowlist and its guarantee are unchanged and `assert_read_only_request`
   refuses each of them. `SRT_MUTATION_ROUTE_CATEGORIES` binds each route to one
   consent category.
-- **`payment` and `refund` cannot be transmitted at all, and this is enforced at
-  the transport layer.** `safety.SRT_LIVE_MUTATION_CATEGORIES` holds exactly
-  `{"reserve", "cancel"}`; `SrtHttpClient.post_mutation_form` refuses every
-  category outside it (however permissive the consent), and
-  `_send_mutation_request` — the function that actually calls `send` —
-  re-asserts the same membership. The guarantee does not depend on the absence
-  of a client method: reaching `SrtClient.http` directly cannot transmit a
-  payment or refund either.
+- **Which categories may transmit is enforced at the transport layer, and
+  membership means one thing: a live run answered that category's own wire
+  format.** `safety.SRT_LIVE_MUTATION_CATEGORIES` holds exactly
+  `{"reserve", "cancel", "payment", "refund"}`;
+  `SrtHttpClient.post_mutation_form` refuses every category outside it (however
+  permissive the consent), and `_send_mutation_request` — the function that
+  actually calls `send` — re-asserts the same membership, the route allowlist
+  and the route/category binding. The guarantee does not depend on the client
+  methods: reaching `SrtClient.http` directly cannot widen it.
 - `reserve` and `cancel` were live-enabled **as a pair**, because they are the
   two halves of one reversible operation and enabling reserve without a
   transmittable cancel would strand a real hold on a crash. That was a decision
   about recoverability, not about evidence — opening the gate is what made
-  running the round trip possible, and **it was run once, on 2026-07-25, and
-  both halves succeeded** (see the section below). The `cancel`/`payment`/
-  `refund` wire formats are still 0-hit across all 21,673 files of the v2.0.41
-  offline evidence bundle and still came from srtgo; for cancel, one live run now
-  corroborates the shape, and for payment and refund nothing does.
-- Adding `payment` or `refund` to the live-enabled set is now a ONE-part job and
-  is deliberately still not done: both are implemented, and neither has been
-  live-verified on its own wire format. That verification is the whole remaining
-  requirement, and it is a decision that has not been made. A payment
-  additionally transmits a PAN in the clear and keeps a separate card-kind gate
-  behind the live-enablement one.
+  running the round trip possible, and **it was run on 2026-07-25 and both
+  halves succeeded** (see the section below). `payment` and `refund` were then
+  opened on the same principle — a charge and its reversal, verified as one
+  round trip so nothing could be stranded paid — after the 2026-07-26 run.
+- The `cancel`/`payment`/`refund` wire formats are all still 0-hit across the
+  21,673 files of the v2.0.41 offline evidence bundle and all still came from
+  srtgo. One live run apiece now corroborates each shape on the live server;
+  none of them is statically corroborated, and each run covered a single-journey
+  one-adult case only.
+- A payment additionally transmits a PAN in the clear and keeps a separate
+  card-kind gate (exactly one of `fake_card_only` / `real_card_acknowledged`)
+  behind the live-enablement one. That gate used to sit behind a closed door and
+  is now the last check before a real charge.
 
-## Card Payment and Refund (IMPLEMENTED, PREVIEW-ONLY, NEVER SENT)
+## Card Payment and Refund (IMPLEMENTED, LIVE-VERIFIED 2026-07-26, LIVE-ENABLED)
 
-Both surfaces build, gate, preview and parse. Neither can transmit:
-`SRT_LIVE_MUTATION_CATEGORIES` is untouched at exactly `{"reserve", "cancel"}`,
-and three separate canary tests pin it. No request on either route has ever been
-made from this repository.
+Both surfaces build, gate, preview, transmit and parse.
+`SRT_LIVE_MUTATION_CATEGORIES` holds `{"reserve", "cancel", "payment",
+"refund"}`, and canary tests in four files pin the exact contents so a fifth
+category cannot appear quietly.
+
+**The verification, in two stages.** A free probe went first: a fake card and a
+non-existent PNR were sent to both routes, and neither answered a 404 or an HTML
+error shell. `/atc/getListAtc14087.do` returned
+`{"ErrorCode":"0","outDataSets":{"dsOutput0":[{"msgCd":"WRT300005",
+"strResult":"FAIL","msgTxt":"조회자료가 없습니다."}]},"ErrorMsg":""}`, and the
+payment route `/ata/selectListAta09036_n.do` returned `strResult=FAIL` /
+`msgCd=WRT100170`. Proper business envelopes on both, which established that
+`Ata09036` and `Atc14087`/`Atc02063` exist on our v2.0.41 app version without
+spending anything — all three are srtgo-attested and 0-hit across the 21,673
+files of that offline bundle.
+
+**Then one real round trip:** 수서→동탄 (`0551`→`0552`, the shortest SRT hop),
+2026-08-09, train 315, one adult, 7,500 KRW. Payment (`Ata09036`) answered
+`strResult=SUCC` / `msgCd=IRT000000`; the two-step refund
+(`Atc14087`→`Atc02063`) answered `strResult=SUCC` / `msgCd=IRT200277`; the
+account was then verified empty of both reservations and tickets from a separate
+session. Both routes are therefore **live-verified on 2026-07-26** for a
+single-journey, one-adult ticket, and both remain 0-hit in the v2.0.41 bundle
+and srtgo-sourced — statements about different evidence, both true.
+
+**Two open questions this closed.** `IRT000000` and `IRT200277` are identical to
+korail's confirmation codes for the same two operations, reinforcing the
+shared-platform observation already recorded here for `IRR000018`/`IRG000000` —
+an observation about the codes, not a proven claim about the backend. And
+srtgo's refund spellings `tkRetPwd`/`psgNm`/`pnr_no` are **correct**: the live
+run sent them and the server refunded the ticket, so the doubt recorded below is
+resolved in srtgo's favour, unlike srtgo's korail `txtPrnNo` which really was a
+typo. srtgo was wrong there and right here; single-source field names have to be
+tested one at a time, not trusted or distrusted as a class.
+
+**What the run did not settle** is everything below this paragraph: the origin
+is unchanged, and the run covered one single-journey, one-adult, general-seat
+ticket paid with one personal card in one lump sum. Group, multi-leg, standby,
+corporate cards and instalments were not exercised.
 
 - `SrtClient.pay_with_card(reservation, card, *, consent, ...)` builds the
   31-field 카드결제 form for `/ata/selectListAta09036_n.do` from an
@@ -239,9 +279,10 @@ offline-reservation-JS variables and local cache keys, never an `Ata09036` or
 `#rsvForm` and `:1599`/`:1608` aim it at `Ard02018` (group) / `Ard02017`
 (personal), server-rendered WebView pages, and the charge runs through the
 TransKey secure keypad (`AndroidManifest.xml:143`, `bridge.js:2,31,66-68`) and
-RaonSecure FIDO (`:315`). So the plaintext endpoint may be a legacy path the
-server still honours, or it may be dead for our app version. Nobody has tested
-it.
+RaonSecure FIDO (`:315`). Whether the plaintext endpoint was a legacy path the
+server still honours or dead for our app version was the open question; the
+2026-07-26 charge answered it. The server still honours it, even though our app
+never takes it.
 
 **Amount fidelity** was decided deliberately, against korail's precedent
 (`h_tot_prc` 59,800 vs `h_tot_rcvd_amt` 83,700 on a special-class ticket). The
@@ -253,13 +294,16 @@ Unresolved: the server sends the amount zero-padded, ryanking13/SRT posts it bac
 padded, srtgo casts to `int`; we reproduce srtgo's bare digits because only
 srtgo's form has live attestation.
 
-**The refund's field names are disputed** — srtgo's `tkRetPwd`/`psgNm`/`pnr_no`
-against our app's cache spellings `retPwd`/`buyPsNm`/`pnrNo`. A cache field name
-is not an API field name, so this is unresolved; srtgo's spelling is what ships,
-because it is the only one attested by a live run of that endpoint, and the doubt
-is recorded in the builder, the client method, the tests and the README. The
-precedent is concrete: this project already shipped srtgo's `txtPrnNo` for
-korail's `txtPnrNo`.
+**The refund's field names were disputed, and the live run settled them** —
+srtgo's `tkRetPwd`/`psgNm`/`pnr_no` against our app's cache spellings
+`retPwd`/`buyPsNm`/`pnrNo`. A cache field name is not an API field name, and that
+argument is now demonstrated rather than argued: on 2026-07-26 the form below
+sent srtgo's three spellings and the server refunded the ticket. They are not to
+be "corrected" to the cache spellings. The precedent that motivated the doubt
+still stands — this project really did ship srtgo's `txtPrnNo` for korail's
+`txtPnrNo` — and what it actually teaches is that srtgo was wrong there and
+right here, so single-source field names have to be tested one at a time, not
+trusted or distrusted as a class.
 
 **Envelopes differ across the two routes and both are pinned.** The payment
 answers in `outDataSets.dsOutput0[0]` — the only SRT mutation here that does —
@@ -310,8 +354,10 @@ masks a dataclass by field name and `pnr_no` is the attribute on
 - What it does **not** confirm: only one single-journey, one-adult, general-seat
   round trip was exercised. Multi-leg (`jrnyCnt` > 1), group and standby
   reservations were not, so `jrnyCnt="1"` is confirmed for the single-journey
-  case only. `payment` and `refund` stay unimplemented and outside
-  `SRT_LIVE_MUTATION_CATEGORIES`; nothing was learned about their shapes.
+  case only. `payment` and `refund` were unimplemented at the time of this run
+  and outside `SRT_LIVE_MUTATION_CATEGORIES`; nothing was learned about their
+  shapes here. They were implemented, then verified in their own round trip on
+  2026-07-26 and live-enabled — see "Card Payment and Refund" above.
 - Observation worth recording: both confirmation codes match the sibling korail
   app's live-verified ones (reserve `IRR000018`, cancel `IRG000000`), suggesting
   the two operators share a reservation platform. Recorded as an observation
@@ -543,7 +589,7 @@ car/seat response or availability contract.
   consent-gated cancel surface, the reservation-list read, the NetFunnel
   queue protocol, the error taxonomy, the real-card acknowledgement gate, the
   consent-gated card-payment and refund surfaces and the four-category live
-  enablement: `1307 passed, 1 deselected`; the deselected case remains the
+  enablement: `1311 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
   `httpx.MockTransport`; the live runs are the operator scripts' job.
 - Prior offline gate before payment and refund were live-enabled:
@@ -668,15 +714,16 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
   excluded, and repeated failure scenarios
 - Runtime-success entries: 20
 - Currently implemented underlying read routes: 20, including NetFunnel `act_10`
-- Mutation routes tiered: 4 (reserve, cancel, payment, refund). reserve and
-  cancel have client methods, preview by default and transmit under an explicit
-  non-dry-run consent for their own category; payment and refund have no client
-  method and cannot be transmitted at all
+- Mutation routes tiered: 4 (reserve, cancel, payment, refund). All four have
+  client methods, preview by default and transmit under an explicit non-dry-run
+  consent for their own category; all four are live-verified (reserve and cancel
+  2026-07-25, payment and refund 2026-07-26)
 - Therefore the complete documented endpoint matrix is not yet implemented
 
-Static aliases, live reservation execution, payment handoff, native
+Static aliases, the `Ard02017`/`Ard02018` WebView payment handoff, native
 integrations, and typed physical-seat inventory remain outside the current core
-package.
+package. The plaintext `Ata09036` charge is implemented and live-verified; the
+app's own WebView-plus-TransKey-plus-FIDO path is the one that stays out.
 
 ## Deferred Work
 
@@ -684,11 +731,10 @@ Typed physical-seat layout and selection remain a future candidate requiring
 separately authorized Arc02011 response evidence that proves a stable iterable
 source, availability vocabulary, and closed parser. The unallowlisted Arc02011
 handoff, external seat-map call, callback, and native bridge remain excluded.
-`payment` and `refund` remain excluded from transmission: neither has a client
-method and neither is in `SRT_LIVE_MUTATION_CATEGORIES`, so nothing
-state-changing is sent for them (see "Consent-gated Mutation Surface"). Making
-one sendable requires implementing it and capturing its live response; the
-2026-07-25 round trip captured nothing about either, since the hold it created
-was never paid. `reserve` and `cancel` are the exception — both are implemented,
-live-enabled and verified in that one round trip. The implemented personal and
+All four mutation categories are now implemented, live-enabled and verified:
+`reserve` and `cancel` by the 2026-07-25 round trip, `payment` and `refund` by
+the 2026-07-26 one (see "Consent-gated Mutation Surface" and "Card Payment and
+Refund"). What remains excluded is the app's own payment path — the
+`Ard02017`/`Ard02018` WebView pages, the TransKey keypad and FIDO — which this
+library does not implement at all. The implemented personal and
 group continuation contract has bounded live evidence.

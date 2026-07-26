@@ -2,7 +2,72 @@
 
 ## Unreleased
 
+- **Payment and refund are live-verified and live-enabled.**
+  `safety.SRT_LIVE_MUTATION_CATEGORIES` now holds
+  `{"reserve", "cancel", "payment", "refund"}` — the four categories a live run
+  has answered, and nothing is in that set for any other reason. This
+  **supersedes the entry below** ("Card payment and refund are implemented, and
+  still cannot be transmitted"), which was accurate when it landed: implementing
+  them did not open the gate, and verifying them did.
+  **The verification, 2026-07-26, in two stages.** A free probe went first: a
+  fake card and a non-existent PNR were sent to both routes, and neither
+  answered a 404 or an HTML error shell. `/atc/getListAtc14087.do` returned
+  `{"ErrorCode":"0","outDataSets":{"dsOutput0":[{"msgCd":"WRT300005",
+  "strResult":"FAIL","msgTxt":"조회자료가 없습니다."}]},"ErrorMsg":""}` and the
+  payment route `/ata/selectListAta09036_n.do` returned `strResult=FAIL` /
+  `msgCd=WRT100170` — proper business envelopes on both, which established that
+  `Ata09036` and `Atc14087`/`Atc02063` exist on our v2.0.41 app version without
+  spending anything, even though all three are 0-hit in its offline bundle and
+  srtgo-attested only. **Then one real round trip:** 수서→동탄
+  (`0551`→`0552`, the shortest SRT hop), 2026-08-09, train 315, one adult,
+  7,500 KRW. Payment answered `strResult=SUCC` / `msgCd=IRT000000`; the two-step
+  refund (`Atc02063`) answered `strResult=SUCC` / `msgCd=IRT200277`; the account
+  was then verified empty of both reservations and tickets from a separate
+  session. So `Ata09036` and `Atc02063` are **live-verified on 2026-07-26**, for
+  a single-journey one-adult ticket, and remain 0-hit in the v2.0.41 bundle —
+  two statements about different evidence, both true.
+  **Two things this settled that were previously recorded as open.** First,
+  `IRT000000` and `IRT200277` are identical to korail's confirmation codes for
+  the same two operations, reinforcing the shared-platform observation already
+  recorded here for `IRR000018`/`IRG000000` — still an observation about the
+  codes, not a proven claim about the backend. Second, **srtgo's refund
+  spellings `tkRetPwd`/`psgNm`/`pnr_no` are correct**: the live run sent them
+  and the server refunded the ticket, so the doubt recorded below (against our
+  app's `retPwd`/`buyPsNm`/`pnrNo` cache spellings) is resolved in srtgo's
+  favour. Unlike srtgo's korail `txtPrnNo`, which this project found to be a
+  genuine typo. srtgo was wrong there and right here — single-source field names
+  have to be tested one at a time, not trusted or distrusted as a class.
+  **What it did not settle.** The origin is unchanged: `Ata09036`, `Atc02063`
+  and `Atc14087` are still 0-hit across all 21,673 files of the v2.0.41 offline
+  bundle (which has no `Atc02*` family at all), our own app still charges
+  through the `Ard02017`/`Ard02018` WebView plus TransKey and FIDO, the payment
+  shape is still one implementation counted twice and the refund shape one with
+  no upstream. One live success is live-server evidence, not static
+  corroboration, and it covered a single-journey, one-adult, general-seat ticket
+  on one personal card in one lump sum. Group, multi-leg, standby, corporate
+  cards and instalments were not exercised.
+  **Thirteen tests asserted that payment and refund could not transmit.** None
+  of that coverage was deleted; each pin moved onto the invariant that survived,
+  and the canaries now pin the exact enabled set so a *fifth* category still
+  fails loudly rather than pinning "nothing is enabled". Consent gating,
+  `dry_run`, the card-kind XOR, step 1's no-body contract, step 2's dependence
+  on a step-1 identity, the route/category binding in both directions and
+  `assert_no_card_secrets` all still refuse and still issue zero requests. The
+  "cannot be sent" tests became "is built, gated and routed correctly": each
+  category's exact wire fields are now asserted off a recorded `MockTransport`
+  request under a fully valid consent.
+  **`assert_no_card_secrets` matters more now, not less.** While `payment` was
+  outside the enabled set, "a PAN cannot leave this process by any path" was
+  already guaranteed by the membership gate. It is now the only thing between a
+  hand-assembled card body and the wire on every route that is not the payment
+  route, so its tests are load-bearing individually.
+  Offline gate: `1311 passed, 1 deselected` (was `1285`).
+
 - **Card payment and refund are implemented, and still cannot be transmitted.**
+  *(Superseded by the entry above: both were live-verified and live-enabled on
+  2026-07-26. The provenance recorded here is unchanged and still applies; only
+  the "cannot be transmitted" and "`SRT_LIVE_MUTATION_CATEGORIES` is untouched"
+  claims are retired, along with the disputed-spelling doubt.)*
   `SrtClient.pay_with_card` builds the 31-field 카드결제 form for
   `/ata/selectListAta09036_n.do`; `SrtClient.get_refund_ticket_info` reads an
   issued ticket's identity from `/atc/getListAtc14087.do` and
@@ -67,8 +132,9 @@
   category nor a route violation. `safety.CARD_SECRET_FIELDS` states the rule on
   the **data**: `stlCrCrdNo1`, `vanPwd1`, `crdVlidTrm1`, `athnVal1` may travel
   only as a `payment`, checked in `assert_read_only_request` and again at the
-  mutation send boundary. `payment` is never live-enabled, so the effect today
-  is absolute.
+  mutation send boundary. *(When this landed `payment` was not live-enabled, so
+  the effect was absolute and this guard was a second lock. It is now the only
+  lock on every non-payment route — see the top of this section.)*
 
 - **`MutationConsent.real_card_acknowledged`**, defaulting to `False` and purely
   additive, ports the KORAIL real-card acknowledgement pattern. A payment must
@@ -76,7 +142,9 @@
   `real_card_acknowledged` (a real charge); **neither and both are refused**,
   because an ambiguous consent is exactly the state a payment must never be sent
   on. Every consent written before this flag existed means exactly what it meant.
-  Setting it does not enable a payment — the live-enablement gate still refuses.
+  Setting it is still not what enables a payment — live enablement is
+  `SRT_LIVE_MUTATION_CATEGORIES`'s job — but since payment was enabled on
+  2026-07-26 this XOR is the last gate before a real PAN goes out.
 
 - **Redaction covers the payment and refund secrets**, and closed a
   pre-existing hole: `pnr_no` was absent from `SENSITIVE_KEYS` while `pnrNo` and
@@ -287,8 +355,10 @@
   **Scope.** ONE single-journey, one-adult, general-seat reservation. Multi-leg
   (`jrnyCnt` > 1), group and standby reservations were not exercised, so
   `jrnyCnt="1"` is confirmed only for the single-journey case. `payment` and
-  `refund` remain unimplemented, stay out of `SRT_LIVE_MUTATION_CATEGORIES`, and
-  nothing was learned about their shapes.
+  `refund` were unimplemented at the time of this run, stayed out of
+  `SRT_LIVE_MUTATION_CATEGORIES`, and nothing was learned about their shapes
+  here — they were implemented, then verified separately on 2026-07-26 and
+  live-enabled; see the top of this section.
   Worth recording: both confirmation codes are identical to the sibling korail
   app's live-verified ones (reserve `IRR000018`, cancel `IRG000000`), which
   suggests the two operators run on a shared reservation platform. That is an
@@ -355,10 +425,12 @@
   reserve creates an unpaid hold and cancel releases one (from a hold object or
   a bare PNR string), so enabling reserve without a transmittable cancel would
   strand a real reservation on any mid-flow failure. **`payment` and `refund`
-  stay out** and remain unreachable even through the low-level client; adding
-  either requires implementing it (neither has a client method) and
-  live-verifying its own wire format, and a payment keeps a separate
-  `fake_card_only` gate behind the live-enablement one.
+  stayed out at this point**, and adding either required implementing it
+  (neither had a client method then) and live-verifying its own wire format;
+  a payment keeps a separate `fake_card_only` gate behind the live-enablement
+  one. *(Both requirements were met later in this same unreleased range: the
+  methods landed, then the 2026-07-26 live round trip verified them and the set
+  grew to four. See the top of this section.)*
   This was a decision about **recoverability, not evidence**, and asserted
   nothing about verification: when it landed, the cancel route `ard02045` was
   srtgo-sourced and unconfirmed against our v2.0.41 app (0 hits across all
@@ -400,12 +472,12 @@
   introduced — now names the categories permitted to reach the network, and it
   is enforced in `post_mutation_form` and re-asserted in the underlying
   `_send_mutation_request`, the function that actually calls `send`. Which
-  categories are in that set changed later in this same unreleased range (see
-  the top of this section: it now holds `{"reserve", "cancel"}`); what this
-  entry established, and what still holds, is that membership is decided at the
-  **transport layer** rather than only at the client methods, so `payment` and
-  `refund` cannot be transmitted even by a caller reaching `SrtClient.http`
-  directly.
+  categories are in that set changed twice more in this same unreleased range
+  (see the top of this section: it now holds
+  `{"reserve", "cancel", "payment", "refund"}`); what this entry established,
+  and what still holds, is that membership is decided at the **transport layer**
+  rather than only at the client methods, so a category outside the set cannot
+  be transmitted even by a caller reaching `SrtClient.http` directly.
 - Added `SrtClient.cancel()` for a created-but-unpaid reservation (예약취소,
   `ard/selectListArd02045_n.do`), with its request builder
   `unpaid_reservation_cancel_payload()`, the `parse_unpaid_cancel_response()`
@@ -482,13 +554,12 @@
   this section a reservation route, builder, and client method exist, and so do
   a cancel route, builder and preview-by-default method. **This entry's own "no
   state-changing request is transmitted" is itself superseded within this
-  range**: reserve and cancel were live-enabled and both now transmit under an
-  explicit non-dry-run consent (see the top of this section). Payment, refund,
-  external seat-map, and native-bridge flows remain unimplemented, and the
-  payment and refund wire formats are 0-hit across all 21,673 files of the
-  v2.0.41 offline evidence bundle and still need live capture. Cancel's format
-  is 0-hit in that bundle too, but is no longer unverified — a live round trip
-  exercised it on 2026-07-25.
+  range**: all four categories were live-enabled and now transmit under an
+  explicit non-dry-run consent (see the top of this section). External seat-map
+  and native-bridge flows remain unimplemented. The cancel, payment and refund
+  wire formats are all 0-hit across the 21,673 files of the v2.0.41 offline
+  evidence bundle, but none is unverified any more: a live round trip exercised
+  cancel on 2026-07-25 and payment and refund on 2026-07-26.
 
 ## 0.2.0 - 2026-07-15
 

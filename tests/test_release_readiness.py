@@ -848,7 +848,7 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     # whenever the suite grows. (The README also cites the historical 0.2.0
     # figure; that one is labelled as historical and is not asserted here,
     # because a frozen number can never fail.)
-    assert "1307 passed" in readme and "1 deselected" in readme
+    assert "1311 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in readme.casefold()
     assert "personal and group each returned two pages" in readme.casefold()
@@ -990,3 +990,115 @@ def test_cancel_documentation_records_the_live_verification_and_its_srtgo_origin
             and any(phrase in window for phrase in CANCEL_ZERO_EVIDENCE_PHRASES)
             for window in windows
         ), document
+
+
+# The same two-facts-together rule, applied to payment and refund. It is the
+# identical pattern to the cancel pin above and exists for the identical reason:
+# on 2026-07-26 a live round trip refuted the "cannot be transmitted / never
+# observed" claim these documents carried, and deleting the pin would have let
+# the ORIGIN vanish along with the retired claim. So the pin is inverted rather
+# than dropped -- the documents must now carry the verification AND keep saying
+# where the shapes came from, because that is still the whole of the static
+# evidence and it did not improve.
+#
+# These two surfaces need one thing cancel's pin did not: the SCOPE phrase has
+# to survive as well, since "payment works" is a far more expensive over-claim
+# than "cancel works".
+PAYMENT_ROUTE_TOKEN = "ata09036"
+REFUND_ROUTE_TOKEN = "atc02063"
+PAYMENT_REFUND_VERIFICATION_DATE = "2026-07-26"
+PAYMENT_SUCCESS_CODE = "irt000000"
+REFUND_SUCCESS_CODE = "irt200277"
+# The free probe that preceded the real round trip. Recorded because it is what
+# established the routes EXIST without spending anything, and a document that
+# keeps only the success story loses the cheap half of the method.
+PAYMENT_PROBE_CODE = "wrt100170"
+REFUND_PROBE_CODE = "wrt300005"
+PAYMENT_REFUND_PROVENANCE_WINDOW = 1200
+
+
+@pytest.mark.parametrize(
+    ("route_token", "success_code"),
+    [
+        (PAYMENT_ROUTE_TOKEN, PAYMENT_SUCCESS_CODE),
+        (REFUND_ROUTE_TOKEN, REFUND_SUCCESS_CODE),
+    ],
+)
+def test_payment_and_refund_documentation_records_the_live_verification_and_its_origin(
+    route_token: str, success_code: str
+) -> None:
+    for document in CANCEL_PROVENANCE_DOCUMENTS:
+        flat = " ".join((ROOT / document).read_text().casefold().split())
+        assert route_token in flat, document
+        windows = [
+            flat[
+                max(0, offset - PAYMENT_REFUND_PROVENANCE_WINDOW) : offset
+                + PAYMENT_REFUND_PROVENANCE_WINDOW
+            ]
+            for offset in range(len(flat))
+            if flat.startswith(route_token, offset)
+        ]
+        assert any(
+            # The verification, with the code the server actually gave.
+            PAYMENT_REFUND_VERIFICATION_DATE in window
+            and any(
+                phrase in window for phrase in CANCEL_LIVE_VERIFICATION_PHRASES
+            )
+            and success_code in window
+            # and its limits, so one round trip cannot read as a general proof.
+            and any(
+                phrase in window for phrase in CANCEL_VERIFICATION_SCOPE_PHRASES
+            )
+            # and the origin, unchanged by the run and still the only static
+            # evidence there is.
+            and "srtgo" in window
+            and "2.0.41" in window
+            and any(phrase in window for phrase in CANCEL_ZERO_EVIDENCE_PHRASES)
+            for window in windows
+        ), document
+
+
+def test_payment_and_refund_documentation_records_the_free_probe_that_came_first() -> None:
+    # The probe is method, not trivia: it is how the routes were shown to exist
+    # before any money moved, and it is the part a future reader would otherwise
+    # have to reinvent. Both codes must appear somewhere in each document.
+    for document in CANCEL_PROVENANCE_DOCUMENTS:
+        flat = " ".join((ROOT / document).read_text().casefold().split())
+        assert PAYMENT_PROBE_CODE in flat, document
+        assert REFUND_PROBE_CODE in flat, document
+
+
+def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmit() -> None:
+    # The retired claim, pinned as retired. Every one of these sentences was in
+    # the tree on 2026-07-25 and every one is now false; a doc edit that
+    # reintroduces the wording would be reintroducing a false statement about
+    # what this library does with a real card.
+    #
+    # CHANGELOG.md is deliberately NOT scanned. It is a historical record, and
+    # its convention in this repository is to supersede an entry in place rather
+    # than rewrite it — so it still quotes "still cannot be transmitted" as the
+    # heading of the entry the 2026-07-26 verification retired, which is correct
+    # and must stay. The documents below all describe the CURRENT state, where
+    # the same words would simply be wrong.
+    retired = (
+        "cannot be transmitted",
+        "cannot transmit",
+        "still cannot be sent",
+        "never sent by anyone here",
+        "no client method",
+        "remain unimplemented",
+        "stay unimplemented",
+    )
+    # Checked per SENTENCE rather than per character window. A window is the
+    # wrong granularity here: "seat holding and selection have no client method
+    # at all" is a TRUE sentence that sits two clauses away from the payment
+    # method list, and a proximity rule cannot tell it apart from a false one.
+    documents = ("README.md", "docs/IMPLEMENTATION_PROGRESS.md", "SECURITY.md")
+    for document in documents:
+        flat = " ".join((ROOT / document).read_text().casefold().split())
+        for sentence in re.split(r"(?<=[.!?])\s+", flat):
+            if not any(phrase in sentence for phrase in retired):
+                continue
+            assert not (
+                "payment" in sentence or "refund" in sentence
+            ), f"{document}: retired claim still stated: {sentence!r}"
