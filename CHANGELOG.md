@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Card payment and refund are implemented, and still cannot be transmitted.**
-  `SrtClient.pay_with_card` builds the 32-field 카드결제 form for
+  `SrtClient.pay_with_card` builds the 31-field 카드결제 form for
   `/ata/selectListAta09036_n.do`; `SrtClient.get_refund_ticket_info` reads an
   issued ticket's identity from `/atc/getListAtc14087.do` and
   `SrtClient.refund` builds the 환불 form for `/atc/selectListAtc02063_n.do`.
@@ -57,7 +57,18 @@
   **The refund's two steps are separate methods on purpose**, so a refused
   refund makes zero requests instead of firing step 1 and only then hitting the
   step-2 refusal. Step 1's route is registered as a read; that classification is
-  an inference, not a proof, and says so.
+  an inference, not a proof, and says so — and because it is allowlisted, its
+  "no body at all" contract is now **enforced** rather than merely documented,
+  so it cannot be used to POST a card or refund form to a permitted path.
+  **A PAN cannot leave this process by any path.** Route and category rules
+  could not close one case: a hand-assembled payment body posted to a
+  *different, permitted* route — an allowlisted read, or the live-enabled
+  reserve route under a valid `category="reserve"` consent — is neither a
+  category nor a route violation. `safety.CARD_SECRET_FIELDS` states the rule on
+  the **data**: `stlCrCrdNo1`, `vanPwd1`, `crdVlidTrm1`, `athnVal1` may travel
+  only as a `payment`, checked in `assert_read_only_request` and again at the
+  mutation send boundary. `payment` is never live-enabled, so the effect today
+  is absolute.
 
 - **`MutationConsent.real_card_acknowledged`**, defaulting to `False` and purely
   additive, ports the KORAIL real-card acknowledgement pattern. A payment must

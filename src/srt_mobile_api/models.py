@@ -410,12 +410,22 @@ class SrtPaymentCard:
     :meth:`~srt_mobile_api.client.SrtClient.pay_with_card` can only ever return
     a redacted preview. This type exists so the form can be BUILT and checked.
 
-    Every field is ``repr=False`` and every field NAME is registered in
+    The four SECRET fields — :attr:`card_number`, :attr:`card_password`,
+    :attr:`card_validation_number`, :attr:`card_expire_date` — are each
+    ``repr=False`` AND registered under their own names in
     :data:`~srt_mobile_api.redaction.SENSITIVE_KEYS`, so both ``repr()`` and
     :func:`~srt_mobile_api.redaction.redact_value` mask them. Masking by name
     rather than by pattern is deliberate: ``CARD_RE`` only matches a 13-19 digit
     run, which a 2-digit PIN, a ``YYMM`` expiry and a ``YYMMDD`` birthdate all
     slip past.
+
+    :attr:`installment_months` and :attr:`card_type` are deliberately NOT
+    hidden: neither is a secret, and seeing "36-month installment, corporate
+    card" in a ``repr`` is useful. Note the asymmetry this creates — their WIRE
+    spellings ``ismtMnthNum1`` and ``athnDvCd1`` *are* in ``SENSITIVE_KEYS``, so
+    a :class:`~srt_mobile_api.consent.MutationPreview` masks them while this
+    object's ``repr`` does not. That is intended: a preview is a whole card
+    form, where the safe default is to mask everything adjacent to the PAN.
 
     ``card_type`` is ``"J"`` (개인) or ``"S"`` (법인), and it decides what
     ``card_validation_number`` must be: a ``YYMMDD`` birthdate for ``"J"``, a

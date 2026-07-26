@@ -24,6 +24,13 @@ class MutationRoute:
 
 
 SEAT_PAGE_PATH = "/arc/selectListArc02012_n.do"
+# 환불 1단계. Its whole documented contract is "POST with NO body at all" — the
+# Referer carries the PNR and the body is empty. That is enforced rather than
+# merely written down, because this is the one read route whose neighbours in a
+# caller's mind are a card payment and a refund: without a body check,
+# ``post_form`` would happily send a PAN or a ticket return password to this
+# path, which is allowlisted. See _assert_empty_body_request.
+REFUND_TICKET_INFO_PATH = "/atc/getListAtc14087.do"
 SEAT_PAGE_FIELDS = frozenset(
     {
         "reqCode",
@@ -109,7 +116,7 @@ READ_ONLY_ROUTES = frozenset(
         # be transmitted -- cannot cause a live request as a side effect of
         # being refused. Reaching this route requires calling
         # get_refund_ticket_info deliberately.
-        ReadOnlyRoute("POST", "app", "/atc/getListAtc14087.do"),
+        ReadOnlyRoute("POST", "app", REFUND_TICKET_INFO_PATH),
         ReadOnlyRoute("GET", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10130_n.do"),
@@ -228,7 +235,9 @@ SRT_MUTATION_ROUTES = frozenset(
 #
 # A payment additionally transmits a PAN in the clear, which is why
 # ``post_mutation_form`` keeps a separate card-kind gate (exactly one of
-# ``fake_card_only`` / ``real_card_acknowledged``) behind this one. Adding "payment" or "refund" to this set without both parts done is a
+# ``fake_card_only`` / ``real_card_acknowledged``) behind this one.
+#
+# Adding "payment" or "refund" to this set before that live verification is a
 # safety regression; ``test_mutation_live_paths`` carries a canary that pins
 # this set to exactly {"reserve", "cancel"} and so fails loudly on either
 # addition.
@@ -437,6 +446,89 @@ def _assert_netfunnel_request(url: httpx.URL) -> None:
         )
 
 
+# The card-secret field names, as they appear on the payment wire. A request
+# carrying any of these is a card charge no matter what route or category it
+# claims to be.
+#
+# WHY THIS EXISTS AS A SEPARATE CHECK. Both request guards validate the ROUTE
+# and, with two exceptions, not the BODY — which is correct for reads whose
+# bodies are ordinary query parameters, but it left one gap that no
+# route/category rule could close: a caller can hand-assemble a payment body and
+# post it to a DIFFERENT, permitted route. ``post_form`` would send it to any
+# allowlisted read path, and ``post_mutation_form`` would send it to the
+# live-enabled reserve route under a perfectly valid ``category="reserve"``
+# consent. Neither is a category or route violation, so neither was refused.
+#
+# The invariant this restores is worth more than the hole it closes, because it
+# is stated on the DATA rather than on the route: a PAN, a card PIN, a card
+# expiry or a cardholder birthdate may travel only as a ``payment``. Since
+# ``payment`` is not in :data:`SRT_LIVE_MUTATION_CATEGORIES`, the practical
+# consequence today is absolute — **card secrets cannot leave this process at
+# all, by any path.** If payment is ever live-enabled, the check degrades
+# gracefully to "card fields only on a payment" rather than silently vanishing.
+CARD_SECRET_FIELDS = frozenset(
+    {
+        "stlCrCrdNo1",  # PAN
+        "vanPwd1",  # first two digits of the card PIN
+        "crdVlidTrm1",  # expiry YYMM
+        "athnVal1",  # birthdate YYMMDD / 사업자등록번호
+    }
+)
+
+
+def _carried_card_secret_fields(request: httpx.Request) -> set[str]:
+    """The card-secret field names appearing in a request's body or query.
+
+    Matched as raw substrings rather than by parsing, so a body this library
+    would not otherwise decode (a different encoding, a nested payload) cannot
+    smuggle one past. These names are distinctive enough that a substring match
+    has no realistic false positive.
+    """
+    haystack = request.url.raw_path + b"\n" + request.content
+    return {
+        name for name in CARD_SECRET_FIELDS if name.encode("ascii") in haystack
+    }
+
+
+def assert_no_card_secrets(request: httpx.Request) -> None:
+    """Refuse any request carrying card secrets. See :data:`CARD_SECRET_FIELDS`."""
+    carried = _carried_card_secret_fields(request)
+    if carried:
+        raise SrtProtocolError(
+            "SRT request carries card-secret fields ("
+            + ", ".join(sorted(carried))
+            + ") on a route that is not the card payment; a PAN, card PIN, "
+            "expiry or cardholder birthdate may travel only as a payment "
+            "mutation, which is not live-enabled"
+        )
+
+
+def _assert_empty_body_request(request: httpx.Request) -> None:
+    """Require a POST read whose contract is "no body" to actually carry none.
+
+    The read-only guard otherwise validates the ROUTE and not the BODY, which is
+    fine for reads whose bodies are ordinary query parameters. It is not fine
+    for :data:`REFUND_TICKET_INFO_PATH`: that route is allowlisted, sits in the
+    middle of the refund flow, and its neighbours in a caller's mind are a card
+    payment and a refund form. Without this check ``post_form`` would transmit
+    whatever mapping it was handed to an allowlisted path — a PAN, a card PIN or
+    a ticket return password included — with no gate anywhere refusing it,
+    because none of the mutation gates apply to a read route.
+
+    So the emptiness the docstrings claim is enforced here rather than trusted.
+    """
+    if request.content:
+        raise SrtProtocolError(
+            "SRT refund ticket info request must carry no body; the PNR travels "
+            "in the Referer and this route must never be used to transmit form "
+            "data"
+        )
+    if b"?" in request.url.raw_path:
+        raise SrtProtocolError(
+            "SRT refund ticket info request must not use URL query parameters"
+        )
+
+
 def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
     if config.base_url != APP_ORIGIN or config.netfunnel_url != NETFUNNEL_ORIGIN:
         raise SrtProtocolError("SRT request configuration does not use canonical origins")
@@ -468,8 +560,14 @@ def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
         raise SrtProtocolError(
             f"SRT request route is not allowed: {method.upper()} {path}"
         )
+    # No read carries card secrets, on any route. See CARD_SECRET_FIELDS for why
+    # this is checked on the data rather than on the route.
+    assert_no_card_secrets(request)
     if route == ReadOnlyRoute("POST", "app", SEAT_PAGE_PATH):
         _assert_seat_page_request(request)
+        return
+    if route == ReadOnlyRoute("POST", "app", REFUND_TICKET_INFO_PATH):
+        _assert_empty_body_request(request)
         return
     if host_kind != "netfunnel":
         return

@@ -106,9 +106,49 @@ def test_step_one_posts_no_body_with_the_pnr_referer():
     assert request.method == "POST"
     assert request.url.path == TICKET_INFO_ROUTE
     assert request.content == b""
+    # ... and no query string either, or "no body" would just mean the body
+    # moved into the URL.
+    assert request.url.query == b""
     assert request.headers["Referer"] == (
         f"{SrtConfig().base_url}/common/ATC/ATC0201L/view.do?pnrNo={FAKE_PNR}"
     )
+
+
+def test_step_one_route_refuses_a_body_at_the_read_guard():
+    # THE GUARD IS ON THE ROUTE, NOT ON THE CALLER. assert_read_only_request
+    # otherwise validates method/host/path and lets any body through, and this
+    # route is the one an operator experimenting with refunds is most likely to
+    # point a payment or refund form at -- it is allowlisted, so no mutation
+    # gate applies to it. Without this, `post_form` would transmit a PAN or a
+    # ticket return password to an allowlisted path.
+    from srt_mobile_api.safety import assert_read_only_request
+
+    config = SrtConfig()
+    url = f"{config.base_url}{TICKET_INFO_ROUTE}"
+    # The empty body the contract calls for: accepted.
+    assert_read_only_request(httpx.Request("POST", url), config)
+
+    for forbidden in (
+        {"stlCrCrdNo1": "0000000000000000"},  # a PAN
+        {"tkRetPwd": FAKE_RETURN_PASSWORD},  # the refund credential
+        {"pnrNo": FAKE_PNR},
+    ):
+        with pytest.raises(SrtProtocolError):
+            assert_read_only_request(httpx.Request("POST", url, data=forbidden), config)
+    # ... and the same body smuggled into the query string.
+    with pytest.raises(SrtProtocolError):
+        assert_read_only_request(
+            httpx.Request("POST", f"{url}?stlCrCrdNo1=0000000000000000"), config
+        )
+
+
+def test_step_one_body_guard_does_not_leak_through_post_form():
+    # End to end through the public read path, which is how a caller would
+    # actually reach it.
+    client, recorder = _client(_ticket_info_response())
+    with pytest.raises(SrtProtocolError):
+        client.http.post_form(TICKET_INFO_ROUTE, {"stlCrCrdNo1": "0000000000000000"})
+    assert recorder.requests == []
 
 
 def test_step_one_referer_is_per_request_not_a_persistent_session_header():
@@ -182,13 +222,54 @@ def test_step_one_refuses_a_response_with_no_pnr():
         parse_refund_ticket_info_response(_ticket_info_response(pnrNo=""))
 
 
-@pytest.mark.parametrize("pnr", ["", "   ", "PNR&extra=1", "PNR?x", "PNR#f", "PNR 1"])
-def test_step_one_refuses_a_pnr_that_could_smuggle_url_parameters(pnr):
-    # The PNR is interpolated into the Referer URL this endpoint gates on.
+@pytest.mark.parametrize("pnr", ["", "   ", None, 12345])
+def test_step_one_refuses_a_missing_pnr(pnr):
+    # The emptiness guard, kept separate from the character guard below so a
+    # failure names which one broke.
     client, recorder = _client(_ticket_info_response())
     with pytest.raises(ValueError):
         client.get_refund_ticket_info(pnr)
     assert recorder.requests == []
+
+
+@pytest.mark.parametrize(
+    "pnr",
+    [
+        "PNR&extra=1",
+        "PNR?x",
+        "PNR#f",
+        "PNR 1",
+        "PNR\r\nX-Injected: 1",  # header injection
+        "..",
+        # Unicode alphanumerics. str.isalnum() -- the obvious way to write this
+        # check -- accepts every one of these, and they then died deep inside
+        # httpx as a bare UnicodeEncodeError: an exception outside this
+        # library's taxonomy, raised while BUILDING the request. The guard is an
+        # explicit ASCII class for exactly this reason.
+        "한글PNR",
+        "١٢٣",  # Arabic-Indic digits
+        "Ⅳ",  # Roman numeral U+2163
+        "ＰＮＲ",  # fullwidth
+        # Unbounded length: this used to become a 5,058-byte Referer.
+        "A" * 5000,
+        "A" * 33,
+    ],
+)
+def test_step_one_refuses_a_pnr_that_is_not_bounded_ascii(pnr):
+    # The PNR is interpolated into the Referer URL this endpoint gates on, so
+    # the refusal must be a ValueError from THIS library -- not a stray
+    # UnicodeEncodeError from the transport, and not a 5KB header.
+    client, recorder = _client(_ticket_info_response())
+    with pytest.raises(ValueError):
+        client.get_refund_ticket_info(pnr)
+    assert recorder.requests == []
+
+
+@pytest.mark.parametrize("pnr", ["ABC123", "ABC-123", "A", "A" * 32, "0123456789"])
+def test_step_one_accepts_a_bounded_ascii_pnr(pnr):
+    client, recorder = _client(_ticket_info_response())
+    client.get_refund_ticket_info(pnr)
+    assert recorder.requests[-1].headers["Referer"].endswith(f"pnrNo={pnr}")
 
 
 def test_step_one_route_is_registered_as_a_read():
@@ -416,9 +497,14 @@ def test_a_refused_refund_does_not_perform_the_step_one_read_either():
             consent=MutationConsent(allow_refund=True, dry_run=False),
         )
     assert recorder.requests == []
-    assert not any(
-        request.url.path == TICKET_INFO_ROUTE for request in recorder.requests
-    )
+    # `refund` must not even hold a reference to step 1: assert on the source
+    # rather than re-filtering the empty list above, which would be vacuously
+    # true and would survive any regression.
+    import inspect
+
+    source = inspect.getsource(SrtClient.refund)
+    assert "getListAtc14087" not in source
+    assert "get_refund_ticket_info" not in source.split('"""')[2]
 
 
 def test_refund_route_is_not_reachable_through_a_read():

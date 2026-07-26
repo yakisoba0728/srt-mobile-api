@@ -64,7 +64,7 @@ reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
 real-card acknowledgement gate and the consent-gated card-payment and refund
 surfaces
 landed, the current offline suite at HEAD is
-`1249 passed, 1 deselected`. The deselected case is the
+`1282 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -241,7 +241,7 @@ than anything else in the repository, in three separate ways:
   endpoint may be a legacy path the server still honours, or it may be dead for
   our app version. **Nobody has tested it**;
 - **the two reference libraries are one source, not two.** This was verified,
-  not assumed. srtgo's 32-field payment dict is character-for-character
+  not assumed. srtgo's 31-field payment dict is character-for-character
   identical to ryanking13/SRT's once the latter's Korean trailing comments are
   stripped — same keys, same values, same non-alphabetical order, same local
   variable names, same method signature. srtgo depended on `SRTrain`
@@ -252,10 +252,10 @@ than anything else in the repository, in three separate ways:
 
 What the bundle *does* corroborate is narrower than "nothing", and the blanket
 claim that every field name is 0-hit is **false**. Three of the 32 names appear
-in our own bundle, all in the reservation JS and none of them on this form:
+in our own bundle (3 + 28 = 31), all in the reservation JS and none on this form:
 `mbCrdNo` (`ara0101v.js:319,321`, a client-side 회원카드번호 branched on its
 `"11"` prefix), `totPrnb` (`ara1001l.js:104,368,1511,1655`, the 총인원수) and
-`jrnyCnt` (`ara0101v.js:92,311`). The other 29 — every card field, every
+`jrnyCnt` (`ara0101v.js:92,311`). The other 28 — every card field, every
 settlement field, and `ctlDvCd`/`cgPsId`/`strJobId`/`inrecmnsGridcnt`/`chgMcs`/
 `dptStnConsOrdr2`/`arvStnConsOrdr2` — are genuinely absent.
 
@@ -292,6 +292,17 @@ own `userMap.MB_CRD_NO` rather than asked of the caller.
 
 The PAN, PIN, expiry, birthdate, membership number and PNR are all redacted in
 the preview and hidden from every `repr`.
+
+**A PAN cannot leave this process by any path.** The route/category rules could
+not close one case on their own: a caller can hand-assemble a payment body and
+post it to a *different, permitted* route — `post_form` would send it to any
+allowlisted read path, and `post_mutation_form` would send it to the
+live-enabled reserve route under a perfectly valid `category="reserve"` consent.
+Neither is a category or a route violation. So `safety.CARD_SECRET_FIELDS`
+states the rule on the **data** instead: `stlCrCrdNo1`, `vanPwd1`, `crdVlidTrm1`
+and `athnVal1` may travel only as a `payment`, checked in both
+`assert_read_only_request` and at the mutation send boundary. Since `payment` is
+never live-enabled, the effect today is absolute.
 
 ### Refund (two steps, preview only, and the thinnest evidence here)
 

@@ -965,7 +965,7 @@ def unpaid_reservation_cancel_payload(
 # (safety.SRT_LIVE_MUTATION_CATEGORIES), so none can be.
 #
 # THE TWO REFERENCE LIBRARIES ARE ONE SOURCE, NOT TWO. This was verified rather
-# than assumed, by diffing their payment bodies directly: srtgo's 32-field dict
+# than assumed, by diffing their payment bodies directly: srtgo's 31-field dict
 # is character-for-character identical to ryanking13/SRT's once the latter's
 # Korean trailing comments are stripped -- same keys, same values, same
 # non-alphabetical ORDER, same local variable names, same indentation, and the
@@ -986,11 +986,11 @@ def unpaid_reservation_cancel_payload(
 #   * `totPrnb`  -- ara1001l.js:104,368,1511,1655 and ara0101v.js:114,501,...,
 #                   the 총인원수 the booking screen already sends.
 #   * `jrnyCnt`  -- ara0101v.js:92,311, the 여정건수, hard-coded "1".
-# The other 29 -- including every card field (stlCrCrdNo1, vanPwd1, crdVlidTrm1,
+# The other 28 -- including every card field (stlCrCrdNo1, vanPwd1, crdVlidTrm1,
 # athnVal1, athnDvCd1, crdInpWayCd1, ismtMnthNum1), every settlement field
 # (stlDmnDt, stlMnsSqno1, ststlGridcnt, totNewStlAmt, mnsStlAmt1, stlMnsCd1),
 # and ctlDvCd/cgPsId/strJobId/inrecmnsGridcnt/chgMcs/dptStnConsOrdr2/
-# arvStnConsOrdr2 -- are genuinely 0-hit. So the three that hit tell us the app
+# arvStnConsOrdr2 -- are genuinely 0-hit (3 + 28 = 31). So the three that hit tell us the app
 # uses those NAMES for those CONCEPTS; they say nothing about this form.
 
 # Fixed values the payment form carries, with the meaning each documents. Kept
@@ -1062,7 +1062,13 @@ def _payment_passenger_count(
     figure -- the same shape as ``cancel``'s ``journey_count``.
     """
     if passenger_count is not None:
-        count = _required_digits(passenger_count, "passenger_count").lstrip("0")
+        # .strip() to match how ticket_special_number below is handled; without
+        # it the EXPLICIT override was stricter than the inferred value, so
+        # " 4 " raised while a reservation carrying " 4 " did not.
+        count = _required_digits(
+            passenger_count.strip() if isinstance(passenger_count, str) else passenger_count,
+            "passenger_count",
+        ).lstrip("0")
         if not count:
             raise ValueError("passenger_count must be a positive integer string")
         return count
@@ -1098,14 +1104,14 @@ def card_payment_payload(
     library can send it either — ``payment`` is outside
     :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`.
 
-    Every value goes on the wire as a string. The 32 fields, their order and
+    Every value goes on the wire as a string. The 31 fields, their order and
     their constants reproduce what the reference implementation's live runs
     used.
 
     ``reservation`` is an
     :class:`~srt_mobile_api.models.SrtReservationSummary`, i.e. one row of
     :meth:`~srt_mobile_api.client.SrtClient.get_reservations`, which is the read
-    that can actually name an unpaid PNR. Four of its fields feed this form —
+    that can actually name an unpaid PNR. Five of its fields feed this form —
     ``pnr_no``, ``received_amount``, ``ticket_special_number``,
     ``departure_time`` and ``arrival_time`` — and that read has its OWN
     provenance problem worth restating: only its EMPTY response is live-verified

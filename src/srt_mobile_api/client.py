@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -94,6 +95,11 @@ from .payloads import (
     unpaid_reservation_cancel_payload,
 )
 from .session import SrtSessionClient
+
+
+# The PNR shape accepted into the refund step-1 Referer. ASCII only and bounded;
+# see SrtClient.get_refund_ticket_info for why str.isalnum() was not enough.
+_REFUND_PNR_RE = re.compile(r"[A-Za-z0-9-]{1,32}")
 
 
 class SrtClient:
@@ -891,7 +897,7 @@ class SrtClient:
         did not open that gate; doing so is a separate decision, and a test
         pins the refusal.
 
-        **PROVENANCE — the weakest in this library.** The route, the 32-field
+        **PROVENANCE — the weakest in this library.** The route, the 31-field
         body and the response envelope come from the reference implementations'
         live runs and nothing else:
 
@@ -952,7 +958,15 @@ class SrtClient:
             reservation,
             card,
             membership_number=membership_number,
-            settlement_date=settlement_date or time.strftime("%Y%m%d"),
+            # `is None`, not `or`: an explicitly supplied but unusable value
+            # must be REFUSED by the builder, not silently replaced with today.
+            # Everywhere else on this path an unusable input raises rather than
+            # being substituted (see payloads._payment_amount), and a payment
+            # settled under a date the caller did not choose is the same class
+            # of quiet wrongness.
+            settlement_date=(
+                time.strftime("%Y%m%d") if settlement_date is None else settlement_date
+            ),
             passenger_count=passenger_count,
         )
         if consent.dry_run:
@@ -1008,10 +1022,18 @@ class SrtClient:
         if not isinstance(pnr_no, str) or not pnr_no.strip():
             raise ValueError("refund ticket info requires a non-empty PNR")
         pnr = pnr_no.strip()
-        if not all(character.isalnum() or character == "-" for character in pnr):
+        # ASCII-only and length-bounded, via an explicit character class rather
+        # than str.isalnum(). isalnum() is UNICODE-aware, so "한글PNR", Arabic-Indic
+        # digits and fullwidth letters all satisfied it and then died inside
+        # httpx as a bare UnicodeEncodeError — an exception outside this
+        # library's taxonomy entirely, raised while building the request. The
+        # unbounded form also let a 5,000-character PNR become a 5,058-byte
+        # Referer. Same ASCII-class style as safety.NETFUNNEL_KEY_RE.
+        if _REFUND_PNR_RE.fullmatch(pnr) is None:
             raise ValueError(
-                "refund ticket info PNR must be alphanumeric (hyphens allowed); "
-                "it is interpolated into the Referer URL this endpoint gates on"
+                "refund ticket info PNR must be 1-32 ASCII alphanumerics or "
+                "hyphens; it is interpolated into the Referer URL this endpoint "
+                "gates on"
             )
         with self._session_guard():
             return parse_refund_ticket_info_response(

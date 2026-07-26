@@ -24,6 +24,7 @@ from .safety import (
     SRT_LIVE_MUTATION_CATEGORIES,
     assert_mutation_route,
     assert_mutation_route_category,
+    assert_no_card_secrets,
     assert_read_only_request,
 )
 
@@ -275,6 +276,14 @@ class SrtHttpClient:
         request = self._client.build_request(
             "POST", path, data=dict(data), headers=headers
         )
+        # Stated on the DATA, not on the route, and therefore catching the one
+        # case no route/category rule could: a hand-assembled payment body
+        # posted to the live-enabled RESERVE route under a valid
+        # category="reserve" consent. That is neither a category violation nor a
+        # route violation, so nothing above refuses it. See
+        # safety.CARD_SECRET_FIELDS.
+        if category != "payment":
+            assert_no_card_secrets(request)
         try:
             response = self._client.send(request)
         except httpx.HTTPError:

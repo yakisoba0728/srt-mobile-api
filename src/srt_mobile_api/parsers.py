@@ -42,6 +42,7 @@ from .models import (
     TrainSearchResult,
     TrainSummary,
 )
+from .redaction import redact_mapping
 from .stations import station_name_by_code
 
 
@@ -1351,35 +1352,45 @@ def parse_refund_ticket_info_response(
     :class:`~srt_mobile_api.errors.SrtAppError` carrying the server's own code
     and message.
     """
+    # THE ONE PARSER WHOSE ERRORS CARRY A REDACTED `raw`, and the exception is
+    # deliberate. Every other parser attaches the response verbatim so a caller
+    # can see exactly what arrived; that is right when the payload is train
+    # times and seat codes. This response carries `ogtkRetPwd` — the credential
+    # that authorises a refund — plus the purchaser's name, and an exception is
+    # the single most likely thing a caller logs. Exception MESSAGES were
+    # already safe (errors.py redacts them); `exc.raw` was not. The structure
+    # survives redaction, so a caller debugging a shape problem still sees the
+    # shape.
+    safe_raw = redact_mapping(data) if isinstance(data, dict) else data
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
             "SRT refund ticket info response must be a non-empty JSON object",
-            raw=data,
+            raw=safe_raw,
         )
     code = data.get("ErrorCode")
     message = data.get("ErrorMsg")
     if not isinstance(code, str) or not isinstance(message, str):
         raise SrtProtocolError(
             "SRT refund ticket info ErrorCode and ErrorMsg must be strings",
-            raw=data,
+            raw=safe_raw,
         )
     if code != "0" or message != "":
         raise SrtAppError(
             code,
             message or "SRT refund ticket info request failed",
-            raw=data,
+            raw=safe_raw,
         )
     datasets = data.get("outDataSets")
     if not isinstance(datasets, dict):
         raise SrtProtocolError(
             "SRT refund ticket info response missing outDataSets",
-            raw=data,
+            raw=safe_raw,
         )
     row = _first_row(datasets.get("dsOutput1"))
     if not row:
         raise SrtProtocolError(
             "SRT refund ticket info response missing dsOutput1 payload",
-            raw=data,
+            raw=safe_raw,
         )
 
     def _text(name: str) -> str:
@@ -1389,7 +1400,7 @@ def parse_refund_ticket_info_response(
         if not isinstance(value, str):
             raise SrtProtocolError(
                 f"SRT refund ticket info {name} must be a string",
-                raw=data,
+                raw=safe_raw,
             )
         return value
 
@@ -1397,7 +1408,7 @@ def parse_refund_ticket_info_response(
     if not pnr_no.strip():
         raise SrtProtocolError(
             "SRT refund ticket info response carried no PNR",
-            raw=data,
+            raw=safe_raw,
         )
     return SrtRefundTicketInfo(
         pnr_no=pnr_no,

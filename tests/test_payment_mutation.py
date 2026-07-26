@@ -112,7 +112,7 @@ def _client() -> tuple[SrtClient, _Recorder]:
 
 
 def test_payment_form_carries_exactly_the_documented_field_set():
-    # All 32 fields, no more and no fewer. If this fails because a field was
+    # All 31 fields, no more and no fewer. If this fails because a field was
     # added, the addition needs its own provenance -- there is no live capture
     # to check it against.
     assert set(_form()) == {
@@ -523,10 +523,37 @@ def test_pay_with_card_defaults_the_settlement_date_to_today():
     import time
 
     client, _recorder = _client()
+    # Both bounds captured around the call, so a midnight rollover between them
+    # widens the accepted set instead of failing the suite.
+    before = time.strftime("%Y%m%d")
     preview = client.pay_with_card(
         _reservation(), _card(), consent=MutationConsent(allow_payment=True)
     )
-    assert preview.payload["stlDmnDt"] == time.strftime("%Y%m%d")
+    after = time.strftime("%Y%m%d")
+    assert preview.payload["stlDmnDt"] in {before, after}
+
+
+@pytest.mark.parametrize("settlement_date", ["", "   ", "2099", "not-a-date"])
+def test_pay_with_card_refuses_an_explicit_but_unusable_settlement_date(settlement_date):
+    # `is None`, not `or`: an explicitly supplied bad value must be REFUSED, not
+    # silently replaced with today. Everywhere else on this path an unusable
+    # input raises rather than being substituted, and a payment settled under a
+    # date the caller did not choose is the same class of quiet wrongness.
+    client, _recorder = _client()
+    with pytest.raises(ValueError):
+        client.pay_with_card(
+            _reservation(),
+            _card(),
+            consent=MutationConsent(allow_payment=True),
+            settlement_date=settlement_date,
+        )
+
+
+def test_payment_passenger_count_override_tolerates_surrounding_whitespace():
+    # The explicit override used to be STRICTER than the inferred value: " 4 "
+    # raised while a reservation carrying " 4 " did not.
+    assert _form(passenger_count=" 4 ")["totPrnb"] == "4"
+    assert _form(reservation=_reservation(ticket_special_number=" 2 "))["totPrnb"] == "2"
 
 
 # --- THE KILL SWITCH ----------------------------------------------------------
@@ -654,6 +681,93 @@ def test_the_payment_route_is_not_reachable_through_a_read():
     )
     with pytest.raises(SrtProtocolError):
         assert_read_only_request(request, SrtConfig())
+
+
+# --- A PAN cannot leave this process by ANY path ------------------------------
+#
+# The route/category rules could not close one case: a caller hand-assembles a
+# payment body and posts it to a DIFFERENT, permitted route. That is neither a
+# category violation nor a route violation, so nothing else refuses it. These
+# pin the guard stated on the DATA instead.
+
+
+def test_card_secret_fields_are_the_four_wire_secrets():
+    from srt_mobile_api.safety import CARD_SECRET_FIELDS
+
+    assert CARD_SECRET_FIELDS == frozenset(
+        {"stlCrCrdNo1", "vanPwd1", "crdVlidTrm1", "athnVal1"}
+    )
+
+
+def test_a_card_body_cannot_be_posted_to_the_live_enabled_reserve_route():
+    # The exact hole: category="reserve" is valid, the reserve route is
+    # live-enabled, and the consent is genuine -- only the BODY is a card form.
+    client, recorder = _client()
+    with pytest.raises(SrtProtocolError) as excinfo:
+        client.http.post_mutation_form(
+            "/arc/selectListArc05013_n.do",
+            _form(),
+            consent=MutationConsent(allow_reserve=True, dry_run=False),
+            category="reserve",
+        )
+    assert "card-secret fields" in str(excinfo.value)
+    assert recorder.requests == []
+
+
+def test_a_card_body_cannot_be_posted_to_the_cancel_route_either():
+    client, recorder = _client()
+    with pytest.raises(SrtProtocolError):
+        client.http.post_mutation_form(
+            "/ard/selectListArd02045_n.do",
+            _form(),
+            consent=MutationConsent(allow_cancel=True, dry_run=False),
+            category="cancel",
+        )
+    assert recorder.requests == []
+
+
+def test_a_card_body_cannot_be_posted_to_the_send_boundary_directly():
+    client, recorder = _client()
+    with pytest.raises(SrtProtocolError):
+        client.http._send_mutation_request(
+            "/arc/selectListArc05013_n.do",
+            category="reserve",
+            data=_form(),
+            headers={},
+        )
+    assert recorder.requests == []
+
+
+def test_a_card_body_cannot_travel_on_any_read_route():
+    client, recorder = _client()
+    with pytest.raises(SrtProtocolError):
+        client.http.post_form("/main/noticeList.do", _form())
+    assert recorder.requests == []
+
+
+def test_a_card_field_cannot_travel_in_a_read_query_string():
+    client, recorder = _client()
+    with pytest.raises(SrtProtocolError):
+        client.http.get_text("/main/main.do", params={"stlCrCrdNo1": FAKE_PAN})
+    assert recorder.requests == []
+
+
+@pytest.mark.parametrize(
+    "field", ["stlCrCrdNo1", "vanPwd1", "crdVlidTrm1", "athnVal1"]
+)
+def test_each_card_secret_field_is_refused_individually(field):
+    client, recorder = _client()
+    with pytest.raises(SrtProtocolError) as excinfo:
+        client.http.post_form("/main/noticeList.do", {field: "0000"})
+    assert field in str(excinfo.value)
+    assert recorder.requests == []
+
+
+def test_an_ordinary_read_body_is_unaffected_by_the_card_guard():
+    # The guard must not become a general body allowlist; normal reads still go.
+    client, recorder = _client()
+    client.http.post_form("/main/noticeList.do", {"pageId": "MB0101000000"})
+    assert len(recorder.requests) == 1
 
 
 def test_payment_result_hides_the_raw_envelope_from_repr():

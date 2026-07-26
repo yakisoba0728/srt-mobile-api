@@ -203,7 +203,7 @@ and three separate canary tests pin it. No request on either route has ever been
 made from this repository.
 
 - `SrtClient.pay_with_card(reservation, card, *, consent, ...)` builds the
-  32-field 카드결제 form for `/ata/selectListAta09036_n.do` from an
+  31-field 카드결제 form for `/ata/selectListAta09036_n.do` from an
   `SrtReservationSummary` row and an `SrtPaymentCard`, and parses the response.
 - `SrtClient.get_refund_ticket_info(pnr) -> SrtRefundTicketInfo` is refund step 1
   (`/atc/getListAtc14087.do`, no body, Referer-gated on the PNR, payload at
@@ -542,7 +542,7 @@ car/seat response or availability contract.
   consent-gated mutation port, the transport-layer live-mutation gate, the
   consent-gated cancel surface, the reservation-list read, the NetFunnel
   queue protocol, the error taxonomy, the real-card acknowledgement gate and the
-  consent-gated card-payment and refund surfaces: `1249 passed, 1 deselected`; the
+  consent-gated card-payment and refund surfaces: `1282 passed, 1 deselected`; the
   deselected case remains the explicit live-service opt-in. No live mutation
   was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
