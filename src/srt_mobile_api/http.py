@@ -365,10 +365,11 @@ class SrtHttpClient:
             raise SrtMutationNotAllowedError(
                 f"SRT mutation category {category!r} is not live-enabled: only "
                 "reserve and cancel may be transmitted, because they are the "
-                "two halves of one reversible operation. Enabling payment or "
-                "refund requires implementing it (neither has a client method) "
-                "AND verifying its wire format live; a payment additionally "
-                "transmits a PAN in the clear. Use dry_run=True for a preview "
+                "two halves of one reversible operation. payment and refund are "
+                "implemented but unverified: enabling either requires verifying "
+                "its wire format against the live server, which nobody has "
+                "done, and a payment additionally transmits a PAN in the clear. "
+                "Use dry_run=True for a preview "
                 "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
         # Defense-in-depth at the transmit boundary: a payment carries the PAN

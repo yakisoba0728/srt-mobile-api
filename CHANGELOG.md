@@ -2,6 +2,83 @@
 
 ## Unreleased
 
+- **Card payment and refund are implemented, and still cannot be transmitted.**
+  `SrtClient.pay_with_card` builds the 32-field 카드결제 form for
+  `/ata/selectListAta09036_n.do`; `SrtClient.get_refund_ticket_info` reads an
+  issued ticket's identity from `/atc/getListAtc14087.do` and
+  `SrtClient.refund` builds the 환불 form for `/atc/selectListAtc02063_n.do`.
+  All three build, gate, preview and parse. **`SRT_LIVE_MUTATION_CATEGORIES` is
+  untouched at exactly `{"reserve", "cancel"}`** — implementing these did not
+  live-enable them, that is a separate decision nobody has made, and three
+  canary tests plus a test proving a fully-permissive consent (including one
+  acknowledging a real chargeable card) still transmits nothing pin it.
+  **Read the provenance before trusting any field.** The route
+  `Ata09036` and the refund routes `Atc14087`/`Atc02063` are 0-hit across all
+  21,673 files of the v2.0.41 offline decompile — the bundle has no `Atc02*`
+  family at all — and **our own app does not use the payment path**: it
+  serialises `#rsvForm` to `Ard02017`/`Ard02018` (`ara1001l.js:1550,1599,1608`),
+  server-rendered WebView pages, then charges through the TransKey secure keypad
+  (`AndroidManifest.xml:143`) and RaonSecure FIDO (`:315`). So these plaintext
+  endpoints may be a legacy path the server still honours, or dead for our app
+  version. **Nobody has tested them.**
+  **The two reference libraries are one source, not two, and this was verified
+  rather than assumed.** srtgo's payment dict is character-for-character
+  identical to ryanking13/SRT's once the latter's Korean comments are stripped
+  (same keys, values, non-alphabetical order, variable names, signature); srtgo
+  depended on `SRTrain` until commit `8423f90` "Internalize SRT" (2024-12-13)
+  vendored it wholesale. For the refund it is worse: ryanking13/SRT has no
+  refund at all, so srtgo is the sole origin with no upstream to corroborate it.
+  **The blanket "every field name is 0-hit" claim is false**, and the accurate
+  version is recorded instead: the routes and the distinctive field names really
+  are absent, but `mbCrdNo`, `totPrnb`, `jrnyCnt` (reservation JS) and
+  `buyPsNm`, `saleWctNo`, `saleSqno`, `retPwd` (the local `"ticketListOffline"`
+  cache handler, `webview/b.java:606-649`) do occur — never as request fields on
+  these routes.
+  **Amount fidelity was chosen deliberately**, against korail's precedent
+  (`h_tot_prc` 59,800 vs `h_tot_rcvd_amt` 83,700): the form sends `rcvdAmt`
+  (수납금액, post-discount, collectable) for both `totNewStlAmt` and
+  `mnsStlAmt1`, with **no caller override**, and refuses a missing or zero
+  amount rather than defaulting. One divergence stays unresolved — the server
+  sends it zero-padded, ryanking13/SRT echoes the padding, srtgo casts to `int`;
+  we send srtgo's bare digits because only srtgo's form has live attestation.
+  **Two refund field names are disputed**: srtgo's `tkRetPwd`/`psgNm` against our
+  app's `retPwd`/`buyPsNm` (`webview/b.java:645,648`), plus `pnr_no` against
+  `pnrNo`. That b.java site deserialises a base64 SharedPreferences blob into a
+  display model — a local cache, not an API schema — so srtgo's spelling ships
+  and the doubt is recorded. The project has been burned here before, by srtgo's
+  `txtPrnNo` for korail's `txtPnrNo`.
+  **The payment's response envelope is the odd one out**: `outDataSets.dsOutput0[0]`
+  where every other SRT mutation here uses `resultMap` (the refund included).
+  Supporting it cost no new code path — `normalize_result_row` already accepted
+  both spellings — and cancel, payment and refund now share one
+  `_parse_result_envelope`. `SrtPaymentResult.succeeded`/`.failed` are
+  deliberately **not** complements: an unrecognised status means *unknown*,
+  because a blind payment retry can charge twice.
+  **The refund's two steps are separate methods on purpose**, so a refused
+  refund makes zero requests instead of firing step 1 and only then hitting the
+  step-2 refusal. Step 1's route is registered as a read; that classification is
+  an inference, not a proof, and says so.
+
+- **`MutationConsent.real_card_acknowledged`**, defaulting to `False` and purely
+  additive, ports the KORAIL real-card acknowledgement pattern. A payment must
+  state exactly one of `fake_card_only` (a non-chargeable test card) or
+  `real_card_acknowledged` (a real charge); **neither and both are refused**,
+  because an ambiguous consent is exactly the state a payment must never be sent
+  on. Every consent written before this flag existed means exactly what it meant.
+  Setting it does not enable a payment — the live-enablement gate still refuses.
+
+- **Redaction covers the payment and refund secrets**, and closed a
+  pre-existing hole: `pnr_no` was absent from `SENSITIVE_KEYS` while `pnrNo` and
+  `pnr_number` were present, so `redact_value` — which masks a dataclass by
+  field name — passed a real PNR straight through for `SrtReservationHold` and
+  `SrtReservationSummary`. Also added: the refund return password under all
+  three spellings (`ogtkRetPwd`, `tkRetPwd`, `retPwd`), `buyPsNm`/`psgNm`, and
+  `SrtPaymentCard`'s own attribute names, since `CARD_RE` only matches a 13-19
+  digit run and a 2-digit PIN, a `YYMM` expiry and a `YYMMDD` birthdate all slip
+  past it. The refund's `saleDt`/`saleWctNo`/`saleSqno` are deliberately **not**
+  masked: with the password redacted they authorise nothing, and a
+  fully-redacted preview says nothing at all.
+
 - **Server-side failures now have a taxonomy.** Almost every rejection arrived
   as one undifferentiated `SrtAppError` with only `NET000001` special-cased, so
   a caller could not tell "this train is sold out" from "your session died" from

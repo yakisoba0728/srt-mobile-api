@@ -136,9 +136,10 @@ READ_ONLY_ROUTES = frozenset(
 # a read path). This is a classification only.
 #
 # Three separate things are true here and must not be conflated:
-#   * "has a ``SrtClient`` method" — reserve and cancel do
-#     (``SrtClient.reserve``, ``SrtClient.cancel``); payment and refund have no
-#     client method at all.
+#   * "has a ``SrtClient`` method" — all four do now: ``SrtClient.reserve``,
+#     ``SrtClient.cancel``, ``SrtClient.pay_with_card``, ``SrtClient.refund``.
+#     This is the axis that says the LEAST, which is exactly why it is listed
+#     first: having a method is not permission to send and is not evidence.
 #   * "can be transmitted" — reserve and cancel can, as of the two-category
 #     opening of :data:`SRT_LIVE_MUTATION_CATEGORIES` below, and ONLY under an
 #     explicit per-category ``MutationConsent`` with ``dry_run=False``. payment
@@ -151,8 +152,10 @@ READ_ONLY_ROUTES = frozenset(
 #     accepts. For reserve and cancel that question was answered on 2026-07-25 by
 #     one live round trip (SUCC / IRR000018 for reserve, SUCC / IRG000000 for
 #     cancel), for the single-journey one-adult case only. payment and refund
-#     remain unanswered: no method, no live run, and both wire formats are 0-hit
-#     in the offline bundle.
+#     remain unanswered: no live run has ever been made on either, both wire
+#     formats are 0-hit in the offline bundle, the payment shape comes from one
+#     implementation counted twice and the refund shape from one with no
+#     upstream at all, and our own app does not use the payment path.
 #
 # So the current invariant is: payment and refund cannot leave the process as a
 # live request no matter how permissive the caller's consent is, while reserve
@@ -169,9 +172,14 @@ SRT_MUTATION_ROUTES = frozenset(
         # cancel (client method exists, preview by default; LIVE-ENABLED;
         # srtgo-sourced shape, 0-hit in v2.0.41, live-verified 2026-07-25)
         MutationRoute("POST", "app", "/ard/selectListArd02045_n.do"),
-        # payment (tiered only; no client method; not live-enabled)
+        # payment (client method exists, preview ONLY; NOT live-enabled;
+        # srtgo/ryanking13-sourced shape -- one vendored source, not two --
+        # 0-hit in v2.0.41, and our app pays via the Ard02017/18 WebView
+        # instead; never sent by anyone here)
         MutationRoute("POST", "app", "/ata/selectListAta09036_n.do"),
-        # refund (tiered only; no client method; not live-enabled)
+        # refund (client method exists, preview ONLY; NOT live-enabled;
+        # single-source srtgo shape with no upstream at all, 0-hit in v2.0.41;
+        # never sent by anyone here)
         MutationRoute("POST", "app", "/atc/selectListAtc02063_n.do"),
     }
 )
@@ -205,14 +213,22 @@ SRT_MUTATION_ROUTES = frozenset(
 # 21,673 files of our v2.0.41 offline bundle — it came from srtgo, and one live
 # success does not make it statically corroborated.
 #
-# payment AND refund STAY OUT, and adding either is a two-part job, not a
-# one-line edit here:
-#   1. Implementation — neither has a client method at all today.
-#   2. Live verification of that category's own wire format, which (like
-#      cancel's) has zero hits in the offline bundle.
+# payment AND refund STAY OUT. Both are now IMPLEMENTED --
+# ``SrtClient.pay_with_card`` and ``SrtClient.refund`` exist and build, gate,
+# preview and parse their forms -- and implementing them deliberately did NOT
+# open this gate. What is still missing is the only thing that ever mattered
+# here: live verification of each category's own wire format, which (like
+# cancel's) has zero hits in the offline bundle, and which is worse for these
+# two than for cancel. The payment shape comes from ONE implementation counted
+# twice (srtgo vendored ryanking13/SRT wholesale), the refund shape from one
+# implementation with no upstream at all, and our own app does not use the
+# payment path -- it charges through the Ard02017/18 WebView pages plus a
+# TransKey keypad and FIDO. So both may be legacy paths the server still
+# honours, or dead for our app version; nobody has tested either.
+#
 # A payment additionally transmits a PAN in the clear, which is why
-# ``post_mutation_form`` keeps a separate ``fake_card_only`` gate behind this
-# one. Adding "payment" or "refund" to this set without both parts done is a
+# ``post_mutation_form`` keeps a separate card-kind gate (exactly one of
+# ``fake_card_only`` / ``real_card_acknowledged``) behind this one. Adding "payment" or "refund" to this set without both parts done is a
 # safety regression; ``test_mutation_live_paths`` carries a canary that pins
 # this set to exactly {"reserve", "cancel"} and so fails loudly on either
 # addition.

@@ -808,9 +808,10 @@ suggests the two operators share a reservation platform — an observation, not 
 proven fact about the backend. Not covered by that run: multi-leg (`jrnyCnt` >
 1), group, standby, and anything to do with payment or refund.
 
-Payment and refund are tiered routes only — no client method exists for them,
-and their wire formats are likewise 0-hit across all 21,673 files of the v2.0.41
-offline evidence bundle, so they need live response capture (see
+Payment and refund now have client methods, and they still cannot transmit —
+see "Card payment" and "Refund" above for what that means and how thin the
+evidence is. Their wire formats are likewise 0-hit across all 21,673 files of
+the v2.0.41 offline evidence bundle, so they need live response capture (see
 docs/MUTATION_HANDOFF.md in the korail repo). The 2026-07-25 round trip taught
 nothing about either: it never paid the hold, so no payment or refund shape was
 observed. Native-bridge and external seat-map flows remain excluded entirely.
