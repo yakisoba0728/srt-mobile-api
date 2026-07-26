@@ -91,7 +91,10 @@ jadx -d build/jadx srt.apk
 against the real server and writes every RAW response to disk **before** it is
 parsed, so a parser that raises still leaves its evidence behind. It sends
 nothing that changes state: every call goes through the read-only allowlist,
-which rejects all four mutation routes by construction.
+which rejects every mutation route by construction. (That was "all four" when
+this was written; the coupon registration route was registered on 2026-07-26 and
+there are now **five**. The allowlist works by omission, so the guard needed no
+change and the sentence did.)
 
 ```bash
 SRT_MOBILE_API_LIVE=1 SRT_LIVE_READ_CAPTURE=1 \
@@ -603,9 +606,13 @@ once; earlier pages are neither replayed nor yielded again.
 This contract comes from static SRT Android app 2.0.41 evidence and synthetic
 offline request-sequence tests. Live continuation was verified in one bounded
 2026-07-15 session: personal and group each returned two pages with 10 rows per
-page. The iterator adds no route: the reviewed 20-route read-only boundary and all
-reservation, payment, cancellation, refund, native-bridge, and external-seatmap
-exclusions from the read-only allowlist remain unchanged.
+page. The iterator adds no route: the read-only boundary and all reservation,
+payment, cancellation, refund, native-bridge, and external-seatmap exclusions
+from the read-only allowlist were unchanged by it. **That boundary was 20 routes
+when this was written and is 26 now** — the seat page, the seat grid, the coupon
+list, the 공공할인 page, the 할인 승차권 search and the refund's step 1 were each
+added later and separately. The claim being made here is about this iterator,
+not about a frozen count.
 
 ## Read-only selector popups
 
@@ -1230,7 +1237,8 @@ complete success shape; malformed or rejected shapes raise the existing
 protocol/app error types. Server message, temporary job sequence, command map,
 and the raw mapping are excluded from `repr()`. This parser itself adds no
 route, request builder, NetFunnel `act_19` flow, client method, or live call,
-and leaves the reviewed 20-route read-only boundary unchanged; the reservation
+and left the read-only boundary unchanged — 20 routes at the time, 26 now, for
+the reasons given under "Bounded train-search pagination" above. The reservation
 surface described next was added separately.
 
 ## Consent-gated mutation surface
@@ -1358,7 +1366,12 @@ app carries the outbound result forward in `go_baseDsXml` / `go_seatDsXml`
 (`ara0101v.js:143-144`), which is not reproducible from a search row. Treat the
 two as independent holds until a live run says otherwise.
 
-**`jobId=1103` (시트맵예약) is deliberately not implemented.** The value is
+**`jobId=1103` (시트맵예약) was deliberately not implemented — and then it
+was, on 2026-07-26.** This paragraph is kept because its reasoning is still the
+honest description of the evidence; only its conclusion was overtaken. See
+"좌석지정 — seat-designated reservation (`jobId=1103`)" above for what shipped,
+and note that the one thing this paragraph identified as unknowable offline —
+the submit target — is still inferred rather than captured. The value is
 evidenced (`ara0101v.js:90`, `ara1001l.js:1436`) but the request it belongs to is
 not. `1103` is set on the ARC0201C branch, which navigates to the seat-map page
 (`/arc/selectListArc02012_n.do` — already read-only here as `get_seat_page`) and
@@ -1369,7 +1382,8 @@ offline. What *is* visible is the extra field family it carries
 (`seatNo1_1..N` from the picked seat names, `scarGridcnt1`/`scarGridcnt2`,
 `scarNo1`/`scarNo2`, `ara0101v.js:871-878`), recorded in
 `payloads.RESERVE_SEATMAP_JOBID` so that "not implemented" is not mistaken for
-"not known about".
+"not known about" — and that field family is exactly what
+`reserve(..., designated_seats=…)` now sends.
 
 **What an operator must do to verify each of these.** Each is a real state
 change on a real account.

@@ -23,6 +23,9 @@ PROJECT_NAME = "srt-mobile-api"
 EXPECTED_KEYWORDS = ['srt','read-only','mobile-api']
 LIVE_ENV = "SRT_MOBILE_API_LIVE"
 CLIENT_NAME = "SrtClient"
+# The audit log the README used to be. See the comment above
+# test_repository_truth_and_full_mutation_policy for which pins live here now.
+VERIFICATION_DOCUMENT = "docs/VERIFICATION.md"
 FAILURE_MESSAGE = "distribution verification failed\n"
 EXPECTED_CLASSIFIERS = {
     "Development Status :: 3 - Alpha",
@@ -309,6 +312,9 @@ def test_source_release_metadata_is_exact() -> None:
         "CHANGELOG.md",
         "SECURITY.md",
         "docs/RELEASE.md",
+        # The README's verification record was moved here, not deleted, so the
+        # file's existence is now itself a guarantee worth holding.
+        VERIFICATION_DOCUMENT,
         "scripts/verify_distribution.py",
         ".github/workflows/ci.yml",
     ):
@@ -834,25 +840,44 @@ def test_ambient_live_opt_in_is_deselected_by_the_release_command() -> None:
     assert result.returncode == 5
     assert "1 deselected" in result.stdout
 
+# The README used to be BOTH the front door and the audit log: 1,835 lines whose
+# first "##" heading sat at line 488. On 2026-07-26 the audit log moved into
+# docs/VERIFICATION.md so the README could serve a reader who wants to USE the
+# library. Every pin below moved with the claim it protects rather than being
+# dropped -- a fact that stops being checked is a fact that starts drifting.
+#
+#   STAYED in the README, because a user needs them at the front door:
+#     "installable read-only" / not "analysis workspace"  (what this repo IS)
+#     "26 routes"                                          (the read boundary)
+#     "1607 passed" / "1 deselected"                       (the offline gate)
+#     "iter_train_search_pages"                            (a public method)
+#     "docs/RELEASE.md"                                    (the release gate)
+#
+#   MOVED to docs/VERIFICATION.md, because each is an EVIDENCE record:
+#     the live pagination continuation, the seat-layout sufficiency verdict,
+#     the four seat-grid truths, and (below) the whole cancel/payment/refund
+#     provenance family.
 def test_repository_truth_and_full_mutation_policy() -> None:
     readme = (ROOT / "README.md").read_text()
     readme_lower = readme.casefold()
-    readme_flat = " ".join(readme_lower.split())
     progress = (ROOT / "docs/IMPLEMENTATION_PROGRESS.md").read_text()
     progress_lower = progress.casefold()
     progress_flat = " ".join(progress_lower.split())
+    verification = (ROOT / VERIFICATION_DOCUMENT).read_text()
+    verification_lower = verification.casefold()
+    verification_flat = " ".join(verification_lower.split())
     assert "installable read-only" in readme_lower
     assert "analysis workspace" not in readme_lower
     assert "26 routes" in readme
     # The CURRENT offline count, so this is a real gate: it must be updated
-    # whenever the suite grows. (The README also cites the historical 0.2.0
-    # figure; that one is labelled as historical and is not asserted here,
+    # whenever the suite grows. (docs/VERIFICATION.md also cites the historical
+    # 0.2.0 figure; that one is labelled as historical and is not asserted here,
     # because a frozen number can never fail.)
     assert "1607 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
-    assert "live continuation was verified" in readme.casefold()
-    assert "personal and group each returned two pages" in readme.casefold()
-    assert "inventory_source_candidate" in readme
+    assert "live continuation was verified" in verification_lower
+    assert "personal and group each returned two pages" in verification_lower
+    assert "inventory_source_candidate" in verification
     # Both documents must state the CURRENT truth about the seat-grid route.
     # Two of these entries used to be "not allowlisted" and "no closed response
     # parser"; the 2026-07-26 live read made both false, and the fix for a
@@ -860,15 +885,23 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     # The padding is pinned here because it is the one fact the endpoint turned
     # on, and a document that omits it would send the next reader back to
     # believing the alert shell's timing story.
+    #
+    # "Both documents" used to mean README + IMPLEMENTATION_PROGRESS. It now
+    # means VERIFICATION + IMPLEMENTATION_PROGRESS: the point was always that
+    # two INDEPENDENT documents carry the fact, and the README is no longer one
+    # of the documents that carries evidence.
     for evidence_truth in (
         "seat_page_schema_v2_evidence.json",
         "/arc/selectListArc02011_n.do",
         "zero-padded to five",
         "parse_seat_grid_response",
     ):
-        assert evidence_truth.casefold() in readme_flat
+        assert evidence_truth.casefold() in verification_flat
         assert evidence_truth.casefold() in progress_flat
     assert "docs/RELEASE.md" in readme
+    # Moving the record only preserves it if it stays FINDABLE. The README must
+    # keep pointing at its new home, or the evidence becomes a file nobody opens.
+    assert VERIFICATION_DOCUMENT in readme
 
     specification = (ROOT / "docs/analysis/srt-app-api-library-spec-2026-07-09.md").read_text()
     section_twelve = specification.split("## 12.", maxsplit=1)[1].split(
@@ -962,8 +995,14 @@ CANCEL_VERIFICATION_SCOPE_PHRASES = (
     "one-adult",
 )
 CANCEL_PROVENANCE_WINDOW = 900
+# README.md was the first of these three until 2026-07-26. The provenance record
+# is a dense paragraph of route tokens, confirmation codes, scope limits and
+# 0-hit counts -- exactly the material that made the README unreadable -- so it
+# moved to docs/VERIFICATION.md and the pin followed it there. It did not become
+# weaker by moving: it is the same window, the same seven elements, over three
+# documents that each have to state the whole thing independently.
 CANCEL_PROVENANCE_DOCUMENTS = (
-    "README.md",
+    VERIFICATION_DOCUMENT,
     "docs/IMPLEMENTATION_PROGRESS.md",
     "CHANGELOG.md",
 )
@@ -1100,7 +1139,19 @@ def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmi
     # wrong granularity here: "seat holding and selection have no client method
     # at all" is a TRUE sentence that sits two clauses away from the payment
     # method list, and a proximity rule cannot tell it apart from a false one.
-    documents = ("README.md", "docs/IMPLEMENTATION_PROGRESS.md", "SECURITY.md")
+    #
+    # docs/VERIFICATION.md was ADDED to this list on 2026-07-26, when the
+    # README's evidence sections moved into it. It is a current-state document
+    # by the same test CHANGELOG.md fails: it describes what the library does
+    # now and is amended in place, so the retired wording would simply be wrong
+    # in it. Scanning it is a strengthening -- the sentences that carried the
+    # highest risk of reintroducing the claim are the ones that moved.
+    documents = (
+        "README.md",
+        VERIFICATION_DOCUMENT,
+        "docs/IMPLEMENTATION_PROGRESS.md",
+        "SECURITY.md",
+    )
     for document in documents:
         flat = " ".join((ROOT / document).read_text().casefold().split())
         for sentence in re.split(r"(?<=[.!?])\s+", flat):
