@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **`PassengerCounts` now carries the app's SEVEN passenger types.** `infant`
+  (유아) and `youth` (청소년) were APPENDED, so every existing positional
+  construction keeps its meaning, and both default to zero.
+  **유아 has no `psgTpCd` of its own — it is folded, and declared twice**, which
+  is the live booking page's rule (`goRevFn`) implemented rather than tidied:
+  the 어린이 slot count becomes 어린이 + 유아, `infantCnt` carries the infants
+  again on their own, `totPrnb` counts them as heads, and `psgGridcnt` does NOT
+  count them as a type. `PassengerCounts.child_slot_count` is the folded number
+  and is a separate name from `child` so no caller has to remember which a given
+  field wants. Two places where the tidier model would have been wrong: infants
+  with no children still fill the 어린이 slot (the app tests the SUM after
+  folding), and `total` and `psgGridcnt` genuinely disagree about an infant.
+  **청소년 does get a slot, `psgTpCd` 6** — a code in neither copy of
+  `commCode.js`. It compacts last and widens the padded search form from five
+  slots to six, five being the booking page's loop and six being what the one
+  page that can express a 청소년 writes. It is accepted **without** checking the
+  entitlement: the 승차인원선택 popup gates `passenger7` on the server rendering
+  `pblDiscCd == "04"`, but that is an account fact no payload builder can
+  evaluate, and refusing here would lock out exactly the accounts the type is
+  for. `get_public_discounts()` is how a caller asks.
+  **With `infant=0` and `youth=0` every builder emits exactly what it emitted
+  before**, so the 2026-07-25 live reserve→cancel round trip stays valid as
+  byte-for-byte evidence. That is why `infantCnt` is conditional even though the
+  live form always carries `infantCnt=0`. A parametrised test pins the
+  invariance across all five builders, and every pre-existing reservation-form
+  test passed **unmodified**.
+  **LIVE-VERIFIED read-only 2026-07-26** via the search route's own `commandMap`
+  echo: `adult=1, child=2, infant=3` came back as `psgTpCd2="5"`,
+  `psgInfoPerPrnb2="5"`, `infantCnt="3"`, and `adult=1, youth=1` came back as
+  `psgTpCd2="6"` — both with ten train rows, so neither was rejected.
+  **NOT verified**: that a 청소년 can be reserved or is priced differently. That
+  needs 공공할인 `04` (no account here holds it) and a reservation (state
+  changing). The 운임 read cannot stand in — it returns a per-TYPE price list
+  that was identical across all five parties probed — and the popup cannot
+  either, since it echoes `passenger6`/`passenger7` but never seeds them back
+  into its DOM.
+  Offline gate: `1520 passed, 1 deselected` (was `1497`).
+
 - **CORRECTED, in five places: SRT does have an infant type and a `psgTpCd` 6.**
   The repository stated flatly that "`infantCnt` appears nowhere in the app" and
   that "there is NO infant / psgTpCd 6". Both were true of the v2.0.41 offline

@@ -546,10 +546,11 @@ def test_hydrated_ajax_payload_overlays_only_caller_fields(load_text_fixture):
 def test_passenger_fields_compact_nonzero_types_and_preserve_nonempty_hydrated_code():
     # The app packs only count>0 types into contiguous psgTpCd slots in canonical psgTpCd
     # order (senior=code 4 before child=code 5), leaving the trailing slots empty over
-    # exactly 5 slots, and sends no psgTpCd6 / infantCnt (ara0101v.js:808-836;
-    # commCode.js psgTpCd 1..5). The live server DOES carry both -- see
-    # payloads.PASSENGER_TYPE_CODES -- so what the last three assertions below pin
-    # is this library's deliberate boundary, not the protocol's.
+    # exactly 5 slots for a party with no 유아 and no 청소년 (ara0101v.js:808-836).
+    # Both of those exist and are implemented -- see payloads.PASSENGER_TYPE_CODES
+    # and tests/test_passenger_types.py -- and both are emitted only when non-zero,
+    # which is exactly what the last three assertions below pin: this party has
+    # neither, so its body is the one the live round trip verified.
     query = TrainSearchQuery(
         "0551",
         "0020",
@@ -572,8 +573,8 @@ def test_passenger_fields_compact_nonzero_types_and_preserve_nonempty_hydrated_c
     assert payload["psgInfoPerPrnb3"] == "0"
     assert payload["psgTpCd5"] == ""
     assert payload["psgInfoPerPrnb5"] == "0"
-    # No infant / type-6 slot and no infantCnt are EMITTED. They exist on the live
-    # server; this library does not send them, and that is what is pinned here.
+    # This party has no 유아 and no 청소년, so neither the sixth slot nor infantCnt
+    # appears. A party that HAS them gets both; see test_passenger_types.py.
     assert "psgTpCd6" not in payload
     assert "psgInfoPerPrnb6" not in payload
     assert "infantCnt" not in payload

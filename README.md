@@ -87,9 +87,10 @@ reservation variants (standby, round trip), the 환승 (transfer)
 search and reservation, the 좌석배치도 (seat grid) read and the 좌석지정
 (seat-designated) reservation
 landed — and after 단체 (group) booking was removed again, and after the
-할인 (discount) code tables, the 할인쿠폰 read and the 공공할인 read —
+할인 (discount) code tables, the 할인쿠폰 read, the 공공할인 read and the
+seven-type `PassengerCounts` —
 the current offline suite at HEAD is
-`1497 passed, 1 deselected`. The deselected case is the
+`1520 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -1031,15 +1032,64 @@ reason. The full write-up, with the evidence for each, is in
   answer `404`, with the identical body, so the status code is the whole signal.
   Reaching it needs a real owned PNR, and this survey created nothing.
 
-**And one gap in what this library can express.** `PassengerCounts` carries five
-passenger types; the live app carries seven. 유아 is `passenger6` on the
-승차인원선택 popup and travels as `infantCnt` *and* folded into the 어린이 count;
-청소년 is `passenger7`, revealed only under 공공할인 `04`, and travels as
-`psgTpCd` **6** — a code in neither copy of `commCode.js`. Nothing was changed
-in `PassengerCounts` or any payload, because both would change what `reserve()`
-transmits and 청소년 needs an approval nobody here holds. Five is now recorded
-as this library's deliberate boundary rather than as a fact about SRT; see
-"공공할인 is a passenger vocabulary, not just a price".
+### Seven passenger types, and the 유아 fold
+
+`PassengerCounts` carries the app's seven types: the five it always had, plus
+`infant` (유아) and `youth` (청소년). Both were appended, so every existing
+positional construction keeps its meaning.
+
+**유아 has no `psgTpCd` of its own — it is folded, and declared twice.** The
+live booking page's `goRevFn` does both in one breath:
+
+```js
+if(i==5){
+    passenger = passenger + passenger6;   // into the 어린이 slot COUNT
+    $('#infantCnt').val(passenger6);      // and declared again, separately
+}
+...
+totPrnb += passenger;                     // and it is a HEAD
+```
+
+So `PassengerCounts(adult=1, child=2, infant=3)` transmits `psgTpCd=5` with
+`psgInfoPerPrnb=5`, `infantCnt=3`, `totPrnb=6`, and `psgGridcnt=2` — an infant
+adds a head but not a passenger type. `child_slot_count` is the folded number
+and is a separate name from `child` so no caller has to remember which a given
+field wants. A party of infants with no children still fills the 어린이 slot,
+because the app tests the sum *after* folding; that is the page's rule and it is
+not tidied here.
+
+**청소년 does get a slot: `psgTpCd` 6** — a code in neither copy of
+`commCode.js`, live or bundled. It always compacts last, and it widens the
+padded search form from five slots to six, which is what the one page that can
+express a 청소년 sends. It is accepted **without** checking the entitlement: an
+account holding 공공할인 `04` is the caller this type exists for, and no payload
+builder can know whether the caller is one. Ask with `get_public_discounts()`.
+
+**With `infant=0` and `youth=0`, every payload is byte-identical to what it was
+before these fields existed** — no `infantCnt`, no sixth slot, no changed count
+— which is what keeps the 2026-07-25 live reserve→cancel round trip valid as
+evidence. A parametrised test pins it across all five builders, and the existing
+reservation-form tests passed unmodified.
+
+**Live-verified 2026-07-26, read-only** — the search route echoes the request
+back in its own `commandMap`:
+
+| sent | echoed back | rows |
+| --- | --- | --- |
+| `adult=1, child=2, infant=3` | `psgTpCd2="5"`, `psgInfoPerPrnb2="5"`, `infantCnt="3"` | 10 |
+| `adult=1, youth=1` | `psgTpCd2="6"`, `psgInfoPerPrnb2="1"` | 10 |
+
+The fold is confirmed end to end. `psgTpCd` 6 is confirmed as far as a read can
+take it — the server neither rejected the code nor refused the search.
+
+**What cannot be verified from this account**: that a 청소년 can be RESERVED, or
+is priced differently. That needs 공공할인 `04`, which no account here holds, and
+a reservation, which is state-changing. The 운임 read cannot stand in: it returns
+a per-type price list (어른/어린이/경로 × 특실/일반실) that was byte-identical for
+all five parties probed. The 승차인원선택 popup likewise accepts and echoes
+`passenger6`/`passenger7` but never seeds them back into its DOM, and keeps the
+청소년 row `display:none` because the reveal is gated on the SERVER rendering
+`pblDiscCd == "04"`.
 
 ### Mutual verification
 

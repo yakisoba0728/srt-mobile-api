@@ -126,22 +126,55 @@ def test_passenger_counts_reject_empty_or_negative_totals():
         PassengerCounts(adult=-1)
 
 
-def test_passenger_counts_deliberately_carries_no_infant_or_youth_type():
-    # B2: five passenger types (psgTpCd 1..5). `.total` must equal the sum of the five
-    # so totPrnb == sum(psgInfoPerPrnb1..5) holds everywhere.
-    #
-    # This test was named ..._has_no_infant_type and its comment said `infantCnt`
-    # appears nowhere in the app. That was true of the v2.0.41 bundle and false of the
-    # live server, which carries 유아 (`passenger6`/`infantCnt`) and 청소년
-    # (`passenger7`/`psgTpCd6`). What it pins is unchanged and its meaning is not: the
-    # five are this library's boundary, not SRT's inventory. See
-    # payloads.PASSENGER_TYPE_CODES.
-    with pytest.raises(TypeError):
-        PassengerCounts(adult=1, infant=1)  # type: ignore[call-arg]
+def test_passenger_counts_carries_the_apps_seven_types():
+    # This test was named ..._has_no_infant_type and asserted that
+    # PassengerCounts(adult=1, infant=1) raised TypeError. That assertion was
+    # correct about this library and wrong about SRT: the live 승차인원선택 popup
+    # renders seven counters. It now pins the opposite, on purpose.
     counts = PassengerCounts(
         adult=1, child=2, senior=3, disability_1_to_3=4, disability_4_to_6=5
     )
     assert counts.total == 15
+    assert counts.infant == 0 and counts.youth == 0
+    # 유아 IS a head: the app adds it to the 어린이 count and then adds that count
+    # to totPrnb (goRevFn), and the popup sums i=1..7.
+    assert PassengerCounts(adult=1, infant=1).total == 2
+    assert PassengerCounts(adult=1, youth=1).total == 2
+    assert PassengerCounts(adult=1, child=1, infant=2, youth=3).total == 7
+
+
+def test_child_slot_count_folds_the_infant_and_child_does_not():
+    # The whole reason the two names are separate. `child` is what the picker
+    # shows; `child_slot_count` is what psgTpCd 5 transmits.
+    counts = PassengerCounts(adult=1, child=2, infant=3)
+    assert counts.child == 2
+    assert counts.child_slot_count == 5
+    # Infants with no children still fill the 어린이 slot, because the app tests
+    # the SUM after folding, not `passenger5` on its own.
+    infants_only = PassengerCounts(adult=1, infant=2)
+    assert infants_only.child == 0
+    assert infants_only.child_slot_count == 2
+
+
+def test_passenger_counts_positional_construction_is_unchanged():
+    # infant and youth were APPENDED, so the five existing positions keep their
+    # meaning for any caller that passed them positionally.
+    assert PassengerCounts(1, 2, 3, 4, 5) == PassengerCounts(
+        adult=1, child=2, senior=3, disability_1_to_3=4, disability_4_to_6=5
+    )
+
+
+def test_new_counts_are_validated_like_the_old_ones():
+    for kwargs in ({"infant": -1}, {"youth": -1}):
+        with pytest.raises(ValueError):
+            PassengerCounts(adult=1, **kwargs)
+    for kwargs in ({"infant": True}, {"youth": True}):
+        with pytest.raises(ValueError):
+            PassengerCounts(adult=1, **kwargs)
+    # A party of one infant and nobody else is still a party of one.
+    assert PassengerCounts(adult=0, infant=1).total == 1
+    with pytest.raises(ValueError):
+        PassengerCounts(adult=0, infant=0, youth=0)
 
 
 @pytest.mark.parametrize(

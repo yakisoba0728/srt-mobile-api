@@ -63,27 +63,71 @@ class SrtSession:
 
 @dataclass(frozen=True)
 class PassengerCounts:
-    # Five passenger types (psgTpCd 1..5, commCode.js:55-88). Every head-count field
-    # (totPrnb/totalPessnger/psgNum) must equal sum(psgInfoPerPrnb1..5), the invariant
-    # getPsgTotCnt() guarantees (ara0101v.js:35), so no field outside the five types may
-    # feed `total`.
-    #
-    # This used to add "there is NO infant type (`infantCnt` appears nowhere in the
-    # app)". That was true of the v2.0.41 bundle and false of the live server, and was
-    # corrected on 2026-07-26: the live 승차인원선택 popup renders 유아 (`passenger6`)
-    # and 청소년 (`passenger7`, revealed only under 공공할인 "04"), the live booking
-    # page transmits `infantCnt`, and the 할인 승차권 page transmits `psgTpCd6`.
-    #
-    # Five is therefore a deliberate BOUNDARY, not an inventory of SRT. Widening it
-    # would change what reserve() sends, and 청소년 is unreachable without a 공공할인
-    # approval no account here holds. See payloads.PASSENGER_TYPE_CODES,
-    # srt_mobile_api.discounts, and docs/IMPLEMENTATION_PROGRESS.md
-    # ("공공할인 is a passenger vocabulary, not just a price").
+    """The app's SEVEN passenger types, five of which travel as their own slot.
+
+    This carried five types until 2026-07-26, on the strength of the v2.0.41
+    offline bundle, and said so as a fact about SRT: "there is NO infant type
+    (``infantCnt`` appears nowhere in the app)". That was true of the bundle and
+    false of the live server, which the live 승차인원선택 popup settles by
+    rendering seven counters — ``passenger1``..``passenger7``, summed ``i=1..7``
+    by its own ``setTotalPassenger`` and returned in full by
+    ``returnPassenger``.
+
+    **유아 (infant) does not get a psgTpCd of its own; it is FOLDED.** The live
+    booking page's ``goRevFn`` does two things with it in one breath::
+
+        if(i==5){
+            passenger = passenger + passenger6;   // into the 어린이 slot COUNT
+            $('#infantCnt').val(passenger6);      // and declared again, separately
+        }
+
+    So an infant is counted inside ``psgInfoPerPrnb`` for 어린이 AND declared
+    again in ``infantCnt``. It is also a HEAD: ``totPrnb += passenger`` runs
+    after the fold, so ``total`` includes infants. :attr:`child_slot_count` is
+    the folded number, and it is a separate name from :attr:`child` precisely so
+    that no caller has to remember which of the two a given field wants.
+
+    **청소년 (youth) DOES get a slot: psgTpCd 6.** ``passenger7`` on the popup,
+    ``display:none`` unless 공공할인 ``04`` is approved, mapped by the 할인 승차권
+    page to ``psgTpCd6``/``psgInfoPerPrnb6``. That code is in NEITHER copy of
+    ``commCode.js`` — not v2.0.41, not the live ``/js/commCode.js`` — and exists
+    only on this path.
+
+    **A non-zero ``youth`` is accepted without checking the entitlement**, and
+    that is deliberate: an account holding 공공할인 ``04`` is a legitimate caller,
+    and no payload builder can know whether it is one. See
+    :meth:`~srt_mobile_api.client.SrtClient.get_public_discounts` for how to ask.
+
+    **What is live-verified, and what is not** (2026-07-26, read-only):
+
+    * the FOLD is verified. The search route echoes the request back in its own
+      ``commandMap``, and ``adult=1, child=2, infant=3`` came back as
+      ``psgTpCd2="5"``, ``psgInfoPerPrnb2="5"`` and ``infantCnt="3"`` — both
+      halves of the rule, from one infant count — with ten train rows returned.
+    * ``psgTpCd`` 6 is verified as far as a read can take it: ``adult=1,
+      youth=1`` came back as ``psgTpCd2="6"``, again with ten rows, so the
+      server neither rejected the code nor refused the search.
+    * NOT verified: that a 청소년 can be RESERVED or is priced differently. That
+      needs an account holding 공공할인 ``04``, which none here does, and a
+      reservation, which is state-changing. The 운임 read cannot stand in — it
+      returns a per-type price LIST (어른/어린이/경로 × 특실/일반실), identical for
+      every party, not a quote for the party sent.
+
+    **With ``infant=0`` and ``youth=0`` every payload this library builds is
+    byte-identical to what it built before these two fields existed**, which is
+    what keeps the 2026-07-25 live reserve→cancel round trip valid as evidence
+    for the ordinary case. A test pins that field-for-field.
+    """
+
     adult: int = 1
     child: int = 0
     senior: int = 0
     disability_1_to_3: int = 0
     disability_4_to_6: int = 0
+    # Appended, not inserted, so every existing positional construction keeps its
+    # meaning.
+    infant: int = 0
+    youth: int = 0
 
     def __post_init__(self) -> None:
         values = (
@@ -92,6 +136,8 @@ class PassengerCounts:
             self.senior,
             self.disability_1_to_3,
             self.disability_4_to_6,
+            self.infant,
+            self.youth,
         )
         if any(type(value) is not int or value < 0 for value in values):
             raise ValueError("passenger counts must be non-negative integers")
@@ -99,13 +145,39 @@ class PassengerCounts:
             raise ValueError("at least one passenger is required")
 
     @property
+    def child_slot_count(self) -> int:
+        """The number the 어린이 slot (``psgTpCd`` 5) carries: 어린이 PLUS 유아.
+
+        The app's fold, not a convenience. ``passenger5 + passenger6`` on the
+        booking page (``goRevFn``) and on the 할인 승차권 page
+        (``setPassenger_callback``: ``parseInt(obj.passenger5) +
+        parseInt(obj.passenger6)``) alike.
+
+        A party of infants and no children still fills this slot, because the
+        app's own test is on the SUM (``if(passenger != '0')``), so
+        ``PassengerCounts(adult=1, infant=1)`` transmits a 어린이 slot of 1 and
+        ``infantCnt=1``. That is what the page does, and it is not tidied here.
+        """
+        return self.child + self.infant
+
+    @property
     def total(self) -> int:
+        """``totPrnb``: every head, infants included.
+
+        Infants count because the app's ``totPrnb += passenger`` runs AFTER the
+        fold, so the infant it just added to the 어린이 count is added again to
+        the total — and the popup's own ``setTotalPassenger`` sums ``i=1..7``.
+        The invariant ``getPsgTotCnt()`` guarantees (``ara0101v.js:35``) is
+        therefore ``totPrnb == sum(psgInfoPerPrnb…)`` over the EMITTED slots,
+        which is what this returns.
+        """
         return (
             self.adult
-            + self.child
-            + self.senior
             + self.disability_1_to_3
             + self.disability_4_to_6
+            + self.senior
+            + self.child_slot_count
+            + self.youth
         )
 
 

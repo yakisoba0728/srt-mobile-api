@@ -219,39 +219,66 @@ TRAIN_GROUP_OPTIONS = {
     "900": ("KTX+SRT", "00"),
     "109": ("전체", "05"),
 }
-# The five SRT passenger types in positional psgTpCd order (commCode.js:55-88 lists
-# psgTpCd 1..5 only; the picker object seeds psgTpCd1..5 = "1".."5" at
-# ara0101v.js:795-804).
+# The SIX psgTpCd slots, in the positional order the app compacts them in, paired
+# with the PassengerCounts attribute each one's count comes from.
 #
-# THE COMMENT HERE USED TO SAY "there is NO infant / psgTpCd 6: SRT has no infant
-# type and the string infantCnt appears nowhere in the app". The first half of that
-# is true of the v2.0.41 offline bundle and FALSE of the live server, and it was
-# corrected on 2026-07-26 rather than deleted, because the mistake is instructive:
-# it read "absent from the bundle" as "absent from the protocol".
+# THIS TUPLE USED TO BE FIVE, and said so as a fact: "there is NO infant / psgTpCd
+# 6: SRT has no infant type and the string infantCnt appears nowhere in the app".
+# That was true of the v2.0.41 offline bundle and FALSE of the live server. The
+# mistake is worth naming because it is repeatable: it read "absent from the
+# bundle" as "absent from the protocol".
 #
-# What the live pages actually carry, all of it 0-hit in v2.0.41:
+# `psgTpCd` 6 is 청소년, and it is in NEITHER copy of commCode.js -- not v2.0.41,
+# not the live /js/commCode.js fetched 2026-07-26, both of which stop at 5. It
+# exists only in what the server renders on the 공공할인 path, where the 승차인원
+# 선택 popup reveals a seventh counter (`passenger7`, display:none unless the
+# 공공할인 code is "04") and the 할인 승차권 page maps it to
+# psgTpCd6/psgInfoPerPrnb6 (setPassenger_callback).
 #
-#   * 유아 (infant). The 승차인원선택 popup renders a SIXTH counter, `passenger6`,
-#     labelled "유아 (만 6세미만)", and the live booking page folds it into the
-#     어린이 slot count while ALSO sending it separately:
-#     `passenger = passenger + passenger6; $('#infantCnt').val(passenger6)`.
-#   * 청소년 (youth) as psgTpCd "6". The popup renders a SEVENTH counter,
-#     `passenger7`, hidden unless the 공공할인 code is "04", and the 할인 승차권 page
-#     sends it as psgTpCd6/psgInfoPerPrnb6. psgTpCd 6 is in NEITHER copy of
-#     commCode.js -- not v2.0.41, not the live copy fetched the same day.
+# 유아 is NOT here, and its absence is the app's rule rather than an omission: an
+# infant has no psgTpCd of its own. It is folded into the 어린이 slot's COUNT and
+# declared separately as `infantCnt`. See PassengerCounts.child_slot_count and
+# _passenger_slot_counts below.
 #
-# This tuple is still exactly five, and that is now a CHOICE rather than a fact
-# about SRT: adding either type changes the reservation payload, and 청소년 is
-# unreachable without a 공공할인 approval nobody on this project holds. The
-# constants that record the vocabulary live in discounts.py; see
-# docs/IMPLEMENTATION_PROGRESS.md, "공공할인 is a passenger vocabulary".
+# BOTH RULES ARE LIVE-VERIFIED (2026-07-26), by the cheapest possible read: the
+# search route echoes the request back in its own commandMap.
+#   * adult=1, child=2, infant=3 came back as psgTpCd2="5",
+#     psgInfoPerPrnb2="5" and infantCnt="3" -- the fold and the separate
+#     declaration, both, from one infant count;
+#   * adult=1, youth=1 came back as psgTpCd2="6", psgInfoPerPrnb2="1".
+# Both searches returned ten train rows, so the server processed them normally
+# and rejected neither the folded count nor psgTpCd 6.
 PASSENGER_TYPE_CODES = (
     ("adult", "1"),
     ("disability_1_to_3", "2"),
     ("disability_4_to_6", "3"),
     ("senior", "4"),
-    ("child", "5"),
+    # NOT `child`: the count this slot carries is child + infant.
+    ("child_slot_count", "5"),
+    ("youth", "6"),
 )
+# How many psgTpCd slots the padded (search / fare) forms transmit.
+#
+# FIVE is what the booking page sends: goRevFn loops `i = 1..5` and leaves the
+# psgTpCd6 input it has in the DOM untouched (the two lines that would reset it
+# are commented out in the live page). That five-slot body is the one verified
+# byte-for-byte against the live server in the 2026-07-25 reserve->cancel round
+# trip, so it is what a party with no 청소년 keeps sending, unchanged.
+#
+# SIX is what the page that CAN express 청소년 sends: ARA0301V builds an `oData`
+# of six slots and writes all six to the form. A party with a 청소년 needs the
+# sixth slot to exist, and is by definition on that page's path.
+#
+# So the slot count follows which of the two pages the party could have been
+# assembled on, and a party without a 청소년 is bit-identical to before.
+PADDED_PASSENGER_SLOTS = 5
+PADDED_PASSENGER_SLOTS_WITH_YOUTH = 6
+# 유아, declared separately from the 어린이 slot it was folded into. The live
+# booking form carries this field ALWAYS, `infantCnt=0` included; this library
+# emits it only when it is non-zero, so that a party with no infant produces the
+# exact body the live round trip verified. Sending a field the server already
+# defaults to 0 would buy nothing and would retire that evidence.
+INFANT_COUNT_FIELD = "infantCnt"
 
 
 def _required_text(value: str, name: str) -> str:
@@ -323,24 +350,34 @@ def reservation_list_payload(page_no: int = 0) -> dict[str, str]:
 
 
 def passenger_selector_payload(passengers: PassengerCounts) -> dict[str, str]:
-    # passengerN is keyed by SRT passenger type code N (commCode.js psgTpCd:
-    # 1=adult, 2=disability_1_to_3, 3=disability_4_to_6, 4=senior, 5=child).
-    # See ara0101v.js:213-238 (request) and :795-804 (callback).
+    # passengerN here is the POPUP's own numbering, which is NOT psgTpCd and not
+    # the wire numbering used anywhere else in this module:
+    #   1=어른, 2=중증 장애인, 3=경증 장애인, 4=경로, 5=어린이, 6=유아, 7=청소년.
+    # Read off the live popup's labels and its returnPassenger (2026-07-26); the
+    # bundle's request/callback pair is ara0101v.js:213-238 / :795-804.
     #
-    # "There is no passenger6 slot; infant is not a picker type" is what this
-    # comment used to say, and the live popup this very payload fetches
-    # disproves it: fetched 2026-07-26, it renders `passenger6` ("유아 (만
-    # 6세미만)") and `passenger7` ("청소년", hidden unless the 공공할인 code is
-    # "04"), sums i=1..7 in setTotalPassenger, and returns all seven to its
-    # callback.
+    # Note especially that `passenger5` is the UNFOLDED 어린이 count and
+    # `passenger6` is 유아 as its own counter -- the fold into psgTpCd 5 happens
+    # on the page that RECEIVES this popup's answer, not in the popup. So this
+    # builder must send `passengers.child`, never `child_slot_count`; sending the
+    # folded number would seed the picker with infants counted twice.
     #
-    # Five are still SENT, deliberately. The popup defaults 6 and 7 to zero when
-    # they are absent from the request -- our live read got a page whose own
-    # commandMap echo was `{reqCode=6, isOrg=2, passenger1=1, ...,
-    # passenger5=0, totalPessnger=1, sNowSel=1}` and which rendered correctly --
-    # and adding them here would mean adding them to PassengerCounts, which the
-    # reservation payload also reads. See PASSENGER_TYPE_CODES above.
-    return {
+    # 6 and 7 are emitted ONLY when non-zero, which keeps a party without either
+    # byte-identical to what this builder sent before they existed.
+    #
+    # WHAT THE LIVE SERVER DOES WITH THEM, probed 2026-07-26: it ACCEPTS them and
+    # echoes them in the page's own commandMap dump --
+    #   {reqCode=6, isOrg=2, passenger1=1, ..., totalPessnger=2, passenger6=1, sNowSel=1}
+    # -- and does NOT seed them back into the DOM, because the seeding branch
+    # writes only passenger1..5. So the rendered counters for 유아 and 청소년 come
+    # back at 0 no matter what is sent. Sending them is therefore honest rather
+    # than effective: the request carries what the caller asked for, and the popup
+    # is a picker whose answer the caller was going to replace anyway.
+    #
+    # The 청소년 row additionally stays `display:none` regardless, because the page
+    # reveals it only when the SERVER renders `pblDiscCd == "04"` into it -- an
+    # account-level fact, not a request parameter. Confirmed on the same probe.
+    fields = {
         "reqCode": "6",
         "isOrg": "2",
         "passenger1": str(passengers.adult),
@@ -350,6 +387,11 @@ def passenger_selector_payload(passengers: PassengerCounts) -> dict[str, str]:
         "passenger5": str(passengers.child),
         "totalPessnger": str(passengers.total),
     }
+    if passengers.infant:
+        fields["passenger6"] = str(passengers.infant)
+    if passengers.youth:
+        fields["passenger7"] = str(passengers.youth)
+    return fields
 
 
 def seat_option_selector_payload(
@@ -378,18 +420,46 @@ def train_group_selector_payload(
     }
 
 
-def _compact_passenger_slots(passengers: PassengerCounts) -> list[tuple[str, int]]:
-    # The app packs only the count>0 passenger types into contiguous slots, in
-    # canonical psgTpCd order (ara0101v.js:824-836):
-    #   idx=1; for i in 1..5: if psgInfoPerPrnb[i] > 0: psgTpCd[idx]=code[i];
-    #                                                    psgInfoPerPrnb[idx]=count[i]; idx++
-    # Returns the (psgTpCd, count) pairs for the filled slots, in order. Infant is not a
-    # psgTpCd type and is never emitted. Shared by the search psgTpCd builder (B1) and
-    # the fare passenger1..5 builder (B3) so they stay consistent.
+def _passenger_slot_counts(passengers: PassengerCounts) -> list[tuple[str, int]]:
+    """All six (psgTpCd, count) pairs in canonical order, 유아 already folded in.
+
+    The one place the fold happens. Slot 5's count is
+    ``PassengerCounts.child_slot_count`` (어린이 + 유아), never ``child``, so no
+    caller downstream can accidentally emit the unfolded number.
+    """
     return [
         (type_code, getattr(passengers, attribute))
         for attribute, type_code in PASSENGER_TYPE_CODES
-        if getattr(passengers, attribute) > 0
+    ]
+
+
+def _padded_slot_count(passengers: PassengerCounts) -> int:
+    # See PADDED_PASSENGER_SLOTS: five for a party the booking page could have
+    # assembled, six once a 청소년 is present and only the 할인 승차권 page could.
+    return (
+        PADDED_PASSENGER_SLOTS_WITH_YOUTH
+        if passengers.youth
+        else PADDED_PASSENGER_SLOTS
+    )
+
+
+def _compact_passenger_slots(passengers: PassengerCounts) -> list[tuple[str, int]]:
+    # The app packs only the count>0 passenger types into contiguous slots, in
+    # canonical psgTpCd order (ara0101v.js:824-836 for five, ARA0301V's
+    # setPassenger_callback for the same loop over six):
+    #   idx=1; for i in 1..N: if psgInfoPerPrnb[i] > 0: psgTpCd[idx]=code[i];
+    #                                                   psgInfoPerPrnb[idx]=count[i]; idx++
+    # Returns the (psgTpCd, count) pairs for the filled slots, in order. Shared by
+    # the search psgTpCd builder (B1), the fare builder (B3) and the reservation
+    # builder, so all three fold 유아 identically and order 청소년 last.
+    #
+    # A party of infants and no children still fills slot 5, because the app tests
+    # the SUM: `if(passenger != '' && passenger != '0')` runs after
+    # `passenger = passenger + passenger6`.
+    return [
+        (type_code, count)
+        for type_code, count in _passenger_slot_counts(passengers)
+        if count > 0
     ]
 
 
@@ -398,15 +468,18 @@ def _passenger_fields(
     hydrated_fields: dict[str, str] | None = None,
 ) -> dict[str, str]:
     # Emit the COMPACTED psgTpCd1..N / psgInfoPerPrnb1..N, then leave the trailing slots
-    # empty over exactly 5 slots. The app seeds all five as psgTpCd="" / psgInfoPerPrnb="0"
-    # and overwrites only the first N filled ones (ara0101v.js:808-836), so the trailing
-    # slots are SENT (psgTpCd="", psgInfoPerPrnb="0"), not omitted. No psgTpCd6 and no
-    # infantCnt -- both of which the live server DOES carry, and neither of which this
-    # library emits; see PASSENGER_TYPE_CODES for what changed and why the five stayed.
+    # empty. The app seeds them all as psgTpCd="" / psgInfoPerPrnb="0" and overwrites
+    # only the first N filled ones (ara0101v.js:808-836), so the trailing slots are SENT
+    # (psgTpCd="", psgInfoPerPrnb="0"), not omitted.
+    #
+    # `infantCnt` is NOT emitted here, because this builder is shared with the fare
+    # request and the fare request does not carry it: the live fare params are
+    # psgTpCd1..6/psgInfoPerPrnb1..6 and nothing else from the passenger family. The
+    # search call sites add it themselves.
     hydrated_fields = hydrated_fields or {}
     slots = _compact_passenger_slots(passengers)
     fields: dict[str, str] = {}
-    for index in range(1, len(PASSENGER_TYPE_CODES) + 1):
+    for index in range(1, _padded_slot_count(passengers) + 1):
         if index <= len(slots):
             type_code, count = slots[index - 1]
             hydrated_code = hydrated_fields.get(f"psgTpCd{index}", "")
@@ -418,12 +491,26 @@ def _passenger_fields(
     return fields
 
 
+def _infant_count_field(passengers: PassengerCounts) -> dict[str, str]:
+    # 유아 is declared a second time, next to the 어린이 slot it was folded into
+    # (`$('#infantCnt').val(passenger6)` on the booking page,
+    # `$("#infantCnt").val(obj.passenger6)` on the 할인 승차권 page).
+    #
+    # Emitted only when non-zero. The live form always carries `infantCnt=0`, and
+    # sending that would change every existing body by one field while telling the
+    # server exactly what it already assumes -- retiring the byte-for-byte evidence
+    # from the 2026-07-25 live reserve->cancel round trip in exchange for nothing.
+    return {INFANT_COUNT_FIELD: str(passengers.infant)} if passengers.infant else {}
+
+
 def _distinct_passenger_type_count(passengers: PassengerCounts) -> int:
     # psgGridcnt is the number of distinct passenger TYPES with count>0, NOT the head
     # count: the app sets psgGridcnt=idx-1 (occupied type count, ara0101v.js:826-836)
     # and srtgo uses len(combined_passengers) (srt.py:191). Reuse the compaction helper
-    # so psgGridcnt always equals the number of filled psgTpCd slots (B1). Infant is not
-    # a psgTpCd type, so it is excluded.
+    # so psgGridcnt always equals the number of filled psgTpCd slots (B1).
+    #
+    # A 유아 therefore does NOT add a type -- it was folded into 어린이 -- while a
+    # 청소년 does, being psgTpCd 6 in its own right.
     return len(_compact_passenger_slots(passengers))
 
 
@@ -485,6 +572,7 @@ def search_page_payload(
         "JRNYLIST_KEY": "",
     }
     payload.update(_passenger_fields(query.passengers))
+    payload.update(_infant_count_field(query.passengers))
     for leg in (1, 2):
         for index in range(1, 10):
             payload[f"seatNo{leg}_{index}"] = ""
@@ -543,6 +631,7 @@ def search_ajax_payload(
         }
     )
     payload.update(_passenger_fields(query.passengers, hydrated_fields))
+    payload.update(_infant_count_field(query.passengers))
     payload.pop("fllwPgExt", None)
     return payload
 
@@ -952,8 +1041,14 @@ def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, 
         "trnNo2": "",
     }
     payload.update(_passenger_fields(passengers))
-    payload[f"psgTpCd{_FARE_TRAILING_SLOT}"] = ""
-    payload[f"psgInfoPerPrnb{_FARE_TRAILING_SLOT}"] = ""
+    # Slot 6 is the fare form's always-EMPTY trailing slot -- UNLESS a 청소년 is
+    # aboard, in which case psgTpCd6 is that passenger's real slot and blanking it
+    # would drop them from the quote. _passenger_fields has already filled it in
+    # that case; only an unfilled slot 6 gets the fare form's "" / "" pair (note
+    # psgInfoPerPrnb6 is "" here, not the "0" the search form's unfilled slots use).
+    if not payload.get(f"psgTpCd{_FARE_TRAILING_SLOT}"):
+        payload[f"psgTpCd{_FARE_TRAILING_SLOT}"] = ""
+        payload[f"psgInfoPerPrnb{_FARE_TRAILING_SLOT}"] = ""
     return payload
 
 
@@ -1003,6 +1098,7 @@ def _reservation_passenger_fields(
     for index, (type_code, count) in enumerate(slots, start=1):
         fields[f"psgTpCd{index}"] = type_code
         fields[f"psgInfoPerPrnb{index}"] = str(count)
+    fields.update(_infant_count_field(passengers))
     return fields
 
 
