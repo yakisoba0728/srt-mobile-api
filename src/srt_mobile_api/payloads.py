@@ -34,8 +34,10 @@ PUBLIC_DISCOUNT_CODES = frozenset(
 # The three 조정구분코드 (jobId) values, documented by the app itself in a single
 # comment on its own reservation-form seed (ara0101v.js:90):
 #   "jobId" : "1101"  //조정구분코드(1101:개인예약, 1102:예약대기, 1103:시트맵예약)
-# so SRT has the same three job types korail does. Two of them are built here;
-# 1103 is not, and RESERVE_SEATMAP_JOBID below records why.
+# so SRT has the same three job types korail does, and all three are built here.
+# 1103 arrived last, on 2026-07-26, once the seat grid turned out to be readable
+# without a traffic capture; RESERVE_SEATMAP_JOBID below records what about it
+# is still inferred rather than observed.
 
 # 개인예약. srtgo agrees on the value (RESERVE_JOBID["PERSONAL"], srt.py:31).
 RESERVE_PERSONAL_JOBID = "1101"
@@ -1651,8 +1653,10 @@ def transfer_reservation_payload(
     **No seat selection.** 좌석지정 fills ``scarNo1``/``seatNo1_*`` and
     explicitly BLANKS the slot-2 equivalents — ``scarGridcnt2 = 0``,
     ``scarNo2 = ""`` (``ara0101v.js:875-879``) — and no path in the bundle ever
-    fills them. jobId 1103 is already unimplemented here for a separate reason
-    (:data:`RESERVE_SEATMAP_JOBID`); this is the transfer-specific one.
+    fills them. That is the transfer-specific reason: 좌석지정 (jobId 1103) IS
+    implemented — see :data:`RESERVE_SEATMAP_JOBID` — but it designates seats on
+    one journey slot, and the bundle shows no path that designates them on a
+    transfer's second leg.
 
     **Passengers are NOT per-leg** and are emitted once, unchanged. The
     ``psgTpCd1..5``/``psgInfoPerPrnb1..5`` family is indexed by passenger TYPE,
