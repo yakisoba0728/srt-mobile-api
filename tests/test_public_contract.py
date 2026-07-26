@@ -48,11 +48,12 @@ def test_client_public_method_set_is_stable():
         # (SUCC / IRT200277): gated, previewable by default, and transmittable.
         "refund",
         "reserve",
-        # The 단체 half of reserve, kept as its own method because it POSTs a
-        # different endpoint (arc06014) and may not return a cancelable PNR.
-        # Same "reserve" consent category and the same kill switch; the
-        # request is bundle-evidenced, the response is not live-verified.
-        "reserve_group",
+        # NOT present, deliberately: reserve_group. 단체 booking was removed on
+        # 2026-07-26 because arc06014 answers with a server-rendered payment
+        # page rather than a cancelable hold, so there was no reservation for a
+        # client method to return. The group SEARCH below is unaffected.
+        # See docs/IMPLEMENTATION_PROGRESS.md, "단체 (group) booking: removed".
+        #
         # The 환승 half of reserve. Same endpoint (arc05013) and the same
         # "reserve" consent category as reserve() -- a transfer is a personal
         # reservation with a second 여정 slot, not a new mutation -- but its own

@@ -128,11 +128,12 @@ helpers; they perform no I/O and are not client routes.
 The transport currently allows 23 exact read-only app/NetFunnel routes.
 `act_19`, the app's own `Ard02017`/`Ard02018` WebView payment entry, other
 ATA/ARD flows, native bridges, callbacks, and external seat-map calls are not
-callable. Preview-by-default `reserve`, `reserve_group`, `reserve_transfer`,
-`cancel`, `pay_with_card` and `refund` methods exist; all transmit under an
-explicit non-dry-run consent for their own category. Four operations are
-live-verified. `reserve_group`, `reserve_transfer` and the `standby` /
-`round_trip` variants of `reserve` are **not** — they are bundle-evidenced only.
+callable. Preview-by-default `reserve`, `reserve_transfer`, `cancel`,
+`pay_with_card` and `refund` methods exist; all transmit under an explicit
+non-dry-run consent for their own category. Four operations are live-verified.
+`reserve_transfer` and the `standby` / `round_trip` variants of `reserve` are
+**not** — they are bundle-evidenced only. A sixth method, `reserve_group`,
+existed until 2026-07-26 and was removed; see "단체 (group) booking: removed".
 See the next three sections.
 
 ## Consent-gated Mutation Surface
@@ -181,11 +182,13 @@ See the next three sections.
   deliberately kept out of `READ_ONLY_ROUTES`, so the 23-route read-only
   allowlist and its guarantee are unchanged and `assert_read_only_request`
   refuses each of them. `SRT_MUTATION_ROUTE_CATEGORIES` binds each route to one
-  consent category. There are **five routes across four categories**: the 단체
-  reservation endpoint `/arc/selectListArc06014_n.do` is a second URL for the
-  existing `reserve` category (`ara1001l.js:1542-1547` switches only the URL, on
-  `grpDv`), not a fifth category. Route count and category count are allowed to
-  differ on purpose — the category is what gates transmission.
+  consent category. There are **four routes across four categories**, one
+  each. It was five until 2026-07-26: the 단체 reservation endpoint
+  `/arc/selectListArc06014_n.do` was a second URL for the existing `reserve`
+  category (`ara1001l.js:1542-1547` switches only the URL, on `grpDv`), and it
+  was **unregistered** when group booking was removed — a route no client method
+  can reach must not stay transmittable. Route count and category count are
+  still allowed to differ on purpose; the category is what gates transmission.
 - **Which categories may transmit is enforced at the transport layer, and
   membership means one thing: a live run answered that category's own wire
   format.** `safety.SRT_LIVE_MUTATION_CATEGORIES` holds exactly
@@ -215,13 +218,17 @@ See the next three sections.
 
 ## Reservation Variants (IMPLEMENTED, BUNDLE-EVIDENCED, NOT LIVE-VERIFIED)
 
-Group (단체), standby (예약대기) and the round trip / 오는열차 second leg. The
-evidentiary situation is the **inverse** of payment and refund: those had to be
-built from srtgo because their routes are 0-hit here, whereas all three of these
-are evidenced in our own v2.0.41 bundle. srtgo was therefore used only as a
-cross-check, and where the two disagree the bundle won. **None of the three has
-been live-verified**; the operator will do that next, and only for the
-combinations actually exercised.
+Standby (예약대기) and the round trip / 오는열차 second leg. The evidentiary
+situation is the **inverse** of payment and refund: those had to be built from
+srtgo because their routes are 0-hit here, whereas both of these are evidenced
+in our own v2.0.41 bundle. srtgo was therefore used only as a cross-check, and
+where the two disagree the bundle won. **Neither has been live-verified**; the
+operator will do that next, and only for the combinations actually exercised.
+
+A third variant, 단체 (group), was implemented here and then removed on
+2026-07-26 after a live probe showed the endpoint returns a payment page rather
+than a hold. See "단체 (group) booking: removed" below — the code is gone, the
+knowledge is not.
 
 The app names all three of its job types in one comment on its own reservation
 form seed — `ara0101v.js:90`,
@@ -250,28 +257,6 @@ form seed — `ara0101v.js:90`,
   (the same rule `arvDt1` gets). srtgo's follow-up standby-option POST
   `/ata/selectListAta01135_n.do` is 0-hit here with no equivalent, so it is
   deliberately not implemented.
-- `SrtClient.reserve_group(train, *, passengers, ...)` — **group,
-  `/arc/selectListArc06014_n.do`** (`ara1001l.js:1542-1547`). A separate method
-  rather than a flag, because the endpoint changes, the precondition changes
-  (the train must come from `search_group_trains`/`Ara10082`) and the return
-  value may not mean the same thing. The body delta is exactly `grpDv="1"` —
-  the same delegate-and-flip shape `group_search_ajax_payload` uses — and
-  `jobId` stays `1101`, since the app picks the job type without consulting
-  `grpDv`. **Party size ≥ 10**, the app's own two-sided boundary:
-  `ara0101v.js:551-554` refuses 단체 under 10 and `:562-566` refuses a non-단체
-  party over 9. Two further app rules are expressed structurally: no
-  `window_seat` argument (ticking 단체 resets the seat option and disables the
-  picker, `:446-457`) and no `round_trip` argument (단체 + 왕복 refused at
-  `:348-351`, `:440-443`, `:557-560`).
-- **Group's RESPONSE is unverified and the bundle suggests it differs.** The app
-  hands a group reservation to the payment page with `pnrNo` forced to `-1` and
-  identifies it by `resultMap.tmpJobSqno1` (임시작업일련번호), where a personal
-  reservation passes `reservListMap.pnrNo` (`ara1001l.js:1597-1610`). If a real
-  group response carries no PNR, `parse_reservation_hold_response` raises rather
-  than inventing a hold, and `cancel` — which takes a PNR — has nothing to act
-  on. The parsers were deliberately NOT changed: a group hold object invented
-  with no live evidence of its shape would be worse than an exception. A live
-  group attempt must be treated as potentially uncancellable from this library.
 - `SrtClient.reserve(train, *, round_trip=False, ...)` — **round trip,
   `rtnDv="1"`**, and that one flag is the entire wire delta. SRT models a round
   trip as 오는열차, not as a multi-leg reservation: the app reserves the
@@ -320,7 +305,8 @@ form seed — `ara0101v.js:90`,
 The remaining reservation shape, and the inverse of the round trip. 왕복 is two
 reservations of one journey each; 환승 is ONE reservation carrying TWO 여정
 slots. Nothing was added to `SRT_LIVE_MUTATION_CATEGORIES`, nothing was added to
-`SRT_MUTATION_ROUTES` (still five routes / four categories), and the canaries are
+`SRT_MUTATION_ROUTES` (five routes / four categories at the time; four routes
+since 단체 was removed on 2026-07-26), and the canaries are
 untouched: `reserve_transfer` POSTs the same `/arc/selectListArc05013_n.do` under
 the same `reserve` category as `reserve`.
 
@@ -451,7 +437,7 @@ alone rather than guessed to `"14"`.
 | `seat_type` / `window_seat` | **yes**, one preference for both legs | the 좌석옵션 callback writes slot 1 then the identical `...2` quartet (`ara0101v.js:769-778`) |
 | 왕복 | **refused** | `ara0101v.js:296-299`, `:331-334`, both directions |
 | 예약대기 | **not implemented** | `jobId=1102` comes from ONE row's image (`ara1001l.js:1445-1448`); a transfer has two rows and the app has no rule |
-| 단체 | **not implemented** (scope, not exclusion) | 단체환승 is real to SRT (`eventTrainInfo.js:12`, `:19`; 환승단체권 `tkKndCd` 27) and forbidden nowhere, but `reserve_group`'s response is unverified and may carry no cancelable PNR |
+| 단체 | **not implemented** (scope, not exclusion) | 단체환승 is real to SRT (`eventTrainInfo.js:12`, `:19`; 환승단체권 `tkKndCd` 27) and forbidden nowhere, but this library does not book 단체 at all since 2026-07-26, so there is no group half to compose with — see "단체 (group) booking: removed" |
 | 좌석지정 | **not implemented** | it BLANKS slot 2 (`scarGridcnt2=0`, `scarNo2=""`, `ara0101v.js:875-879`) |
 | non-SRT leg | **refused** | both legs must be `stlbTrnClsfCd == "17"` |
 
@@ -872,12 +858,15 @@ car/seat response or availability contract.
   consent-gated cancel surface, the reservation-list read, the NetFunnel
   queue protocol, the error taxonomy, the real-card acknowledgement gate, the
   consent-gated card-payment and refund surfaces, the four-category live
-  enablement, the three bundle-evidenced reservation variants, the 환승
+  enablement, the bundle-evidenced reservation variants, the 환승
   (transfer) search and reservation, the 좌석배치도 (seat grid) read and the
-  좌석지정 (seat-designated) reservation:
-  `1463 passed, 1 deselected`; the deselected case remains the
+  좌석지정 (seat-designated) reservation — and after 단체 (group) booking was
+  removed again:
+  `1455 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
   `httpx.MockTransport`; the live runs are the operator scripts' job.
+- Prior offline gate with 단체 (group) booking still implemented:
+  `1463 passed, 1 deselected`.
 - Prior offline gate after the seat-grid read, before seat designation:
   `1448 passed, 1 deselected`.
 - Prior offline gate before the seat-grid read: `1404 passed, 1 deselected`.
@@ -1005,12 +994,13 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
   excluded, and repeated failure scenarios
 - Runtime-success entries: 20
 - Currently implemented underlying read routes: 20, including NetFunnel `act_10`
-- Mutation routes tiered: 5 across 4 categories (reserve `arc05013` and its
-  단체 sibling `arc06014`, cancel, payment, refund). All have client methods,
-  preview by default and transmit under an explicit non-dry-run consent for
-  their own category; the four CATEGORIES are live-verified (reserve and cancel
-  2026-07-25, payment and refund 2026-07-26), but `arc06014` itself and the
-  `standby`/`round_trip` variants of `arc05013` are bundle-evidenced only
+- Mutation routes tiered: 4 across 4 categories (reserve `arc05013`, cancel,
+  payment, refund), one route per category since the 단체 sibling `arc06014`
+  was unregistered on 2026-07-26. All have client methods, preview by default
+  and transmit under an explicit non-dry-run consent for their own category;
+  the four CATEGORIES are live-verified (reserve and cancel 2026-07-25, payment
+  and refund 2026-07-26), but the `standby`/`round_trip` variants of `arc05013`
+  are bundle-evidenced only
 - Therefore the complete documented endpoint matrix is not yet implemented
 
 Static aliases, the `Ard02017`/`Ard02018` WebView payment handoff, native
@@ -1032,10 +1022,11 @@ Refund"). What remains excluded is the app's own payment path — the
 library does not implement at all. The implemented personal and
 group continuation contract has bounded live evidence.
 
-Three reservation variants now exist and are **awaiting live verification**:
-group (`arc06014`), standby (`jobId=1102`) and the round trip / 오는열차 second
-leg (`rtnDv=1`). See "Reservation Variants" for what each rests on and for the
-group response risk. Still deferred within that surface: **`jobId=1103`
+Two reservation variants now exist and are **awaiting live verification**:
+standby (`jobId=1102`) and the round trip / 오는열차 second leg (`rtnDv=1`). See
+"Reservation Variants" for what each rests on. A third, group (`arc06014`),
+existed and was removed on 2026-07-26 — see "단체 (group) booking: removed".
+Still deferred within that surface: **`jobId=1103`
 (시트맵예약)**, whose submit target and body are not knowable from the offline
 bundle (`fn_submit()` is defined in the server-rendered page), and srtgo's
 standby-option POST `/ata/selectListAta01135_n.do`, which is 0-hit here with no
@@ -1062,41 +1053,28 @@ off `rsvWaitPsbCd`, a column our app never reads for this and which the group
 search does not even return). Whether SRT offers 예약대기 at all on these
 routes is unknown; the code path remains offline-tested only.
 
-**Group — ATTEMPTED 2026-07-26, REFUSED BY THE SERVER, nothing created.**
-Ten adults, 수서→동탄 20260809 train 315, selected from `search_group_trains`.
-The dry run showed the form the bundle prescribes — route
-`/arc/selectListArc06014_n.do`, `grpDv=1`, `jobId=1101` (groups keep the
-personal job id), `totPrnb=10`, `psgInfoPerPrnb1=10`. The live send came back
-with a WRAPPER-level failure, before any business envelope::
+**Group — ATTEMPTED 2026-07-26, then REMOVED.** The first attempt (ten adults,
+수서→동탄 20260809 train 315, chosen from `search_group_trains`) came back with
+a wrapper-level failure before any business envelope::
 
     {"ERROR_CODE": "-1",
      "ERROR_MSG": "조회 중 에러가 발생 하였습니다. 관리자에게 문의하십시오."}
 
-No `pnrNo`, no `tmpJobSqno1`, no `resultMap`. The account was then verified to
-hold zero reservations and zero tickets, so **the uncancellable-hold risk did
-not materialise: nothing was created.** The group *search* works fine on the
-same account and journey, so only the booking is refused.
+That was **our own missing field**, not an account entitlement, and the second
+attempt got past it — onto a payment page, not a reservation. The booking code
+was removed the same day. The full account is in
+"단체 (group) booking: removed" below; the account is deliberately kept
+because it was expensive to learn.
 
-The cause is NOT established. The form matches what the bundle prescribes, and
-`ERROR_CODE: -1` is the generic wrapper failure rather than a field complaint,
-which is what one would expect from an account that is not entitled to book
-group tickets — SRT 단체승차권 is a contracted product — but it is equally
-consistent with a group-specific field the offline bundle does not reveal.
-Do not "fix" the payload on this evidence. Settling it needs either an account
-with group entitlement or a capture of the app performing a real group booking.
-
-Superseded note (kept for the reasoning): the risk below was why this was held
-back, and it remains the right caution for any future attempt that DOES get
-past the wrapper.
-
-**Group — the uncancellable-hold risk that justified holding this back.** `ara1001l.js:1597-1610` shows the app
-forces `pnrNo` to `-1` for a group reservation and identifies it by
-`resultMap.tmpJobSqno1` instead. If the live response really carries no PNR,
-`cancel` — which takes a PNR — would have nothing to act on, so a live group
-booking could be a ten-seat hold this library cannot release. That risk needs
-an explicit decision before anyone sends one, and the first live attempt should
-capture the raw response (including from a raised `SrtProtocolError`) to settle
-`pnrNo` versus `tmpJobSqno1` before anything else.
+**Correction to what this section used to say.** It previously carried a
+standing warning that a live group attempt could strand an uncancellable
+ten-seat hold, reasoning from `ara1001l.js:1597-1610` — the app forces
+`pnrNo = -1` for a group and identifies it by `resultMap.tmpJobSqno1`, so
+`cancel`, which takes a PNR, would have nothing to act on. **The bundle reading
+was right and the conclusion was wrong.** `Arc06014` creates no reservation at
+all, so there is nothing to strand and never was. The warning is corrected here
+rather than deleted, so a future reader does not re-inherit a fear that was
+disproved.
 
 ## 환승 live verification (2026-07-26) — search AND reservation
 
@@ -1326,8 +1304,9 @@ label.
   편도 branch produces the family, so the 왕복 designated body is unevidenced and
   guessing it would mean guessing on a route that creates real holds.
   `ValueError`.
-* **`reserve_group`** — 단체 resets the seat option and disables the picker
-  (`ara0101v.js:446-457`), so the builder takes no such parameter.
+* **단체 (group)** — moot since 2026-07-26: there is no group booking method
+  to compose with. While it existed, 단체 reset the seat option and disabled
+  the picker outright (`ara0101v.js:446-457`).
 * **`reserve_transfer`** — 좌석지정 blanks the transfer's slot 2
   (`ara0101v.js:875-879`), which is the opposite of what a transfer needs.
 
@@ -1371,7 +1350,27 @@ Sending `315` returns a 147-byte alert shell whose message
 ("출발 20분 전부터 좌석이 자동배정됩니다") reads like a timing rule and is a red
 herring; `00315` returns the grid. Referer and route length make no difference.
 
-## Group booking — the ERROR_CODE -1 was ours, and the flow is not what we modelled (2026-07-26)
+## 단체 (group) booking: removed (2026-07-26)
+
+**The code was removed deliberately.** `SrtClient.reserve_group`,
+`payloads.group_reservation_payload` and the `SRT_MUTATION_ROUTES` /
+`SRT_MUTATION_ROUTE_CATEGORIES` registration of
+`/arc/selectListArc06014_n.do` were deleted, together with the offline tests
+that covered the booking path. The request they built was *correct*. What put
+group booking out of scope is what the endpoint answers with — established live,
+and recorded below so it never has to be rediscovered.
+
+**What was NOT removed.** `SrtClient.search_group_trains`,
+`payloads.group_search_ajax_payload` and `payloads.GROUP_MIN_PARTY_SIZE` all
+stay. The group search is a read, it works, it predates the booking code, and
+group availability and fares are worth looking up even when this client cannot
+complete the booking. The ≥10 floor stays with it because the app enforces the
+same number on the SEARCH (`ara0101v.js:551-554`, and the converse at
+`:562-566` pushes any party over 9 *into* group booking, so 10 is a two-sided
+boundary rather than a hint). `SRT_LIVE_MUTATION_CATEGORIES` is **unchanged** at
+`{"reserve", "cancel", "payment", "refund"}` — group rode the `reserve`
+category, and removing it may not shrink the set, because reserve and cancel
+are the two halves of one reversible operation.
 
 Re-examined with the page-fetching technique. Two findings, both material.
 
@@ -1409,4 +1408,37 @@ does not arise, because no hold is produced at all.
 group fares are ten seats, and the KakaoPay hooks suggest at least one path
 that leaves this client entirely. Anyone continuing should fetch that page for
 a group they are willing to pay for, read `goToPay`, and decide deliberately.
+
+### What bringing group booking back would take
+
+**Not a revert.** The deleted code would send a correct request to a route that
+cannot answer it in the shape this library models. Restoring the method without
+the rest would produce a client that "succeeds" and returns nothing usable. In
+order:
+
+1. **`psgGridcnt="2"` on the group branch.** This library derives `psgGridcnt`
+   from the count of distinct passenger types, which is `1` for ten adults, so
+   this is a group-specific override rather than a fix to the shared builder.
+2. **A second payment surface.** `/ata/selectListAta01033_n.do` (and its
+   `_Simple` variant), whose form is `ata0201cForm` on the returned page, keyed
+   by `tmpJobSqno` rather than a PNR. `Ata09036`, the personal payment route
+   this library implements, cannot be reused.
+3. **An HTML page parser** for a 66 KB server-rendered response. Every other
+   mutation here parses JSON; this one does not return any.
+4. **A story for KakaoPay.** The `kakaoPayReturn` / `kakao_direct_open` hooks
+   suggest at least one path that leaves an HTTP client entirely, which no part
+   of this library is built for.
+5. **Re-registering the route** in `SRT_MUTATION_ROUTES` and
+   `SRT_MUTATION_ROUTE_CATEGORIES` — and deciding deliberately whether a flow
+   that reserves and pays in one step still belongs to the `reserve` category,
+   or needs `payment` consent as well. That is a safety decision of the same
+   weight as adding a category, not a bookkeeping one.
+6. **A cancel story, or an explicit statement that there is none.** There is no
+   PNR at that step, so `cancel` cannot act on the result. Whatever the group
+   flow produces has to be releasable, or the method must say plainly that it
+   is not.
+
+None of this is impossible. It is a second payment implementation plus an
+external redirect flow, for a booking type with a ten-person minimum — which is
+why it is out of scope.
 

@@ -1,19 +1,25 @@
-"""Offline contract tests for the three reservation variants.
+"""Offline contract tests for the two reservation variants.
 
-Group (단체), standby (예약대기) and the round trip / 오는열차 second leg. Unlike
-payment and refund, all three are evidenced in OUR OWN v2.0.41 bundle, so every
-expectation below is built from the bundle and srtgo is only ever a cross-check.
-Where they disagree the bundle wins, and the disagreement is pinned as such:
+Standby (예약대기) and the round trip / 오는열차 second leg. Unlike payment and
+refund, both are evidenced in OUR OWN v2.0.41 bundle, so every expectation below
+is built from the bundle and srtgo is only ever a cross-check. Where they
+disagree the bundle wins, and the disagreement is pinned as such:
 
 * **standby trigger.** srtgo selects standby from ``rsvWaitPsbCd >= 0``
   (srt.py:840-884). Our app never reads that column for the decision — it reads
   the selected row's general-cabin IMAGE (``ara1001l.js:1445-1448``). The two
   are not interchangeable: the group search (Ara10082) does not return
   ``rsvWaitPsbCd`` at all, and our own group fixture confirms the omission.
-* **group.** srtgo does not implement ``arc06014`` in any form; the endpoint
-  switch, the party-size floor and the 왕복 exclusion all come from the bundle.
 * **jrnyCnt.** Neither source says a round trip raises it. The bundle says
   outright that ``jrnyCnt="2"`` is 환승 (``ara0101v.js:288-311``).
+
+There was a THIRD variant here, 단체 (group), and it was removed on 2026-07-26
+with the booking code it covered: ``/arc/selectListArc06014_n.do`` answers with
+a server-rendered payment page, not a reservation hold, so there is no hold for
+this library to create or cancel (docs/IMPLEMENTATION_PROGRESS.md, "단체 (group)
+booking: removed"). What survives that removal is pinned at the bottom of this
+file — the route is unregistered, the kill switch is unchanged, and every
+reservation form this library still builds sends ``grpDv="0"``.
 
 No network: every send here goes through ``httpx.MockTransport``. Nothing in
 this file may weaken the existing single-passenger reserve pins in
@@ -36,19 +42,17 @@ from srt_mobile_api import (
     SeatType,
     SrtClient,
     SrtConfig,
-    SrtMutationNotAllowedError,
     SrtReservationHold,
     SrtSession,
     TrainSearchQuery,
     TrainSummary,
+    payloads,
 )
-from srt_mobile_api.errors import SrtAuthError
+from srt_mobile_api.errors import SrtProtocolError
 from srt_mobile_api.payloads import (
-    GROUP_MIN_PARTY_SIZE,
     RESERVE_PERSONAL_JOBID,
     RESERVE_SEATMAP_JOBID,
     RESERVE_STANDBY_JOBID,
-    group_reservation_payload,
     personal_reservation_payload,
 )
 from srt_mobile_api.safety import (
@@ -56,10 +60,13 @@ from srt_mobile_api.safety import (
     SRT_MUTATION_ROUTE_CATEGORIES,
     SRT_MUTATION_ROUTES,
     MutationRoute,
+    assert_mutation_route,
 )
 
 RESERVE_ROUTE = "/arc/selectListArc05013_n.do"
-GROUP_RESERVE_ROUTE = "/arc/selectListArc06014_n.do"
+# The removed 단체 endpoint, kept only so the last test in this file can assert
+# it is gone. Nothing here may send to it, and _Recorder no longer answers it.
+REMOVED_GROUP_RESERVE_ROUTE = "/arc/selectListArc06014_n.do"
 NETFUNNEL_PATH = "/ts.wseq"
 
 SYNTHETIC_NF = "SYNTHETIC_NETFUNNEL_KEY"
@@ -129,10 +136,6 @@ def _return_train() -> TrainSummary:
     )
 
 
-def _party_of(total: int) -> PassengerCounts:
-    return PassengerCounts(adult=total)
-
-
 def _default_form(**kwargs) -> dict[str, str]:
     return personal_reservation_payload(
         _eligible_train(),
@@ -161,7 +164,7 @@ def _delta(before: dict[str, str], after: dict[str, str]) -> dict[str, object]:
 
 
 class _Recorder:
-    """Answers the act_10 GET and both reservation POSTs; records everything."""
+    """Answers the act_10 GET and the reservation POST; records everything."""
 
     def __init__(self, reply: dict) -> None:
         self.reply = reply
@@ -175,7 +178,7 @@ class _Recorder:
                     200, text="NetFunnel.gControl.result='5004:200:utime=1';"
                 )
             return httpx.Response(200, text=NETFUNNEL_BODY)
-        if request.url.path in (RESERVE_ROUTE, GROUP_RESERVE_ROUTE):
+        if request.url.path == RESERVE_ROUTE:
             return httpx.Response(200, json=self.reply)
         raise AssertionError(f"unexpected request to {request.url.path}")
 
@@ -411,165 +414,6 @@ def test_no_undesignated_reservation_emits_the_seat_map_job_or_its_fields():
         assert not [key for key in form if key.startswith(("seatNo", "scarNo", "scarGridcnt"))]
 
 
-# --- group (단체, arc06014) ---------------------------------------------------
-
-
-def test_group_form_is_the_personal_form_with_only_grp_dv_flipped():
-    # ara1001l.js:1542-1547 switches ONLY the URL; the app keeps one #rsvForm.
-    # So the body delta is exactly grpDv, and in particular jobId does NOT
-    # change -- fn_moveRsv picks the job type without ever consulting grpDv
-    # (:1434-1449).
-    party = _party_of(GROUP_MIN_PARTY_SIZE)
-    personal = personal_reservation_payload(
-        _eligible_train(), party, netfunnel_key=SYNTHETIC_NF
-    )
-    group = group_reservation_payload(
-        _eligible_train(), party, netfunnel_key=SYNTHETIC_NF
-    )
-
-    assert _delta(personal, group) == {
-        "added": {},
-        "removed": {},
-        "changed": {"grpDv": ("0", "1")},
-    }
-    assert group["jobId"] == RESERVE_PERSONAL_JOBID == "1101"
-    assert group["totPrnb"] == str(GROUP_MIN_PARTY_SIZE)
-    assert group["rtnDv"] == "0"
-
-
-def test_group_reservation_requires_at_least_ten_people():
-    # ara0101v.js:551-554 -- "단체예약은 10매 이상입니다." -- alerts and returns
-    # without sending. A wire-representable rule, so it is enforced, not just
-    # documented.
-    assert GROUP_MIN_PARTY_SIZE == 10
-    with pytest.raises(ValueError, match="at least 10 passengers"):
-        group_reservation_payload(
-            _eligible_train(), _party_of(9), netfunnel_key=SYNTHETIC_NF
-        )
-    accepted = group_reservation_payload(
-        _eligible_train(), _party_of(10), netfunnel_key=SYNTHETIC_NF
-    )
-    assert accepted["totPrnb"] == "10"
-
-
-def test_group_reservation_is_refused_before_the_form_is_built():
-    # The party-size refusal must not depend on the train being valid, or a
-    # caller could be told about the wrong problem first.
-    with pytest.raises(ValueError, match="at least 10 passengers"):
-        group_reservation_payload(
-            dataclasses.replace(_eligible_train(), service_class_code="05"),
-            _party_of(2),
-            netfunnel_key=SYNTHETIC_NF,
-        )
-
-
-def test_group_reservation_sends_the_default_seat_option_and_takes_no_preference():
-    # Ticking 단체 resets the seat option to 일반/기본 and DISABLES the picker
-    # (ara0101v.js:446-457). Rather than accept a window_seat argument and
-    # silently drop it, the builder does not take one -- so locSeatAttCd1 can
-    # only ever be "000" here.
-    assert "window_seat" not in inspect.signature(group_reservation_payload).parameters
-    assert "window_seat" not in inspect.signature(SrtClient.reserve_group).parameters
-    group = group_reservation_payload(
-        _eligible_train(), _party_of(12), netfunnel_key=SYNTHETIC_NF
-    )
-    assert group["locSeatAttCd1"] == "000"
-    assert group["rqSeatAttCd1"] == "015"
-
-
-def test_group_reservation_offers_no_round_trip_because_the_app_forbids_it():
-    # 단체 + 왕복 is refused at three separate points (ara0101v.js:348-351 on the
-    # 왕복 tick, :440-443 on the 단체 tick, :557-560 on 조회하기). Expressed
-    # structurally: there is no parameter to pass, so the combination cannot be
-    # built at all.
-    assert "round_trip" not in inspect.signature(group_reservation_payload).parameters
-    assert "round_trip" not in inspect.signature(SrtClient.reserve_group).parameters
-    assert (
-        group_reservation_payload(
-            _eligible_train(), _party_of(10), netfunnel_key=SYNTHETIC_NF
-        )["rtnDv"]
-        == "0"
-    )
-
-
-def test_group_reservation_can_still_be_a_standby_one():
-    # Nothing in the app couples grpDv to the job type, and group search rows do
-    # carry gnrmRsvPsbImg -- note that srtgo's rsvWaitPsbCd rule could not work
-    # here at all, because Ara10082 omits that column entirely.
-    form = group_reservation_payload(
-        _standby_train(), _party_of(10), netfunnel_key=SYNTHETIC_NF, standby=True
-    )
-    assert form["grpDv"] == "1"
-    assert form["jobId"] == "1102"
-
-
-def test_reserve_group_previews_the_arc06014_endpoint(load_json_fixture):
-    client, recorder = _client(load_json_fixture("reservation_attempt_success.json"))
-
-    preview = client.reserve_group(
-        _eligible_train(),
-        consent=MutationConsent(allow_reserve=True),
-        passengers=_party_of(10),
-    )
-
-    assert isinstance(preview, MutationPreview)
-    assert preview.route == GROUP_RESERVE_ROUTE
-    assert preview.route != RESERVE_ROUTE
-    assert preview.category == "reserve"
-    assert preview.payload["grpDv"] == "1"
-    assert recorder.requests == []
-
-
-def test_reserve_group_live_send_goes_to_arc06014_and_nowhere_else(
-    load_json_fixture,
-):
-    client, recorder = _client(load_json_fixture("reservation_attempt_success.json"))
-
-    hold = client.reserve_group(
-        _eligible_train(),
-        consent=_live(allow_reserve=True),
-        passengers=_party_of(10),
-    )
-
-    assert isinstance(hold, SrtReservationHold)
-    assert recorder.paths == [NETFUNNEL_PATH, GROUP_RESERVE_ROUTE, NETFUNNEL_PATH]
-    assert recorder.forms(RESERVE_ROUTE) == []
-    assert recorder.forms(GROUP_RESERVE_ROUTE)[0]["grpDv"] == "1"
-
-
-def test_reserve_group_is_gated_by_the_same_reserve_consent():
-    client, recorder = _client({})
-    for consent in (MutationConsent(), MutationConsent(allow_cancel=True)):
-        with pytest.raises(SrtMutationNotAllowedError):
-            client.reserve_group(
-                _eligible_train(), consent=consent, passengers=_party_of(10)
-            )
-    assert recorder.requests == []
-
-
-def test_reserve_group_requires_an_authenticated_session():
-    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(_Recorder({})))
-    with pytest.raises(SrtAuthError):
-        client.reserve_group(
-            _eligible_train(),
-            consent=MutationConsent(allow_reserve=True),
-            passengers=_party_of(10),
-        )
-
-
-def test_group_route_is_a_registered_reserve_route_and_adds_no_category():
-    # The 단체 endpoint is the same operation on a different URL. It must be
-    # registered (or the mutation send path refuses it outright) and it must
-    # belong to "reserve" (or a reserve consent could not aim at it) -- but it
-    # must NOT widen the kill switch, which is a decision about live evidence,
-    # not about implementation.
-    assert MutationRoute("POST", "app", GROUP_RESERVE_ROUTE) in SRT_MUTATION_ROUTES
-    assert SRT_MUTATION_ROUTE_CATEGORIES[GROUP_RESERVE_ROUTE] == "reserve"
-    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
-        {"reserve", "cancel", "payment", "refund"}
-    )
-
-
 # --- round trip / 오는열차 second leg (rtnDv=1) ---------------------------------
 
 
@@ -718,13 +562,14 @@ def test_for_return_leg_still_validates_the_date():
         outbound.for_return_leg("2099-01-03")
 
 
-# --- the three do not leak into each other -----------------------------------
+# --- the two do not leak into each other -------------------------------------
 
 
 def test_each_variant_is_independent_of_the_others():
-    # Standby and round trip compose (both are personal-form flags); group
-    # composes with standby but structurally cannot with round trip. Pinned so a
-    # later refactor cannot make one variant quietly imply another.
+    # Standby and round trip compose -- both are personal-form flags. Pinned so
+    # a later refactor cannot make one variant quietly imply another. grpDv is
+    # asserted on both bodies because it is now a constant "0" and nothing in
+    # this library may ever flip it on a reservation form again.
     both = personal_reservation_payload(
         _standby_train(),
         PassengerCounts(adult=1),
@@ -769,3 +614,49 @@ def test_seat_type_is_still_validated_on_the_standby_path():
             seat_type="SPECIAL_ONLY",  # type: ignore[arg-type]
             standby=True,
         )
+
+
+# --- 단체 (group) booking: removed, and pinned as removed ----------------------
+
+
+def test_group_booking_is_gone_from_the_client_and_the_payload_builders():
+    # The removal itself, asserted rather than merely done. reserve_group and
+    # group_reservation_payload existed until 2026-07-26; Arc06014 turned out to
+    # answer with a 단체승차권 payment page (form ata0201cForm, goToPay /
+    # kakaoPayReturn, posting to /ata/selectListAta01033_n.do) instead of a
+    # cancelable hold, so there was nothing for this library to create.
+    #
+    # The group SEARCH is deliberately NOT covered by this test -- it stays, and
+    # tests/test_client_read_apis.py and test_netfunnel_payloads_parsers.py
+    # still exercise it.
+    assert not hasattr(SrtClient, "reserve_group")
+    assert not hasattr(payloads, "group_reservation_payload")
+    # The search half is untouched, floor and all.
+    assert payloads.GROUP_MIN_PARTY_SIZE == 10
+    assert hasattr(payloads, "group_search_ajax_payload")
+    assert hasattr(SrtClient, "search_group_trains")
+
+
+def test_the_group_route_is_unregistered_and_the_kill_switch_is_unchanged():
+    # A route no method can reach must not stay transmittable: Arc06014 was
+    # dropped from SRT_MUTATION_ROUTES and from the route->category map when the
+    # booking went. What must NOT move is the kill switch -- group rode the
+    # "reserve" category, and removing group may not shrink it, because reserve
+    # and cancel are the two halves of one reversible operation.
+    assert MutationRoute("POST", "app", REMOVED_GROUP_RESERVE_ROUTE) not in SRT_MUTATION_ROUTES
+    assert REMOVED_GROUP_RESERVE_ROUTE not in SRT_MUTATION_ROUTE_CATEGORIES
+    assert MutationRoute("POST", "app", RESERVE_ROUTE) in SRT_MUTATION_ROUTES
+    assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
+    assert len(SRT_MUTATION_ROUTES) == 4
+    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
+        {"reserve", "cancel", "payment", "refund"}
+    )
+
+
+def test_the_mutation_send_path_now_refuses_the_group_route_outright():
+    # The consequence of unregistering it: assert_mutation_route is the gate the
+    # send path runs first, and an unregistered path cannot get past it even
+    # with a live reserve consent in hand.
+    assert_mutation_route("POST", RESERVE_ROUTE)
+    with pytest.raises(SrtProtocolError, match="not allowed"):
+        assert_mutation_route("POST", REMOVED_GROUP_RESERVE_ROUTE)

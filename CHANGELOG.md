@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+- **단체 (group) booking REMOVED — `Arc06014` is a payment page, not a hold.**
+  `SrtClient.reserve_group`, `payloads.group_reservation_payload` and the
+  `SRT_MUTATION_ROUTES` / `SRT_MUTATION_ROUTE_CATEGORIES` registration of
+  `/arc/selectListArc06014_n.do` are gone, with the offline tests that covered
+  the booking path. The request they built was correct; what put group booking
+  out of scope is what the route ANSWERS with.
+  **`psgGridcnt`, not an account entitlement, was the wrapper error.** The
+  booking page's group branch sets BOTH `grpDv="1"` AND `psgGridcnt="2"`; this
+  library derives `psgGridcnt` from the distinct passenger-type count, which is
+  `1` for ten adults. That mismatch alone produced
+  `{"ERROR_CODE": "-1", "ERROR_MSG": "조회 중 에러가 발생 하였습니다…"}`. The
+  first reading — probably an entitlement — was wrong.
+  **With `psgGridcnt="2"` the route answers with a 66 KB server-rendered page**
+  headed `단체승차권 직통 / 예약내역 페이지`, carrying `<form id="ata0201cForm">`,
+  `goToPay` / `kakaoPayReturn`, `tmpJobSqno` six times, and posting to
+  `/ata/selectListAta01033_n.do` — a payment route this library does not
+  implement, distinct from the `Ata09036` it uses for personal payment. It
+  creates **no reservation**.
+  **The previously recorded uncancellable-hold risk did not exist, and is
+  corrected rather than deleted.** Earlier notes warned that a live group
+  attempt could strand an unreleasable ten-seat hold, reasoning from
+  `ara1001l.js:1597-1610` (`pnrNo` forced to `-1`, identified by
+  `resultMap.tmpJobSqno1`). The bundle reading was right and the conclusion was
+  not: nothing is held, so there was never anything to strand.
+  **`search_group_trains` STAYS**, with `group_search_ajax_payload` and
+  `GROUP_MIN_PARTY_SIZE`. It is a read, it works, it predates the booking code,
+  and group availability and fares are worth looking up even when this client
+  cannot complete the booking. The ten-person floor survives because the app
+  enforces the same number on the SEARCH (`ara0101v.js:551-566`, a two-sided
+  boundary), not because the removed builder shared it.
+  **`SRT_LIVE_MUTATION_CATEGORIES` is UNCHANGED** at
+  `{"reserve", "cancel", "payment", "refund"}` — group rode the `reserve`
+  category, and removing it may not shrink the set; the canary in
+  `test_mutation_live_paths` pins that. `SRT_MUTATION_ROUTES` drops from five
+  to four, one route per category, because a route no client method can reach
+  must not stay transmittable; `assert_mutation_route` now refuses `Arc06014`
+  outright, and a test pins that too.
+  **Tests that pinned the public method set were updated deliberately.**
+  `test_client_public_method_set_is_stable` no longer lists `reserve_group`,
+  and the two `len(SRT_MUTATION_ROUTES) == 5` pins in `test_transfer` and
+  `test_seat_designation` are now `== 4`. New tests assert the removal itself:
+  the method and the builder are absent, the route is unregistered and
+  uncategorised, the search half is intact, and the kill switch has not moved.
+  **What bringing it back would take** — not a revert, but `psgGridcnt="2"`, a
+  second payment surface (`Ata01033`, keyed by `tmpJobSqno`), an HTML parser
+  for a 66 KB page, a story for KakaoPay's off-client hop, and a deliberate
+  decision about which consent category a reserve-and-pay flow belongs to — is
+  written down in README.md and docs/IMPLEMENTATION_PROGRESS.md under
+  "단체 (group) booking: removed".
+  Offline gate: `1455 passed, 1 deselected` (was `1463`).
+
 - **좌석지정 (seat-designated reservation, `jobId=1103`) — body evidenced,
   submit target inferred.** `reserve(train, *, designated_seats=…, consent=…)`,
   keyword-only and defaulted to `None`: the undesignated form is byte-for-byte
@@ -38,8 +89,9 @@
   `ara1001l.js:1435-1449`) **or with `round_trip`** (좌석지정 왕복 exists in the
   app but its callback writes no seat fields at all, `ara0101v.js:884-892`, so
   that body is unevidenced). Both raise `ValueError` before anything is built.
-  Not offered on `reserve_group` (단체 disables the seat picker) or
-  `reserve_transfer` (좌석지정 blanks slot 2).
+  Not offered on `reserve_transfer` (좌석지정 blanks slot 2). It was also not
+  offered on `reserve_group` (단체 disabled the seat picker), which has since
+  been removed entirely — see the 단체 entry above.
   `reserveType` stays `"11"`: it is srtgo-only, 0-hit in our bundle, srtgo has
   no seat-map reservation, and nothing says it tracks `jobId`.
   Offline gate: `1463 passed, 1 deselected` (was `1448`).

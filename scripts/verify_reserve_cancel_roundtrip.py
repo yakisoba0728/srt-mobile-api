@@ -10,7 +10,7 @@ from srtgo and has zero hits in our v2.0.41 evidence bundle.
 ``SUCC``/``IRR000018``, cancel answered ``SUCC``/``IRG000000``, and the ticket
 list re-read afterwards held no trace of the hold. That run covered ONE
 single-journey, one-adult, general-seat reservation -- which is all this script
-ever books -- so it says nothing about multi-leg, group or standby holds.
+ever books -- so it says nothing about multi-leg or standby holds.
 
 Re-running it re-verifies the same path against the current server, and every
 run creates a real hold. The cancel that undoes it can still fail (a server

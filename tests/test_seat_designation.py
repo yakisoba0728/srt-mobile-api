@@ -41,7 +41,6 @@ from srt_mobile_api.parsers import parse_seat_grid_response
 from srt_mobile_api.payloads import (
     RESERVE_SEATMAP_JOBID,
     SEAT_TRAIN_NUMBER_LENGTH,
-    group_reservation_payload,
     personal_reservation_payload,
     seat_grid_payload,
     transfer_reservation_payload,
@@ -657,12 +656,16 @@ def test_seat_designation_does_not_compose_with_standby_or_round_trip():
         _reserve_form(round_trip=True, designated_seats=_designation("1B"))
 
 
-def test_group_and_transfer_builders_take_no_designated_seats():
-    # 단체 disables the seat picker (ara0101v.js:446-457) and 좌석지정 blanks a
-    # transfer's slot 2 (:875-879), so neither builder offers the parameter --
-    # rather than accepting one and discarding it.
-    for builder in (group_reservation_payload, transfer_reservation_payload):
-        assert "designated_seats" not in inspect.signature(builder).parameters
+def test_the_transfer_builder_takes_no_designated_seats():
+    # 좌석지정 blanks a transfer's slot 2 (ara0101v.js:875-879), so the builder
+    # does not offer the parameter -- rather than accepting one and discarding
+    # it. The 단체 builder was the other half of this test until 2026-07-26,
+    # when group booking was removed; 단체 disabled the seat picker outright
+    # (ara0101v.js:446-457), and now there is no 단체 body to designate seats on.
+    assert (
+        "designated_seats"
+        not in inspect.signature(transfer_reservation_payload).parameters
+    )
 
 
 # --- the client path ----------------------------------------------------------
@@ -766,4 +769,6 @@ def test_seat_designation_adds_no_route_and_no_consent_category():
     assert SRT_LIVE_MUTATION_CATEGORIES == {"reserve", "cancel", "payment", "refund"}
     assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
     assert MutationRoute("POST", "app", RESERVE_ROUTE) in SRT_MUTATION_ROUTES
-    assert len(SRT_MUTATION_ROUTES) == 5
+    # Four since 2026-07-26: the 단체 endpoint arc06014 was unregistered when
+    # group booking was removed.
+    assert len(SRT_MUTATION_ROUTES) == 4

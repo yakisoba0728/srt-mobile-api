@@ -21,10 +21,7 @@ from .stations import station_name_by_code
 # so SRT has the same three job types korail does. Two of them are built here;
 # 1103 is not, and RESERVE_SEATMAP_JOBID below records why.
 
-# 개인예약. Also what a GROUP reservation sends: 단체 is selected by grpDv="1"
-# plus a different endpoint, NOT by a different jobId (ara1001l.js:1434-1449
-# never inspects grpDv, and :1542-1547 is where 단체 diverges). srtgo agrees on
-# the value (RESERVE_JOBID["PERSONAL"], srt.py:31).
+# 개인예약. srtgo agrees on the value (RESERVE_JOBID["PERSONAL"], srt.py:31).
 RESERVE_PERSONAL_JOBID = "1101"
 
 # 예약대기 (standby / waitlist). ara1001l.js:1445-1448: fn_moveRsv defaults
@@ -192,13 +189,18 @@ _STANDBY_ROW_IMAGES = frozenset(
     }
 )
 
-# The minimum party size the app enforces for a 단체 (group) reservation, and
-# the maximum it allows without one. ara0101v.js:549-566, on the 조회하기 button:
+# The minimum party size the app enforces for a 단체 (group) search, and the
+# maximum it allows without one. ara0101v.js:549-566, on the 조회하기 button:
 # 단체 checked with totPrnb < 10 alerts "단체예약은 10매 이상입니다." and returns
 # without sending; 단체 unchecked with totPrnb > 9 alerts "10매 이상은
 # 단체예약입니다." and returns. So 10 is a real, client-enforced boundary in both
-# directions, not a UI hint. Already enforced on the group SEARCH
-# (group_search_ajax_payload); the reservation form enforces the same number.
+# directions, not a UI hint.
+#
+# The one consumer is group_search_ajax_payload. Group BOOKING was removed on
+# 2026-07-26 (Arc06014 answers with a payment page, not a hold -- see
+# docs/IMPLEMENTATION_PROGRESS.md "단체 (group) booking: removed"), and this
+# floor survived that removal because the group SEARCH is still offered and the
+# app enforces the same number on it.
 GROUP_MIN_PARTY_SIZE = 10
 
 # WINDOW_SEAT mapping (srtgo srt.py:86): None -> "000" (no preference),
@@ -521,8 +523,7 @@ def group_search_ajax_payload(
     # individual and group searches (ara1001l.js:104 sPsgNum=lfn_getRsv("totPrnb"), :165
     # "psgNum":sPsgNum). Mirror the app's own guard instead of silently clamping psgNum to
     # 10 while totPrnb stays below it (which would emit a psgNum!=totPrnb payload the app
-    # would never send). The floor is shared with group_reservation_payload so the search
-    # and the reservation cannot disagree about what "단체" means.
+    # would never send).
     if query.passengers.total < GROUP_MIN_PARTY_SIZE:
         raise ValueError(
             "group search requires at least "
@@ -1292,11 +1293,13 @@ def personal_reservation_payload(
         "stndFlg": "N",
         "trnGpCd1": "300",
         "trnGpCd": "109",
+        # 단체구분. Always "0" here: this library builds personal reservations
+        # only, and grpDv="1" is the 단체 branch whose booking was removed on
+        # 2026-07-26 (see docs/IMPLEMENTATION_PROGRESS.md, "단체 (group)
+        # booking: removed"). group_search_ajax_payload still flips it for the
+        # group SEARCH, which is a read.
         "grpDv": "0",
-        # 왕복구분 (ara0101v.js:94, written at :381/:390). group_reservation_payload
-        # flips grpDv above; this flips rtnDv. They are never both set: the app
-        # refuses 단체+왕복 at three separate points (ara0101v.js:348-351,
-        # :440-443, :557-560), which is why the group builder takes no round_trip.
+        # 왕복구분 (ara0101v.js:94, written at :381/:390).
         "rtnDv": "1" if round_trip else "0",
         "stlbTrnClsfCd1": train.service_class_code,
         "dptRsStnCd1": departure_station_code,
@@ -1341,75 +1344,6 @@ def personal_reservation_payload(
     # them into the gds_rsv store, not into an ordered form, so nothing in the
     # bundle fixes their place either.
     payload.update(seat_fields)
-    return payload
-
-
-def group_reservation_payload(
-    train: TrainSummary,
-    passengers: PassengerCounts,
-    *,
-    seat_type: SeatType = SeatType.GENERAL_FIRST,
-    netfunnel_key: str,
-    standby: bool = False,
-) -> dict[str, str]:
-    """Build the 단체 (group) reservation form for ``/arc/selectListArc06014_n.do``.
-
-    The body is the personal form with ``grpDv`` flipped to ``"1"`` -- the same
-    delegate-and-flip shape :func:`group_search_ajax_payload` already uses over
-    :func:`search_ajax_payload`, and for the same reason: the app keeps ONE
-    ``#rsvForm`` and switches only the URL (ara1001l.js:1542-1547,
-    ``if (lfn_getRsv("grpDv") == "1") url = "/arc/selectListArc06014_n.do"``).
-    Note what does NOT change: ``jobId`` stays ``1101``, because fn_moveRsv picks
-    the job type without ever consulting ``grpDv`` (ara1001l.js:1434-1449).
-
-    Three group rules are enforced, all of them the app's own:
-
-    * **Party size >= 10** (:data:`GROUP_MIN_PARTY_SIZE`). ara0101v.js:549-554
-      alerts "단체예약은 10매 이상입니다." and returns without sending. The
-      converse is also enforced -- :562-566 pushes a >9 party INTO group booking
-      -- so 10 is a two-sided boundary in the app, and the same floor already
-      guards the group search.
-    * **No window/aisle preference.** Ticking 단체 forces the seat option back to
-      the default and disables the picker (ara0101v.js:446-457:
-      ``locSeatAttCd1="000"``, ``rqSeatAttCd1="015"``, ``seatAttNm1="일반/기본"``,
-      then ``btn_seat.addClass("ui-state-disabled")``). Rather than accept a
-      ``window_seat`` argument and silently discard it, this builder does not
-      take one; ``locSeatAttCd1`` comes out ``"000"`` from the shared passenger
-      field builder.
-    * **No round trip.** Refused by the app at three points (ara0101v.js:348-351
-      on the 왕복 tick, :440-443 on the 단체 tick, :557-560 on 조회하기), so
-      there is no ``round_trip`` argument to pass.
-
-    ``standby`` is offered because nothing in the app couples it to ``grpDv``:
-    fn_moveRsv reads only the row image. Group search rows do carry
-    ``gnrmRsvPsbImg``, so the eligibility check still has its signal -- note
-    that srtgo's rsvWaitPsbCd rule could not work here at all, since Ara10082
-    omits that column.
-
-    UNVERIFIED, and the reason to keep ``dry_run``: the REQUEST is
-    bundle-evidenced, the RESPONSE is not. ara1001l.js:1597-1605 hands a group
-    reservation to the payment page with ``pnrNo = -1`` and identifies it by
-    ``resultMap.tmpJobSqno1`` instead, where a personal reservation passes
-    ``reservListMap.pnrNo`` (:1609). If a real group response carries no
-    PNR, :func:`~srt_mobile_api.parsers.parse_reservation_hold_response` will
-    raise and :meth:`~srt_mobile_api.client.SrtClient.cancel` -- which takes a
-    PNR -- has nothing to act on. See
-    :meth:`~srt_mobile_api.client.SrtClient.reserve_group` for what an operator
-    must do before ever sending this live.
-    """
-    if passengers.total < GROUP_MIN_PARTY_SIZE:
-        raise ValueError(
-            "group reservation requires at least "
-            f"{GROUP_MIN_PARTY_SIZE} passengers (totPrnb >= {GROUP_MIN_PARTY_SIZE})"
-        )
-    payload = personal_reservation_payload(
-        train,
-        passengers,
-        seat_type=seat_type,
-        netfunnel_key=netfunnel_key,
-        standby=standby,
-    )
-    payload["grpDv"] = "1"
     return payload
 
 
@@ -1542,8 +1476,8 @@ def transfer_reservation_payload(
     불가능 합니다." and returns without sending (``ara0101v.js:296-299``);
     ticking 왕복 while 환승 is selected alerts the same string and returns
     (``:331-334``). This builder therefore takes no ``round_trip`` argument at
-    all — the exclusion is expressed structurally, the way
-    ``group_reservation_payload`` expresses 단체+왕복 — and pins ``rtnDv="0"``.
+    all — the exclusion is expressed structurally rather than raised at call
+    time — and pins ``rtnDv="0"``.
 
     (For completeness, because it cuts the other way: the app's ticket-kind
     table does contain 환승단체왕편권 / 환승단체복편권 (``tkKndCd`` 28/29,
@@ -1561,11 +1495,10 @@ def transfer_reservation_payload(
     (``eventTrainInfo.js:12``, ``:19`` "4.단체환승") and stocks a ticket kind for
     it (환승단체권, ``tkKndCd`` 27, ``commCode.js:1591-1596``) — and nothing in
     the app forbids the combination the way it forbids 단체+왕복. It is left out
-    because the GROUP half is the unresolved one: ``reserve_group``'s response
-    shape is unverified and a group hold may carry no PNR to cancel with (see
-    :meth:`~srt_mobile_api.client.SrtClient.reserve_group`). Compounding an
-    unverified transfer onto an unverified group would produce something whose
-    failure mode is a ten-seat two-leg hold nobody can release.
+    because this library does not book 단체 at all: group booking is a payment
+    flow rather than a reservation hold, and it was removed on 2026-07-26 (see
+    docs/IMPLEMENTATION_PROGRESS.md, "단체 (group) booking: removed"). Only the
+    group SEARCH survives, and a search row cannot be booked.
 
     **No seat selection.** 좌석지정 fills ``scarNo1``/``seatNo1_*`` and
     explicitly BLANKS the slot-2 equivalents — ``scarGridcnt2 = 0``,

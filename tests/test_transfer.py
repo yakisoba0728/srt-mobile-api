@@ -89,7 +89,6 @@ from srt_mobile_api.safety import (
 )
 
 RESERVE_ROUTE = "/arc/selectListArc05013_n.do"
-GROUP_RESERVE_ROUTE = "/arc/selectListArc06014_n.do"
 SEARCH_ROUTE = "/ara/selectListAra10007_n.do"
 GROUP_SEARCH_ROUTE = "/ara/selectListAra10082_n.do"
 NETFUNNEL_PATH = "/ts.wseq"
@@ -244,8 +243,10 @@ class _Recorder:
                     200, text="NetFunnel.gControl.result='5004:200:utime=1';"
                 )
             return httpx.Response(200, text=NETFUNNEL_BODY)
-        if request.url.path in (RESERVE_ROUTE, GROUP_RESERVE_ROUTE):
+        if request.url.path == RESERVE_ROUTE:
             return httpx.Response(200, json=self.reply)
+        # Any other path -- notably the removed 단체 endpoint arc06014 -- is a
+        # failure here, not a recorded request.
         raise AssertionError(f"unexpected request to {request.url.path}")
 
     @property
@@ -826,9 +827,10 @@ def test_transfer_and_round_trip_are_mutually_exclusive():
 
 def test_transfer_offers_no_standby_and_no_group_and_no_seat_selection():
     # jobId=1102 is chosen from ONE row's image (ara1001l.js:1445-1448) and a
-    # transfer has two rows; 단체환승 exists as an SRT product but reserve_group's
-    # RESPONSE is unverified; 좌석지정 explicitly blanks slot 2's car and seat
-    # (ara0101v.js:875-879). None of the three is a parameter here.
+    # transfer has two rows; 단체환승 exists as an SRT product but this library
+    # does not book 단체 at all since 2026-07-26; 좌석지정 explicitly blanks slot
+    # 2's car and seat (ara0101v.js:875-879). None of the three is a parameter
+    # here.
     parameters = inspect.signature(SrtClient.reserve_transfer).parameters
     assert list(parameters) == [
         "self",
@@ -884,7 +886,6 @@ def test_reserve_transfer_live_send_goes_to_arc05013_under_the_reserve_category(
 
     assert isinstance(hold, SrtReservationHold)
     assert recorder.paths.count(RESERVE_ROUTE) == 1
-    assert GROUP_RESERVE_ROUTE not in recorder.paths
     form = recorder.forms(RESERVE_ROUTE)[0]
     assert form["jrnyCnt"] == "2"
     assert form["jrnySqno2"] == "002"
@@ -916,7 +917,9 @@ def test_transfer_adds_no_route_and_does_not_widen_the_kill_switch():
     # rides the EXISTING route and the EXISTING category. Nothing here may grow.
     assert SRT_LIVE_MUTATION_CATEGORIES == {"reserve", "cancel", "payment", "refund"}
     assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
-    assert len(SRT_MUTATION_ROUTES) == 5
+    # Four since 2026-07-26, when the 단체 endpoint arc06014 was unregistered
+    # along with the booking that reached it. One route per category again.
+    assert len(SRT_MUTATION_ROUTES) == 4
     assert RESERVE_ROUTE in SRT_MUTATION_ROUTE_CATEGORIES
 
 
