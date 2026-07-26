@@ -667,6 +667,80 @@ class SrtClient:
             )["html"]
             return parse_fare_page(raw)
 
+    def _submit_reservation(
+        self,
+        route: str,
+        build_form: Callable[[str], dict[str, str]],
+        *,
+        consent: MutationConsent,
+        netfunnel_key: str | None,
+    ) -> MutationPreview | SrtReservationHold:
+        """The one reservation send path, behind :meth:`reserve`.
+
+        Extracted rather than left inline because every safety property of a
+        reservation lives here — the consent gate, the session requirement, the
+        no-I/O dry run, the single NetFunnel acquisition, the guaranteed slot
+        release, the never-retry rule, and the PNR-salvaging parse. The app
+        itself keeps ONE ``#rsvForm`` and varies only the URL and a few body
+        fields across its reservation variants (ara1001l.js:1542-1547), so a
+        variant should cost a different ``route``/``build_form`` pair and not a
+        second copy of that list. Behaviour is unchanged by the extraction.
+
+        ``build_form`` is called with the NetFunnel key exactly once, and only
+        after the key exists, so no form is ever built twice or sent twice.
+        """
+        require_mutation_consent(consent, "reserve")
+        if self.session.current is None:
+            raise SrtAuthError("SRT reservation requires an authenticated session")
+        if consent.dry_run:
+            # Built inside the dry-run branch with the caller's key (or none):
+            # a preview must not acquire anything, so it performs no I/O at all.
+            return MutationPreview(
+                category="reserve",
+                method="POST",
+                route=route,
+                payload=build_form(netfunnel_key or ""),
+            )
+        # The booking page is the referer search uses for its own act_10
+        # acquisition (_prepare_search), and reserve gates on the same key, so
+        # the same referer is used rather than inventing a second one.
+        booking_referer = f"{self.config.base_url}/ara/ara0101v.do"
+        with self._session_guard():
+            key = (
+                netfunnel_key
+                if netfunnel_key
+                else self._get_act10_key(booking_referer)
+            )
+            form = build_form(key)
+            try:
+                response = self.http.post_mutation_form(
+                    route,
+                    form,
+                    consent=consent,
+                    category="reserve",
+                    # The app reserves from the search-result page
+                    # (ara1001l.js:1541-1560), which is the referer every other
+                    # post-search read here sends. INFERRED from the app flow,
+                    # not captured from the wire.
+                    referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
+                )
+            finally:
+                # Release the queue slot once the reserve is over. Best effort
+                # and exception-swallowing by construction (see
+                # _release_netfunnel_slots), which matters most HERE: a hold may
+                # already exist on the server by this point, and a failed
+                # housekeeping call must never be what the caller sees instead
+                # of the PNR. A caller-supplied netfunnel_key was not acquired
+                # by us and so is not in _netfunnel_slots to release -- whoever
+                # obtained it owns completing it.
+                self._release_netfunnel_slots(booking_referer)
+            # From here a hold may EXIST on the server. parse_reservation_hold_
+            # response is the designed guard: it salvages a minimal hold from a
+            # PNR-bearing response rather than letting a strict-validation
+            # failure orphan it, and refuses to manufacture one when the server
+            # declared a failure.
+            return parse_reservation_hold_response(response)
+
     def reserve(
         self,
         train: TrainSummary,
@@ -728,71 +802,18 @@ class SrtClient:
         malformed field, and a failed reserve is never retried — a retry could
         double-book — so at most one hold can exist per call.
         """
-        require_mutation_consent(consent, "reserve")
-        if self.session.current is None:
-            raise SrtAuthError("SRT reservation requires an authenticated session")
-        route = "/arc/selectListArc05013_n.do"
-        passengers = passengers or PassengerCounts()
-        if consent.dry_run:
-            # Built inside the dry-run branch with the caller's key (or none):
-            # a preview must not acquire anything, so it performs no I/O at all.
-            return MutationPreview(
-                category="reserve",
-                method="POST",
-                route=route,
-                payload=personal_reservation_payload(
-                    train,
-                    passengers,
-                    seat_type=seat_type,
-                    netfunnel_key=netfunnel_key or "",
-                    window_seat=window_seat,
-                ),
-            )
-        # The booking page is the referer search uses for its own act_10
-        # acquisition (_prepare_search), and reserve gates on the same key, so
-        # the same referer is used rather than inventing a second one.
-        booking_referer = f"{self.config.base_url}/ara/ara0101v.do"
-        with self._session_guard():
-            key = (
-                netfunnel_key
-                if netfunnel_key
-                else self._get_act10_key(booking_referer)
-            )
-            form = personal_reservation_payload(
+        return self._submit_reservation(
+            "/arc/selectListArc05013_n.do",
+            lambda key: personal_reservation_payload(
                 train,
-                passengers,
+                passengers or PassengerCounts(),
                 seat_type=seat_type,
                 netfunnel_key=key,
                 window_seat=window_seat,
-            )
-            try:
-                response = self.http.post_mutation_form(
-                    route,
-                    form,
-                    consent=consent,
-                    category="reserve",
-                    # The app reserves from the search-result page
-                    # (ara1001l.js:1541-1560), which is the referer every other
-                    # post-search read here sends. INFERRED from the app flow,
-                    # not captured from the wire.
-                    referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
-                )
-            finally:
-                # Release the queue slot once the reserve is over. Best effort
-                # and exception-swallowing by construction (see
-                # _release_netfunnel_slots), which matters most HERE: a hold may
-                # already exist on the server by this point, and a failed
-                # housekeeping call must never be what the caller sees instead
-                # of the PNR. A caller-supplied netfunnel_key was not acquired
-                # by us and so is not in _netfunnel_slots to release -- whoever
-                # obtained it owns completing it.
-                self._release_netfunnel_slots(booking_referer)
-            # From here a hold may EXIST on the server. parse_reservation_hold_
-            # response is the designed guard: it salvages a minimal hold from a
-            # PNR-bearing response rather than letting a strict-validation
-            # failure orphan it, and refuses to manufacture one when the server
-            # declared a failure.
-            return parse_reservation_hold_response(response)
+            ),
+            consent=consent,
+            netfunnel_key=netfunnel_key,
+        )
 
     def cancel(
         self,
