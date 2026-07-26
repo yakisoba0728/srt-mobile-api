@@ -239,6 +239,128 @@ class TrainSummary:
 
 
 @dataclass(frozen=True)
+class TransferItinerary:
+    """A 환승 (transfer) itinerary: the 선행 leg and the 후행 leg, together.
+
+    SRT models a transfer as ONE reservation carrying TWO journey slots, which
+    is the opposite of how it models a round trip. The app's 환승 toggle writes
+    both halves of that in a single call — ``jrnyTpCd="14"`` (환승편도) and
+    ``jrnyCnt="2"`` (여정건수 2) — at ``ara0101v.js:302-303``, emitted at
+    ``:310-311``. ``jrnyCnt="2"`` has exactly one write in the whole v2.0.41
+    bundle and this is it, so ``jrnyCnt="2"`` means TRANSFER and nothing else;
+    a round trip stays at ``"1"`` and is two separate reservations (see
+    :meth:`~srt_mobile_api.client.SrtClient.reserve`).
+
+    The two legs go into 여정 slots 1 and 2, and the app names the slot values
+    itself: ``"jrnySqno1" : "001"  //여정일련번호1(001:선행, 002:후행)``
+    (``ara0101v.js:97``, echoed as ``0001 : 선행, 0002 : 후행`` at
+    ``ara1001l.js:1607``). So :attr:`first_leg` is 선행 (``jrnySqno1="001"``) and
+    :attr:`second_leg` is 후행 (``jrnySqno2="002"``).
+
+    **Why this type exists at all.** A transfer search row is HALF an itinerary.
+    Nothing on a :class:`TrainSummary` says so — it looks exactly like a
+    reservable direct train — so handing rows from a transfer search straight to
+    :meth:`~srt_mobile_api.client.SrtClient.reserve` would book one leg of a
+    two-leg journey and strand the traveller mid-route, silently and with a
+    perfectly successful-looking PNR. Requiring both legs to be named at once,
+    in a type that
+    :meth:`~srt_mobile_api.client.SrtClient.reserve_transfer` is the only
+    consumer of, is what makes half an itinerary unrepresentable rather than
+    merely discouraged.
+
+    Construction therefore validates the join, because a pair that does not
+    connect is not an itinerary:
+
+    * both legs must be exactly :class:`TrainSummary` (the same exact-type rule
+      ``personal_reservation_payload`` applies, for the same reason: a subclass
+      could re-derive any of these fields),
+    * the first leg must ARRIVE where the second leg DEPARTS — that station is
+      the 환승역, and getting it wrong is the failure this class exists to
+      prevent,
+    * the second leg must not depart before the first leg arrives, when both
+      rows carry enough date/time to tell. The app applies exactly this
+      comparison to the 왕복 second leg (``ara1001l.js:1258-1272``: 가는열차's
+      arvDt/arvTm against 오는열차's dptDt/dptTm, refusing an earlier date and
+      then an earlier same-date time), and a transfer needs it at least as much,
+    * the two legs must not be the same train.
+
+    The origin and destination of the whole journey are :attr:`first_leg`'s
+    departure and :attr:`second_leg`'s arrival; the 환승역 in between is
+    :attr:`transfer_station_code`.
+
+    NOT LIVE-VERIFIED. Every field name and code above is read out of the
+    v2.0.41 bundle, but no transfer search or reservation has been sent to the
+    real server from this library.
+    """
+
+    first_leg: TrainSummary
+    second_leg: TrainSummary
+
+    def __post_init__(self) -> None:
+        for name, leg in (("first_leg", self.first_leg), ("second_leg", self.second_leg)):
+            if type(leg) is not TrainSummary:
+                raise ValueError(f"{name} must be an exact TrainSummary")
+        connection = self.first_leg.arrival_station_code
+        if not connection or not self.second_leg.departure_station_code:
+            raise ValueError(
+                "a transfer itinerary needs the first leg's arrival station and "
+                "the second leg's departure station to check that the legs connect"
+            )
+        if connection != self.second_leg.departure_station_code:
+            raise ValueError(
+                "transfer legs do not connect: the first leg arrives at "
+                f"{connection} but the second departs from "
+                f"{self.second_leg.departure_station_code}"
+            )
+        if (
+            self.first_leg.train_no == self.second_leg.train_no
+            and self.first_leg.run_date == self.second_leg.run_date
+        ):
+            raise ValueError(
+                "a transfer itinerary needs two different trains; both legs are "
+                f"train {self.first_leg.train_no}"
+            )
+        self._refuse_a_connection_that_runs_backwards()
+
+    def _refuse_a_connection_that_runs_backwards(self) -> None:
+        # Only checked when both sides are actually present. A hand-built
+        # TrainSummary may carry no arrival date, and the reservation form
+        # itself tolerates a blank arvDt1 (see personal_reservation_payload), so
+        # an absent field is treated as "cannot tell", never as "invalid" --
+        # the same rule the standby row-image guard follows.
+        arrival_date = self.first_leg.arrival_date or self.first_leg.departure_date
+        departure_date = self.second_leg.departure_date
+        arrival_time = self.first_leg.arrival_time
+        departure_time = self.second_leg.departure_time
+        if not (arrival_date and departure_date and arrival_time and departure_time):
+            return
+        if (arrival_date, arrival_time) > (departure_date, departure_time):
+            raise ValueError(
+                "the second transfer leg departs before the first one arrives: "
+                f"arrives {arrival_date} {arrival_time}, departs "
+                f"{departure_date} {departure_time}"
+            )
+
+    @property
+    def transfer_station_code(self) -> str:
+        """The 환승역 the two legs meet at, validated equal at construction."""
+        return self.first_leg.arrival_station_code or ""
+
+    @property
+    def origin_station_code(self) -> str:
+        return self.first_leg.departure_station_code or ""
+
+    @property
+    def destination_station_code(self) -> str:
+        return self.second_leg.arrival_station_code or ""
+
+    @property
+    def legs(self) -> tuple[TrainSummary, TrainSummary]:
+        """Both legs in 여정 order: 선행 first, 후행 second."""
+        return (self.first_leg, self.second_leg)
+
+
+@dataclass(frozen=True)
 class TrainSearchMetadata:
     message_code: str
     status: str

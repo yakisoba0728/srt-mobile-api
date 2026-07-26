@@ -52,6 +52,7 @@ from .models import (
     TrainSearchMetadata,
     TrainSearchResult,
     TrainSummary,
+    TransferItinerary,
 )
 from .parsers import (
     parse_card_payment_response,
@@ -120,4 +121,5 @@ __all__ = [
     "TrainSearchMetadata",
     "TrainSearchResult",
     "TrainSummary",
+    "TransferItinerary",
 ]

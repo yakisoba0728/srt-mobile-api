@@ -9,6 +9,7 @@ from .models import (
     SrtReservationSummary,
     TrainSearchQuery,
     TrainSummary,
+    TransferItinerary,
 )
 from .stations import station_name_by_code
 
@@ -45,6 +46,113 @@ RESERVE_STANDBY_JOBID = "1102"
 # capture has somewhere to land, and so that "unimplemented" is not mistaken
 # for "unknown".
 RESERVE_SEATMAP_JOBID = "1103"
+
+# 여정유형코드 (jrnyTpCd). Two values exist and the app's own common-code table
+# names both: 11 = 편도, rmk 직통, and 14 = 환승편도, rmk 환승
+# (commCode.js:296-309). The booking screen repeats the gloss inline --
+# "jrnyTpCd" :"11"  //여정유형코드(11:편도, 14:환승편도) (ara0101v.js:91) -- and the
+# 환승 toggle is the one place 14 is written (ara0101v.js:302, emitted :310).
+JOURNEY_TYPE_ONE_WAY = "11"
+JOURNEY_TYPE_TRANSFER = "14"
+
+# 여정건수 (jrnyCnt). One journey for 편도, TWO for 환승, set together with
+# jrnyTpCd="14" in the single branch that toggles 환승 (ara0101v.js:302-303,
+# emitted :310-311). That branch is the ONLY write of jrnyCnt="2" in the entire
+# v2.0.41 bundle -- the other two hits are the seed "1" (:92) and a null-check
+# read (ara1001l.js:1654) -- which is why jrnyCnt="2" means transfer and never
+# round trip.
+JOURNEY_COUNT_ONE_WAY = "1"
+JOURNEY_COUNT_TRANSFER = "2"
+
+# 여정일련번호 (jrnySqno) slot values, glossed by the app on its own seed:
+# "jrnySqno1" : "001"  //여정일련번호1(001:선행, 002:후행) (ara0101v.js:97), repeated
+# at ara1001l.js:1607 as "0001 : 선행, 0002 : 후행". 선행 is the leading leg, 후행
+# the following one, so a transfer's second leg is slot 2 / value "002".
+JOURNEY_SEQUENCE_LEADING = "001"
+JOURNEY_SEQUENCE_FOLLOWING = "002"
+
+# 직통환승구분 (chtnDvCd) on the SEARCH request, derived from jrnyTpCd by the app
+# itself: `var sChtnDvCd = lfn_getRsv("jrnyTpCd") == "11" ? "1" : "2";
+# //직통:1, 환승:2` (ara1001l.js:98), sent at :159. It is also a COLUMN on every
+# search row (ara1001l.js:1206 reads item.chtnDvCd, and the 2026-07-26 live
+# capture has it on every dsOutput1 row).
+SEARCH_CONNECTION_DIRECT = "1"
+SEARCH_CONNECTION_TRANSFER = "2"
+
+# The app's own refusal to reserve half a 환승 itinerary, verbatim
+# (messages.js:217, message id rsv023): "you must select BOTH the leading and
+# the following train". The string is DEFINED and never referenced anywhere in
+# the bundle -- the screen that would raise it is server-rendered -- but it is
+# the app stating the rule TransferItinerary enforces, in the app's own words,
+# so the builder raises with it rather than inventing wording.
+TRANSFER_BOTH_LEGS_MESSAGE = (
+    "선택하신 열차는 선행 및 후행 열차를 모두 선택하셔야 예약이 가능합니다."
+)
+
+# How each 여정 slot-2 key of a 환승 reservation form is known. Recorded as DATA
+# rather than prose because the honest answer differs per key, and pinned by a
+# test so that nothing here can quietly graduate to a stronger tier:
+#
+#   "web"      -- the literal `...2` string is in the offline WEB bundle
+#                 (assets/offline/js), i.e. in the booking flow itself.
+#   "native"   -- the literal `...2` string is in the app's NATIVE two-leg
+#                 model: the offline-ticket parser at
+#                 analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:746-834,
+#                 which reads a whole second leg out of a saved ticket and is
+#                 switched on by `isTransfer` == "true" (:815, consumed at
+#                 a.java:82 and :133). That is the app's own naming for a
+#                 transfer's second leg, from the ticket side rather than the
+#                 booking side.
+#   "hydrated" -- ZERO hits in the bundle. Already emitted by
+#                 search_page_payload on the Ara10007 hydration GET, which the
+#                 live server has accepted on every live run, and listed as a
+#                 booking-page hidden input by the 2026-07-09 survey
+#                 (docs/analysis/srt-app-api-library-spec-2026-07-09.md:162-170).
+#   "inferred" -- ZERO hits anywhere, in any form. Slot 1's name from
+#                 fn_moveRsv (ara1001l.js:1453-1468) with the suffix changed to
+#                 2, which is the rule every "web" and "native" entry obeys.
+#
+# The server-rendered #rsvForm is not in the bundle -- the app POSTs
+# $("#rsvForm").serialize() (ara1001l.js:1550) -- so the hydrated and inferred
+# tiers cannot be settled offline. They are a capture away, not a guess away.
+TRANSFER_SLOT2_FIELD_EVIDENCE = {
+    # ara1001l.js:1209-1216, the 운임요금 (Ara13010) params: the app sends
+    # dptRsStnCd2/arvRsStnCd2/runDt2/trnNo2 verbatim, blank for a direct
+    # journey -- and the LIVE fare page (captured 2026-07-26, reproduced at
+    # tests/fixtures/fare_transfer_placeholder.html) renders a whole second leg
+    # from them, with its own selectTransferTrain() toggle.
+    "dptRsStnCd2": "web",
+    "arvRsStnCd2": "web",
+    "runDt2": "web",
+    "trnNo2": "web",  # also native, b.java:827
+    # ara0101v.js:136-140 seeds them; :775-777 writes them with slot 1's VALUES,
+    # which is why this builder mirrors the seat preference across both legs.
+    "smkSeatAttCd2": "web",
+    "dirSeatAttCd2": "web",
+    "locSeatAttCd2": "web",
+    "rqSeatAttCd2": "web",
+    "etcSeatAttCd2": "web",
+    # b.java:785 (psrmClCd2), :791, :794, :800, :803. The native offline ticket
+    # carries the second leg's cabin class and its four date/time fields under
+    # exactly these names.
+    "psrmClCd2": "native",
+    "dptDt2": "native",
+    "dptTm2": "native",
+    "arvDt2": "native",
+    "arvTm2": "native",
+    # 0-hit in the bundle. jrnySqno2's VALUE is nonetheless glossed by the app
+    # ("002:후행", ara0101v.js:97), so only the key name is unattested here.
+    "jrnySqno2": "hydrated",
+    "trnGpCd2": "hydrated",
+    "dptRsStnCdNm2": "hydrated",
+    "arvRsStnCdNm2": "hydrated",
+    # 0-hit in any form. Slot 1's name with the suffix changed, and nothing more.
+    "stlbTrnClsfCd2": "inferred",
+    "dptStnConsOrdr2": "inferred",
+    "arvStnConsOrdr2": "inferred",
+    "dptStnRunOrdr2": "inferred",
+    "arvStnRunOrdr2": "inferred",
+}
 
 # The 예약대기 row images (ara1001l.js:32-33). The SERVER sends
 # grd_WF_Waiting.png; the app rewrites it to the _S ("selected") spelling when
@@ -262,12 +370,25 @@ def _distinct_passenger_type_count(passengers: PassengerCounts) -> int:
     return len(_compact_passenger_slots(passengers))
 
 
-def search_page_payload(query: TrainSearchQuery, netfunnel_key: str) -> dict[str, str]:
+def search_page_payload(
+    query: TrainSearchQuery,
+    netfunnel_key: str,
+    *,
+    transfer: bool = False,
+) -> dict[str, str]:
+    """Build the Ara10007 hydration GET that seeds the booking form.
+
+    ``transfer=True`` changes exactly the two fields the app's 환승 toggle
+    changes, and nothing else: ``jrnyTpCd`` ``"11"`` -> ``"14"`` (환승편도) and
+    ``jrnyCnt`` ``"1"`` -> ``"2"``. That single ``lfn_setRsv`` call is the whole
+    toggle (``ara0101v.js:302-303``, emitted at ``:310-311``); notably it does
+    NOT touch ``jrnySqno2`` or any other slot-2 key, so neither does this.
+    """
     group_name, service_class = TRAIN_GROUP_OPTIONS[query.train_group_code]
     payload = {
         "jobId": "1101",
-        "jrnyTpCd": "11",
-        "jrnyCnt": "1",
+        "jrnyTpCd": JOURNEY_TYPE_TRANSFER if transfer else JOURNEY_TYPE_ONE_WAY,
+        "jrnyCnt": JOURNEY_COUNT_TRANSFER if transfer else JOURNEY_COUNT_ONE_WAY,
         "grpDv": "0",
         "rtnDv": "0",
         "stlbTrnClsfCd1": service_class,
@@ -318,12 +439,29 @@ def search_ajax_payload(
     netfunnel_key: str,
     *,
     hydrated_fields: dict[str, str],
+    transfer: bool = False,
 ) -> dict[str, str]:
+    """Build the Ara10007 search POST.
+
+    ``transfer=True`` sets ``chtnDvCd`` to ``"2"`` (환승) instead of ``"1"``
+    (직통), and that is the ENTIRE request delta. The app derives the field the
+    same way and sends the same body either way::
+
+        var sChtnDvCd = lfn_getRsv("jrnyTpCd") == "11" ? "1" : "2"; //직통:1, 환승:2
+
+    (``ara1001l.js:98``, sent at ``:159``). The URL does not change with it —
+    ``:174-181`` picks the endpoint from ``grpDv`` alone, so 직통 and 환승 share
+    ``/ara/selectListAra10007_n.do`` (and ``Ara10082`` for a group). ``chtnDvCd``
+    is also a COLUMN on every returned row (``:1206``), which is how a caller can
+    tell what it got back.
+    """
     group_name, service_class = TRAIN_GROUP_OPTIONS[query.train_group_code]
     payload = dict(hydrated_fields)
     payload.update(
         {
-            "chtnDvCd": "1",
+            "chtnDvCd": (
+                SEARCH_CONNECTION_TRANSFER if transfer else SEARCH_CONNECTION_DIRECT
+            ),
             "dptDt": query.departure_date,
             "dptTm": query.departure_time,
             "dptDt1": query.departure_date,
@@ -1037,6 +1175,221 @@ def group_reservation_payload(
     return payload
 
 
+def _second_journey_slot_fields(
+    leg: TrainSummary,
+    *,
+    special_seat: bool,
+    window_seat: bool | None,
+) -> dict[str, str]:
+    """The 여정 slot-2 half of a 환승 reservation form.
+
+    Every key is slot 1's key from ``personal_reservation_payload`` with the
+    suffix changed to ``2``, and every VALUE is derived from ``leg`` exactly the
+    way slot 1 derives its own from the selected row (``ara1001l.js:1453-1468``)
+    — same validators, same zero-padding, same "blank when the row omits it"
+    rule for ``arvDt``. :data:`TRANSFER_SLOT2_FIELD_EVIDENCE` records, per key,
+    whether the ``...2`` spelling is attested in the web bundle, in the native
+    offline-ticket model, only on the hydration page, or not at all.
+
+    The seat-attribute keys are the one part where the app writes slot 2 itself,
+    and it writes it with slot 1's values: the 좌석옵션 popup callback sets
+    ``rqSeatAttCd1``/``locSeatAttCd1``/``dirSeatAttCd1``/``seatAttNm1`` and then
+    the identical ``...2`` quartet from the same ``arrCode``/``sText``
+    (``ara0101v.js:769-778``). So one seat preference covers both legs, and this
+    mirrors ``special_seat``/``window_seat`` across rather than exposing a
+    per-leg option the app has no way to express.
+
+    ``seatAttNm2`` (좌석속성명2) is deliberately NOT emitted even though the app
+    seeds and writes it: ``personal_reservation_payload`` does not emit
+    ``seatAttNm1`` either — srtgo's accepted body omits the display-name fields —
+    and slot 2 is kept a strict mirror of slot 1 rather than a superset.
+    """
+    train_no = _required_digits(leg.train_no, "second leg train_no", max_length=5).zfill(5)
+    departure_date = _required_digits(
+        leg.departure_date, "second leg departure_date", length=8
+    )
+    departure_time = _required_digits(
+        leg.departure_time, "second leg departure_time", length=6
+    )
+    arrival_time = _required_digits(leg.arrival_time, "second leg arrival_time", length=6)
+    run_date = (
+        _required_digits(leg.run_date, "second leg run_date", length=8)
+        if leg.run_date
+        else departure_date
+    )
+    arrival_date = (
+        _required_digits(leg.arrival_date, "second leg arrival_date", length=8)
+        if leg.arrival_date
+        else ""
+    )
+    departure_station_code = _required_digits(
+        leg.departure_station_code, "second leg departure_station_code", length=4
+    )
+    arrival_station_code = _required_digits(
+        leg.arrival_station_code, "second leg arrival_station_code", length=4
+    )
+    return {
+        "jrnySqno2": JOURNEY_SEQUENCE_FOLLOWING,
+        "stlbTrnClsfCd2": leg.service_class_code or "",
+        "dptRsStnCd2": departure_station_code,
+        "dptRsStnCdNm2": leg.departure_station_name
+        or station_name_by_code(leg.departure_station_code),
+        "arvRsStnCd2": arrival_station_code,
+        "arvRsStnCdNm2": leg.arrival_station_name
+        or station_name_by_code(leg.arrival_station_code),
+        "dptDt2": departure_date,
+        "dptTm2": departure_time,
+        "arvDt2": arrival_date,
+        "arvTm2": arrival_time,
+        "trnNo2": train_no,
+        "runDt2": run_date,
+        "dptStnConsOrdr2": _required_digits(
+            leg.departure_consist_order, "second leg departure_consist_order"
+        ),
+        "arvStnConsOrdr2": _required_digits(
+            leg.arrival_consist_order, "second leg arrival_consist_order"
+        ),
+        "dptStnRunOrdr2": _required_digits(
+            leg.departure_run_order, "second leg departure_run_order"
+        ),
+        "arvStnRunOrdr2": _required_digits(
+            leg.arrival_run_order, "second leg arrival_run_order"
+        ),
+        "trnGpCd2": "300",
+        "psrmClCd2": "2" if special_seat else "1",
+        "locSeatAttCd2": _WINDOW_SEAT_CODES.get(window_seat, "000"),
+        "rqSeatAttCd2": "015",
+        "dirSeatAttCd2": "009",
+        "smkSeatAttCd2": "000",
+        "etcSeatAttCd2": "000",
+    }
+
+
+def transfer_reservation_payload(
+    itinerary: TransferItinerary,
+    passengers: PassengerCounts,
+    *,
+    seat_type: SeatType = SeatType.GENERAL_FIRST,
+    netfunnel_key: str,
+    window_seat: bool | None = None,
+) -> dict[str, str]:
+    """Build the 환승 (transfer) reservation form: ONE body, TWO journey slots.
+
+    Unlike a round trip — which SRT models as two separate reservations of one
+    journey each — a transfer is a single reservation carrying two 여정. The
+    app's 환승 toggle says both halves of that in one call::
+
+        sJrnyTp = "14"; // 환승
+        nJrnyCnt = "2"; // 2건
+
+    (``ara0101v.js:302-303``, emitted at ``:310-311``). ``jrnyCnt="2"`` is
+    written in exactly one place in the whole v2.0.41 bundle and this is it.
+
+    The form is therefore ``personal_reservation_payload`` for the FIRST leg,
+    with three values changed and one slot appended:
+
+    * ``jrnyTpCd`` ``"11"`` -> ``"14"`` (편도 -> 환승편도, ``commCode.js:296-309``),
+    * ``jrnyCnt`` ``"1"`` -> ``"2"``,
+    * ``rtnDv`` pinned to ``"0"`` — see the exclusion below,
+    * the slot-2 keys from :func:`_second_journey_slot_fields`, appended after
+      the existing keys so that slot 1's key ORDER is byte-for-byte what it was.
+
+    ``jrnySqno1`` stays ``"001"`` and ``jrnySqno2`` is ``"002"``, which is the
+    app's own vocabulary: ``//여정일련번호1(001:선행, 002:후행)``
+    (``ara0101v.js:97``), repeated at ``ara1001l.js:1607`` as
+    ``0001 : 선행, 0002 : 후행``.
+
+    **환승 and 왕복 are mutually exclusive, and the app enforces it in BOTH
+    directions.** Selecting 환승 while 왕복 is ticked alerts "환승은 왕복예약이
+    불가능 합니다." and returns without sending (``ara0101v.js:296-299``);
+    ticking 왕복 while 환승 is selected alerts the same string and returns
+    (``:331-334``). This builder therefore takes no ``round_trip`` argument at
+    all — the exclusion is expressed structurally, the way
+    ``group_reservation_payload`` expresses 단체+왕복 — and pins ``rtnDv="0"``.
+
+    (For completeness, because it cuts the other way: the app's ticket-kind
+    table does contain 환승단체왕편권 / 환승단체복편권 (``tkKndCd`` 28/29,
+    ``commCode.js:1597-1612``), so such a TICKET exists as an SRT product. The
+    refusal above is a client-side booking rule in this app; it is not proof the
+    server would refuse. We send what the app sends.)
+
+    **No ``standby``.** ``jobId=1102`` is chosen from ONE selected row's
+    general-cabin image (``ara1001l.js:1445-1448``), and a transfer itinerary
+    has two rows. The app has no rule for what a 예약대기 on one leg of two
+    means, so there is nothing to reproduce, and inventing one would be exactly
+    the guess this repository refuses to make.
+
+    **No ``group``.** 단체환승 is a real thing to SRT — the app names it
+    (``eventTrainInfo.js:12``, ``:19`` "4.단체환승") and stocks a ticket kind for
+    it (환승단체권, ``tkKndCd`` 27, ``commCode.js:1591-1596``) — and nothing in
+    the app forbids the combination the way it forbids 단체+왕복. It is left out
+    because the GROUP half is the unresolved one: ``reserve_group``'s response
+    shape is unverified and a group hold may carry no PNR to cancel with (see
+    :meth:`~srt_mobile_api.client.SrtClient.reserve_group`). Compounding an
+    unverified transfer onto an unverified group would produce something whose
+    failure mode is a ten-seat two-leg hold nobody can release.
+
+    **No seat selection.** 좌석지정 fills ``scarNo1``/``seatNo1_*`` and
+    explicitly BLANKS the slot-2 equivalents — ``scarGridcnt2 = 0``,
+    ``scarNo2 = ""`` (``ara0101v.js:875-879``) — and no path in the bundle ever
+    fills them. jobId 1103 is already unimplemented here for a separate reason
+    (:data:`RESERVE_SEATMAP_JOBID`); this is the transfer-specific one.
+
+    **Passengers are NOT per-leg** and are emitted once, unchanged. The
+    ``psgTpCd1..5``/``psgInfoPerPrnb1..5`` family is indexed by passenger TYPE,
+    not by journey slot (``ara0101v.js:117-127``, compacted at ``:824-836``) —
+    the same party rides both legs. This is the reading the ``...2`` suffix is
+    most often confused with, and the two families genuinely coexist in this one
+    form.
+
+    Both legs are validated as SRT (``stlbTrnClsfCd == "17"``), the same guard
+    ``personal_reservation_payload`` applies to the single leg. That means this
+    builds SRT->SRT transfers only; an SRT->KTX itinerary would need the
+    non-SRT guard relaxed, which no evidence here supports.
+
+    NOT LIVE-VERIFIED, and the honest summary of what that means is in
+    :data:`TRANSFER_SLOT2_FIELD_EVIDENCE`: the ``#rsvForm`` this mirrors is
+    server-rendered and absent from the bundle, so five slot-2 key NAMES are an
+    inference from slot 1's names rather than something read anywhere.
+    """
+    if type(itinerary) is not TransferItinerary:
+        raise ValueError(
+            "transfer reservation requires a TransferItinerary carrying both "
+            f"legs — {TRANSFER_BOTH_LEGS_MESSAGE}"
+        )
+    payload = personal_reservation_payload(
+        itinerary.first_leg,
+        passengers,
+        seat_type=seat_type,
+        netfunnel_key=netfunnel_key,
+        window_seat=window_seat,
+    )
+    if itinerary.second_leg.service_class_code != _SRT_TRAIN_CLASS_CODE:
+        raise ValueError(
+            "reservation requires an SRT train (service_class_code '17'); the "
+            "second transfer leg is "
+            f"{itinerary.second_leg.service_class_code!r}"
+        )
+    payload["jrnyTpCd"] = JOURNEY_TYPE_TRANSFER
+    payload["jrnyCnt"] = JOURNEY_COUNT_TRANSFER
+    # Restated rather than assumed: personal_reservation_payload already writes
+    # "0" here because this builder passes no round_trip, and 환승+왕복 is
+    # refused by the app in both directions (ara0101v.js:296-299, :331-334).
+    payload["rtnDv"] = "0"
+    payload.update(
+        _second_journey_slot_fields(
+            itinerary.second_leg,
+            # The cabin and window preference slot 1 actually resolved to, not
+            # the raw seat_type: a SeatType.*_FIRST can fall back, and both legs
+            # must then agree. ara0101v.js:769-778 writes slot 2 from slot 1's
+            # own values for exactly this reason.
+            special_seat=payload["psrmClCd1"] == "2",
+            window_seat=window_seat,
+        )
+    )
+    return payload
+
+
 # Reservation-change number on the cancel form. srtgo sends the constant "0"
 # (srt.py:1138). UNVERIFIED here: `rsvChgTno` has 0 hits across all 21,673 files
 # of our v2.0.41 offline bundle (docs/analysis/cross-validation-2026-07-21.md),
@@ -1045,7 +1398,10 @@ CANCEL_RESERVATION_CHANGE_NUMBER = "0"
 
 # The jrnyCnt (여정건수) our cancel form defaults to. See
 # unpaid_reservation_cancel_payload for why it is a default and not derived.
-_SINGLE_JOURNEY_COUNT = "1"
+# It is the same wire field the booking form carries, so it takes its value from
+# the same constant rather than repeating the literal -- a 환승 hold's 여정건수
+# is 2, and _cancel_journey_count is where that matters.
+_SINGLE_JOURNEY_COUNT = JOURNEY_COUNT_ONE_WAY
 
 
 def _cancel_journey_count(journey_count: str | None) -> str:

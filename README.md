@@ -6,11 +6,12 @@ without an explicit, per-category `MutationConsent` with `dry_run=False`: by
 default the client transmits only login/read requests, and a mutation method
 returns a redacted `MutationPreview` of the exact form that would be POSTed.
 
-Five consent-gated mutation methods exist: `reserve`, `reserve_group`, `cancel`,
-`pay_with_card` and `refund`, across **four** consent categories —
-`reserve_group` is the 단체 half of `reserve`, on its own endpoint. All preview
-by default and all transmit when given an explicit `dry_run=False` consent for
-their category. Each CATEGORY is live-enabled because a live run answered its own
+Six consent-gated mutation methods exist: `reserve`, `reserve_group`,
+`reserve_transfer`, `cancel`, `pay_with_card` and `refund`, across **four**
+consent categories — `reserve_group` is the 단체 half of `reserve` on its own
+endpoint, and `reserve_transfer` is the 환승 half on the *same* endpoint, so both
+ride the existing `reserve` category. All preview by default and all transmit
+when given an explicit `dry_run=False` consent for their category. Each CATEGORY is live-enabled because a live run answered its own
 wire format, and for nothing else:
 
 | method | verified | server's answer |
@@ -79,10 +80,11 @@ surface, the transport-layer live-mutation gate, the consent-gated cancel
 surface, the two-category live enablement, the operator scripts, the
 reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
 real-card acknowledgement gate, the consent-gated card-payment and refund
-surfaces, the four-category live enablement and the three bundle-evidenced
-reservation variants (group, standby, round trip)
+surfaces, the four-category live enablement, the three bundle-evidenced
+reservation variants (group, standby, round trip) and the 환승 (transfer)
+search and reservation
 landed, the current offline suite at HEAD is
-`1348 passed, 1 deselected`. The deselected case is the
+`1388 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -655,7 +657,9 @@ no route, seat-inventory, or mutation behavior.
 `SrtClient.iter_train_search_pages(query, *, group=False, max_pages=10)`
 lazily yields `TrainSearchResult` pages for personal or group search. Existing
 `search_trains(query)` and `search_group_trains(query)` remain compatible
-single-page calls.
+single-page calls. `search_transfer_trains(query)` is deliberately **not**
+paginated — a 환승 response carries a second, unexplained cursor (`fllwPgExt2`)
+that nothing in the bundle reads; see the transfer section.
 
 The iterator obtains one `act_10` key, hydrates the search form, and preserves
 the resulting key, passenger fields, `dptTm1`, and unknown hidden inputs across
@@ -829,9 +833,10 @@ surface described next was added separately.
 
 ### Consent-gated mutation surface
 
-Two consent-gated methods are implemented and offline-tested (three, counting
-`reserve_group`, which is the 단체 half of `reserve` — see the reservation
-variants section below):
+Two consent-gated methods are implemented and offline-tested (four, counting
+`reserve_group`, the 단체 half of `reserve` on its own endpoint, and
+`reserve_transfer`, the 환승 half on the same endpoint — see the reservation
+variants and transfer sections below):
 
 - `reserve` (`arc/selectListArc05013_n.do`, `jobId=1101` personal) previews by
   default. Given a `dry_run=False` reserve consent it transmits and returns an
@@ -1011,6 +1016,198 @@ change on a real account.
   for `pnrNo` versus `tmpJobSqno1` — that single fact is the most valuable thing
   the run can produce, and it decides whether `cancel` can ever work for a group.
   Then release the hold by whatever means exists.
+
+### Transfer (환승): the one shape SRT reserves as two journeys in one request
+
+`search_transfer_trains(query)` and `reserve_transfer(itinerary, ...)`.
+**Bundle-evidenced request, NOT live-verified — no transfer search or
+reservation has ever been sent from this library.** `reserve_transfer` POSTs the
+**same** endpoint as `reserve` (`arc/selectListArc05013_n.do`) under the **same**
+`reserve` consent category; no route and no category was added, and
+`SRT_LIVE_MUTATION_CATEGORIES` is untouched at
+`{"reserve", "cancel", "payment", "refund"}`.
+
+A transfer is the opposite of a round trip, and the pair is worth holding side
+by side:
+
+| | 왕복 (round trip) | 환승 (transfer) |
+| --- | --- | --- |
+| `jrnyTpCd` | `11` (편도) | `14` (환승편도) |
+| `jrnyCnt` | `1` | **`2`** |
+| requests | **two** reserves, one journey each | **one** reserve, two journeys |
+| journey slot 2 | never filled | the 후행 leg |
+| flag | `rtnDv=1` | `rtnDv` stays `0` |
+
+`jrnyCnt="2"` has **exactly one write in the entire v2.0.41 bundle**: the 환승
+toggle, which sets it together with `jrnyTpCd="14"` in a single `lfn_setRsv`
+call (`ara0101v.js:302-303`, emitted at `:310-311`). The other two hits are the
+seed `"1"` (`:92`) and a null-check read (`ara1001l.js:1654`). The app's own code
+table names both values — `11` 편도 / rmk 직통, `14` 환승편도 / rmk 환승
+(`commCode.js:296-309`) — and the slot vocabulary is glossed inline:
+`"jrnySqno1" : "001"  //여정일련번호1(001:선행, 002:후행)` (`ara0101v.js:97`,
+repeated at `ara1001l.js:1607`). So **slot 1 is 선행, slot 2 is 후행**.
+
+**Search — same endpoint, one field.** `chtnDvCd` goes from `"1"` (직통) to
+`"2"` (환승). The app derives it itself:
+
+```js
+var sChtnDvCd = lfn_getRsv("jrnyTpCd") == "11" ? "1" : "2"; //직통:1, 환승:2
+```
+
+(`ara1001l.js:98`, sent at `:159`.) The URL does **not** change with it —
+`:174-181` picks the endpoint from `grpDv` alone, so 직통 and 환승 share
+`/ara/selectListAra10007_n.do`. `chtnDvCd` is also a **column on every returned
+row** (`ara1001l.js:1206` reads `item.chtnDvCd`), kept on `TrainSummary.raw`.
+
+> **How the response pairs the two legs is UNKNOWN offline, and is not guessed
+> at.** The bundle's own list screen cannot say: `fn_postSearch`
+> (`ara1001l.js:384-460`) renders one single-leg `<tr>` per row with no transfer
+> branch, `fn_moveRsv` (`:1453-1468`) writes only slot 1, and `fn_validChk`
+> (`:1649-1700`) validates only slot 1 under a `//직통` heading. The 환승 list is
+> server-rendered — the stylesheet keeps a taller two-row card with a layover
+> band for it (`.time_Difference`, `.timeDiff`, `custom.css:4412`, `:4431`) — and
+> that markup is not in the bundle. `search_transfer_trains` therefore returns
+> the rows exactly as the server sends them and lets **you** pair them.
+> Relatedly, `dsOutput0` carries a second cursor `fllwPgExt2` (null in every
+> direct search captured, read by nothing in the bundle), so
+> `iter_train_search_pages` is deliberately **not** extended to transfer:
+> paging a two-cursor list on a guess would walk the wrong leg.
+
+**`TransferItinerary` is what stops you booking half a journey.** A transfer
+search row is an ordinary `TrainSummary` — `reserve(row)` would accept it and
+produce a real, successful-looking PNR to the 환승역 and no further. So
+`reserve_transfer` takes **only** a `TransferItinerary(first_leg=…,
+second_leg=…)`, which validates the join at construction: both legs exactly
+`TrainSummary`, the first must **arrive where the second departs**, the second
+must not depart before the first arrives (the comparison the app applies to the
+왕복 second leg, `ara1001l.js:1258-1272`), and the two must not be the same
+train. The app states the rule itself, in a message string it ships and never
+references because the screen that would raise it is server-rendered
+(`messages.js:217`, `rsv023`):
+
+> 선택하신 열차는 선행 및 후행 열차를 모두 선택하셔야 예약이 가능합니다.
+
+```python
+itinerary = TransferItinerary(first_leg=rows[0], second_leg=rows[1])
+preview = client.reserve_transfer(itinerary, consent=MutationConsent(allow_reserve=True))
+```
+
+**The reservation form** is the personal form with two values changed
+(`jrnyTpCd` → `14`, `jrnyCnt` → `2`) and one slot appended. Slot 1 keeps its
+exact keys, values **and order**; the 23 slot-2 keys are appended after it:
+
+`jrnySqno2` `stlbTrnClsfCd2` `dptRsStnCd2` `dptRsStnCdNm2` `arvRsStnCd2`
+`arvRsStnCdNm2` `dptDt2` `dptTm2` `arvDt2` `arvTm2` `trnNo2` `runDt2`
+`dptStnConsOrdr2` `arvStnConsOrdr2` `dptStnRunOrdr2` `arvStnRunOrdr2` `trnGpCd2`
+`psrmClCd2` `locSeatAttCd2` `rqSeatAttCd2` `dirSeatAttCd2` `smkSeatAttCd2`
+`etcSeatAttCd2`
+
+> **How each slot-2 key is known — evidenced vs inferred.** The server-rendered
+> `#rsvForm` is not in the bundle (the app POSTs `$("#rsvForm").serialize()`,
+> `ara1001l.js:1550`), so this is graded per key in
+> `payloads.TRANSFER_SLOT2_FIELD_EVIDENCE` and pinned by a test.
+>
+> - **web bundle** — the literal `...2` string is in the offline JS.
+>   `dptRsStnCd2`, `arvRsStnCd2`, `runDt2`, `trnNo2` are the 운임요금 params the
+>   app sends blank for a direct journey (`ara1001l.js:1209-1216`), and the LIVE
+>   fare page renders a whole second leg from them with its own
+>   `selectTransferTrain()` toggle (captured 2026-07-26, reproduced at
+>   `tests/fixtures/fare_transfer_placeholder.html`). `smkSeatAttCd2`,
+>   `dirSeatAttCd2`, `locSeatAttCd2`, `rqSeatAttCd2`, `etcSeatAttCd2` are seeded
+>   at `ara0101v.js:136-140` and written at `:775-777`.
+> - **native** — the literal `...2` string is in the app's own two-leg model:
+>   the offline-ticket parser at
+>   `analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:746-834`, switched
+>   on by `isTransfer == "true"` (`:815`). It reads `psrmClCd2` (`:785`),
+>   `dptDt2` (`:791`), `dptTm2` (`:794`), `arvDt2` (`:800`), `arvTm2` (`:803`),
+>   plus `seatNo2`/`scarNo2`/`trnNo2`/`stlbTrnClsfNm2`/`dptRsStnNm2`/
+>   `arvRsStnNm2`. The matching layout ships a 수서 → **천안아산** → 부산
+>   placeholder (`analysis/apktool/res/layout/listview_offline_detail_item.xml`).
+> - **hydrated** — zero hits in the bundle; already sent on the Ara10007
+>   hydration GET by `search_page_payload` (which the live server has accepted on
+>   every run) and listed as a booking-page hidden input by the 2026-07-09
+>   survey: `jrnySqno2`, `trnGpCd2`, `dptRsStnCdNm2`, `arvRsStnCdNm2`.
+> - **INFERRED** — zero hits in any form; slot 1's name with the suffix changed:
+>   **`stlbTrnClsfCd2`, `dptStnConsOrdr2`, `arvStnConsOrdr2`, `dptStnRunOrdr2`,
+>   `arvStnRunOrdr2`**. These five are the ones a live run has to settle.
+
+**What composes with transfer, and what does not.**
+
+| feature | with 환승? | evidence |
+| --- | --- | --- |
+| passenger mix | **yes**, one party for both legs | `psgTpCd1..5` is indexed by passenger TYPE, not by journey slot (`ara0101v.js:117-127`, compacted `:824-836`) |
+| seat option (`seat_type`, `window_seat`) | **yes**, one preference for both legs | the 좌석옵션 callback writes slot 1 and then the identical `...2` quartet from the same values (`ara0101v.js:769-778`) |
+| 왕복 round trip | **no** | refused in both directions with "환승은 왕복예약이 불가능 합니다." (`ara0101v.js:296-299` and `:331-334`) |
+| 예약대기 standby | **not implemented** | `jobId=1102` is chosen from ONE row's image (`ara1001l.js:1445-1448`); a transfer has two rows and the app has no rule for one-leg-only standby |
+| 단체 group | **not implemented** | the app *does* model 단체환승 (`eventTrainInfo.js:12`, `:19`; ticket kind 환승단체권 `tkKndCd` 27, `commCode.js:1591-1596`) and forbids it nowhere — but `reserve_group`'s **response** is unverified and may carry no cancelable PNR, and compounding two unverified shapes risks a ten-seat two-leg hold nobody can release |
+| 좌석지정 seat selection | **not implemented** | 좌석지정 explicitly BLANKS slot 2: `scarGridcnt2 = 0`, `scarNo2 = ""` (`ara0101v.js:875-879`), and nothing ever fills them |
+| non-SRT (KTX) leg | **refused** | both legs must be `stlbTrnClsfCd == "17"`, the same guard `reserve` has always applied. SRT→SRT transfers only |
+
+> One honest counter-note on the 왕복 exclusion: the app's ticket-kind table
+> *does* contain 환승단체왕편권 / 환승단체복편권 (`tkKndCd` 28/29,
+> `commCode.js:1597-1612`), so such a ticket exists as an SRT product. The
+> refusal above is a **client-side booking rule in this app**; it is not proof
+> the server would refuse. We send what the app sends.
+
+**Two things left unchanged on purpose.** `fare_payload` still hard-codes
+`chtnDvCd="1"` and blank `dptRsStnCd2`/`arvRsStnCd2`/`runDt2`/`trnNo2` — a
+transfer fare lookup would fill them, and `parse_fare_page` would then need to
+stop discarding the second table, which is a separate change with its own live
+capture. And `cancel` still defaults to `jrnyCnt="1"`.
+
+> **Cancelling a transfer hold needs `journey_count="2"`.** `cancel(hold,
+> journey_count="2", consent=…)` — the parameter already exists and was not
+> touched, but its **default is wrong for this shape**, and getting it wrong is
+> how a hold survives a cancel that looked like it worked. Verify with
+> `get_reservations` afterwards, every time.
+
+#### What an operator must do to live-verify transfer
+
+**The precondition is a station pair SRT does not serve directly** — without one
+there is no transfer itinerary to find, and this is the single thing that makes
+the whole feature testable. SRT runs two lines that meet only at **오송**
+(`0297`): 경부선 through 대전 (`0010`) / 동대구 (`0015`) / 부산 (`0020`), and
+호남선 through 익산 (`0030`) / 광주송정 (`0036`) / 목포 (`0041`). Any pair with
+one station on each line has **no direct SRT train** and must connect. Good
+candidates:
+
+- **동대구 (`0015`) → 광주송정 (`0036`)**
+- **부산 (`0020`) → 목포 (`0041`)**
+- **대전 (`0010`) → 광주송정 (`0036`)** — 대전 is 경부선-only for SRT
+
+A 수서-origin route is the wrong test: 수서→광주송정 and 수서→부산 are both
+direct, so `chtnDvCd=2` would return nothing and prove nothing.
+
+1. **Search first — it is read-only and costs nothing.**
+   `search_transfer_trains(TrainSearchQuery(departure_station_code="0015",
+   arrival_station_code="0036", departure_date=…))`. **Capture the raw JSON.**
+   The most valuable thing this whole exercise can produce is the answer to *how
+   `dsOutput1` represents two legs*: one row per leg (paired, ordered — check
+   `trnOrdrNo` and `chtnDvCd` on each) or one row per itinerary with `...2`
+   columns. Also record whether `dsOutput0.fllwPgExt2` is non-null here, since it
+   is null in every direct search captured so far.
+2. **Compare against a direct search of the same pair.** `search_trains` on
+   동대구→광주송정 should come back empty (`WRG000000` / "조회 결과가 없습니다.",
+   which surfaces as `SrtNoResultsError`). If it does not, the pair is not a
+   transfer pair and step 1's rows mean something else.
+3. **Preview the reservation before anything else.** Build the
+   `TransferItinerary` from two rows and call `reserve_transfer(...)` with the
+   default `dry_run=True`. Check the preview: `jrnyTpCd=14`, `jrnyCnt=2`,
+   `jrnySqno1=001`, `jrnySqno2=002`, `rtnDv=0`, and that slot 2 really carries
+   the **second** train and not a copy of the first.
+4. **Send it, and keep the PNR before doing anything else.** `dry_run=False` with
+   a reserve consent creates a **real unpaid hold on a real account**. If the
+   server rejects the body, the first field to suspect is **`reserveType`**: we
+   send `"11"` (srtgo-only, 0 hits in our bundle, `srt.py:990-991`) and it is not
+   known whether it tracks `jrnyTpCd` — if it does, a transfer wants `"14"`. The
+   five INFERRED slot-2 key names above are the second thing to suspect.
+5. **Cancel with `journey_count="2"`**, then re-read `get_reservations` and
+   confirm the account is empty. If the `"2"` cancel fails, retry with the
+   default `"1"` and record which one the server accepted — that is itself a
+   finding. `scripts/recover_hold.py` releases a hold from the PNR string alone
+   and is the safety net.
+6. **Do not pay.** Nothing here needs a payment to be verified, and a paid
+   transfer ticket is a refund away from a mess.
 
 ### Live payment->refund verification (operator-run, 2026-07-26)
 

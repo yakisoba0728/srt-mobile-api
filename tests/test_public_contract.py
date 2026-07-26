@@ -49,7 +49,17 @@ def test_client_public_method_set_is_stable():
         # Same "reserve" consent category and the same kill switch; the
         # request is bundle-evidenced, the response is not live-verified.
         "reserve_group",
+        # The 환승 half of reserve. Same endpoint (arc05013) and the same
+        # "reserve" consent category as reserve() -- a transfer is a personal
+        # reservation with a second 여정 slot, not a new mutation -- but its own
+        # method because it takes a TransferItinerary and never a bare train, so
+        # half an itinerary cannot be booked by accident. Not live-verified.
+        "reserve_transfer",
         "search_group_trains",
+        # 환승 search: same endpoint as search_trains with chtnDvCd="2", kept
+        # separate because its ROWS are half-itineraries that reserve() would
+        # happily book on their own.
+        "search_transfer_trains",
         "search_trains",
     }
 

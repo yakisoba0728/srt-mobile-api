@@ -45,6 +45,7 @@ from .models import (
     TrainSearchQuery,
     TrainSearchResult,
     TrainSummary,
+    TransferItinerary,
 )
 from .netfunnel import (
     QUEUE_POLL_LIMIT,
@@ -93,6 +94,7 @@ from .payloads import (
     station_selector_payload,
     timetable_payload,
     train_group_selector_payload,
+    transfer_reservation_payload,
     unpaid_reservation_cancel_payload,
 )
 from .session import SrtSessionClient
@@ -419,11 +421,17 @@ class SrtClient:
             except (SrtApiError, ValueError):
                 continue
 
-    def _hydrate_search(self, query: TrainSearchQuery, key: str) -> SearchPageState:
+    def _hydrate_search(
+        self,
+        query: TrainSearchQuery,
+        key: str,
+        *,
+        transfer: bool = False,
+    ) -> SearchPageState:
         referer = f"{self.config.base_url}/ara/ara0101v.do"
         html = self.http.get_text(
             "/ara/selectListAra10007_n.do",
-            params=search_page_payload(query, key),
+            params=search_page_payload(query, key, transfer=transfer),
             referer=referer,
         )
         return parse_search_page_state(html)
@@ -433,15 +441,20 @@ class SrtClient:
         query: TrainSearchQuery,
         *,
         group: bool,
+        transfer: bool = False,
     ) -> tuple[str, dict[str, str]]:
         referer = f"{self.config.base_url}/ara/ara0101v.do"
         key = self._get_act10_key(referer)
-        state = self._hydrate_search(query, key)
+        state = self._hydrate_search(query, key, transfer=transfer)
+        # The URL is chosen by grpDv ALONE (ara1001l.js:174-181). 직통 and 환승
+        # share it -- the connection type travels in chtnDvCd, not in the path.
         path = "/ara/selectListAra10082_n.do" if group else "/ara/selectListAra10007_n.do"
         payload = (
             group_search_ajax_payload(query, key, hydrated_fields=state.hidden_fields)
             if group
-            else search_ajax_payload(query, key, hydrated_fields=state.hidden_fields)
+            else search_ajax_payload(
+                query, key, hydrated_fields=state.hidden_fields, transfer=transfer
+            )
         )
         return path, payload
 
@@ -458,22 +471,34 @@ class SrtClient:
         )
         return parse_train_search_response(data, request_context=payload)
 
-    def _search_once(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
+    def _search_once(
+        self,
+        query: TrainSearchQuery,
+        *,
+        group: bool,
+        transfer: bool = False,
+    ) -> TrainSearchResult:
         # The slot is released once the guarded request is over, whichever way
         # it went -- a search that raised held a place in line just as much as
         # one that succeeded. This is the app's TS_AUTO_COMPLETE behaviour.
         try:
-            path, payload = self._prepare_search(query, group=group)
+            path, payload = self._prepare_search(query, group=group, transfer=transfer)
             return self._post_search_page(path, payload)
         finally:
             self._release_netfunnel_slots(
                 f"{self.config.base_url}/ara/ara0101v.do"
             )
 
-    def _search_with_retry(self, query: TrainSearchQuery, *, group: bool) -> TrainSearchResult:
+    def _search_with_retry(
+        self,
+        query: TrainSearchQuery,
+        *,
+        group: bool,
+        transfer: bool = False,
+    ) -> TrainSearchResult:
         for attempt in range(2):
             try:
-                return self._search_once(query, group=group)
+                return self._search_once(query, group=group, transfer=transfer)
             except SrtNetFunnelError as exc:
                 if exc.code != "NET000001" or attempt == 1:
                     raise
@@ -486,6 +511,64 @@ class SrtClient:
     def search_group_trains(self, query: TrainSearchQuery) -> TrainSearchResult:
         with self._session_guard():
             return self._search_with_retry(query, group=True)
+
+    def search_transfer_trains(self, query: TrainSearchQuery) -> TrainSearchResult:
+        """Search 환승 (transfer) itineraries — trains that need a connection.
+
+        A SIBLING METHOD rather than a ``transfer=True`` flag on
+        :meth:`search_trains`, and the reason is not the request. The request is
+        nearly the same: the endpoint is unchanged
+        (``/ara/selectListAra10007_n.do``, chosen by ``grpDv`` alone at
+        ``ara1001l.js:174-181``) and the only body delta is ``chtnDvCd`` ``"1"``
+        -> ``"2"``, derived by the app from ``jrnyTpCd`` at ``ara1001l.js:98``
+        and sent at ``:159``. The hydration GET additionally carries
+        ``jrnyTpCd="14"``/``jrnyCnt="2"``, the app's 환승 toggle
+        (``ara0101v.js:302-303``).
+
+        The reason is the RESULT. A row from here is **half an itinerary**, and
+        nothing about the row says so: it is an ordinary
+        :class:`~srt_mobile_api.models.TrainSummary` that
+        :meth:`reserve` would accept and book on its own, leaving the traveller
+        holding a ticket to the 환승역 and no further. Making that a keyword on
+        the method everyone already calls would put the dangerous rows and the
+        safe ones behind the same name and the same type. A separate name is the
+        signal, and :class:`~srt_mobile_api.models.TransferItinerary` plus
+        :meth:`reserve_transfer` is the enforcement — see there.
+
+        **What comes back is NOT normalised into itineraries, deliberately.**
+        The app's own list screen cannot help here: ``fn_postSearch``
+        (``ara1001l.js:384-460``) renders one single-leg ``<tr>`` per row and has
+        no transfer branch at all, ``fn_moveRsv`` (``:1453-1468``) writes only
+        slot 1, and ``fn_validChk`` (``:1649-1700``) validates only slot 1 under
+        a ``//직통`` heading. The 환승 list is server-rendered — the stylesheet
+        keeps a ``.timeDiff`` / ``.time_Difference`` rule for it, a taller
+        two-row card with a layover band (``custom.css:4412``, ``:4431``) — and
+        that markup is not in the bundle. So how the JSON pairs the legs (one
+        row per leg in ``dsOutput1``, versus one row per itinerary) is
+        **UNKNOWN offline**, and the pairing is not guessed at here. Two facts
+        that a caller can use are known:
+
+        * every row carries its own ``chtnDvCd`` column (``ara1001l.js:1206``
+          reads ``item.chtnDvCd``; the 2026-07-26 live capture has the column on
+          every direct row too), so a row can say which kind it is. It is kept
+          on :attr:`~srt_mobile_api.models.TrainSummary.raw`.
+        * ``dsOutput0`` carries a SECOND paging cursor, ``fllwPgExt2``, which is
+          ``null`` in every direct search we have captured. It is very likely the
+          slot-2 counterpart of ``fllwPgExt``, but nothing reads it in the
+          bundle, so :meth:`iter_train_search_pages` is deliberately NOT
+          extended to transfer: paging a two-cursor list on a guess would walk
+          the wrong leg.
+
+        Pair the legs yourself, from the rows, into a
+        :class:`~srt_mobile_api.models.TransferItinerary` — which refuses a pair
+        that does not connect — and pass that to :meth:`reserve_transfer`.
+
+        NOT LIVE-VERIFIED. Read-only and consent-free like the other searches,
+        so trying it costs nothing but a query; see the README for the station
+        pairs that make a transfer itinerary exist at all.
+        """
+        with self._session_guard():
+            return self._search_with_retry(query, group=False, transfer=True)
 
     def _prepare_first_search_page(
         self,
@@ -926,6 +1009,105 @@ class SrtClient:
                 seat_type=seat_type,
                 netfunnel_key=key,
                 standby=standby,
+            ),
+            consent=consent,
+            netfunnel_key=netfunnel_key,
+        )
+
+    def reserve_transfer(
+        self,
+        itinerary: TransferItinerary,
+        *,
+        consent: MutationConsent,
+        passengers: PassengerCounts | None = None,
+        seat_type: SeatType = SeatType.GENERAL_FIRST,
+        window_seat: bool | None = None,
+        netfunnel_key: str | None = None,
+    ) -> MutationPreview | SrtReservationHold:
+        """Create a 환승 (transfer) reservation hold: BOTH legs, in ONE request.
+
+        This is the shape SRT reserves as a multi-leg body, and the only one.
+        The 환승 toggle sets ``jrnyTpCd="14"`` (환승편도) together with
+        ``jrnyCnt="2"`` (``ara0101v.js:302-303``), and ``jrnyCnt="2"`` is written
+        nowhere else in the v2.0.41 bundle. Compare :meth:`reserve` with
+        ``round_trip=True``, which is the opposite: 왕복 is TWO reservations of
+        one journey each, and ``jrnyCnt`` stays ``"1"`` for both.
+
+        **The same endpoint and the same consent category as :meth:`reserve`.**
+        ``/arc/selectListArc05013_n.do``, ``category="reserve"``. Nothing was
+        added to :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` and
+        no new mutation route was registered — a transfer is a personal
+        reservation with a second journey slot, not a new kind of mutation. The
+        endpoint is picked by ``grpDv`` alone (``ara1001l.js:1542-1547``), which
+        is why this is a method on the personal route and ``reserve_group`` is
+        not.
+
+        Everything :meth:`reserve` guarantees is inherited unchanged, because
+        this goes through the same ``_submit_reservation``: consent-gated,
+        session-required, ``dry_run=True`` by default with NO network I/O, one
+        NetFunnel acquisition, guaranteed slot release, never retried, and the
+        PNR-salvaging parse. One call can still create at most ONE hold — which
+        is the whole point of putting both legs in it.
+
+        **Why the parameter is a :class:`~srt_mobile_api.models.TransferItinerary`
+        and not two trains.** Two positional ``TrainSummary`` arguments would
+        make it possible to pass the same row twice, to pass legs that do not
+        meet, or to pass them in the wrong order, and every one of those failures
+        is silent — it produces a plausible form and a real hold. The itinerary
+        type validates the join at construction (the first leg must arrive where
+        the second departs, and not after it departs), so a malformed pair cannot
+        reach this method. The app says the rule in its own words, in a message
+        string it ships and never uses because the screen that would raise it is
+        server-rendered (``messages.js:217``, ``rsv023``):
+
+            선택하신 열차는 선행 및 후행 열차를 모두 선택하셔야 예약이 가능합니다.
+
+        **What does NOT compose, and why** — the full reasoning is in
+        :func:`~srt_mobile_api.payloads.transfer_reservation_payload`, in
+        summary: no ``round_trip`` (환승+왕복 is refused by the app in both
+        directions, ``ara0101v.js:296-299`` and ``:331-334``), no ``standby``
+        (``jobId=1102`` comes from ONE row's image and a transfer has two, so the
+        app has no rule to copy), no group (단체환승 is a real SRT product but
+        ``reserve_group``'s response is itself unverified), no seat selection
+        (좌석지정 blanks the slot-2 car and seat, ``ara0101v.js:875-879``).
+        ``passengers``, ``seat_type`` and ``window_seat`` DO apply — once, to
+        both legs, because the app's seat-option callback writes slot 1 and slot
+        2 from the same values (``ara0101v.js:769-778``) and passengers are
+        indexed by type rather than by leg.
+
+        **NOT LIVE-VERIFIED — read this before sending one.** No transfer search
+        or reservation has ever been sent from this library. Two specific things
+        an operator should expect to have to settle:
+
+        1. Five slot-2 key NAMES (``stlbTrnClsfCd2``, ``dptStnConsOrdr2``,
+           ``arvStnConsOrdr2``, ``dptStnRunOrdr2``, ``arvStnRunOrdr2``) are
+           inferred from slot 1's names; the server-rendered ``#rsvForm`` is not
+           in the bundle. See
+           :data:`~srt_mobile_api.payloads.TRANSFER_SLOT2_FIELD_EVIDENCE` for the
+           per-key tier.
+        2. ``reserveType`` is sent as ``"11"``, the same value :meth:`reserve`
+           sends. It is srtgo-only (0 hits in our bundle, ``srt.py:990-991``) and
+           it is NOT known whether it tracks ``jrnyTpCd`` — if it does, a
+           transfer would want ``"14"``. It is left at ``"11"`` rather than
+           guessed; if the server rejects the body, that is the first field to
+           try.
+
+        **Cancelling one takes a different argument.** :meth:`cancel` defaults to
+        ``jrnyCnt="1"``; a transfer hold has two journeys, so release it with
+        ``cancel(hold, journey_count="2", consent=…)``. ``cancel`` was not changed
+        — it already takes ``journey_count`` — but its default is wrong for this
+        shape, and getting it wrong is how a hold survives a cancel that looked
+        like it worked. Keep the PNR either way;
+        ``scripts/recover_hold.py`` releases one from the PNR string alone.
+        """
+        return self._submit_reservation(
+            "/arc/selectListArc05013_n.do",
+            lambda key: transfer_reservation_payload(
+                itinerary,
+                passengers or PassengerCounts(),
+                seat_type=seat_type,
+                netfunnel_key=key,
+                window_seat=window_seat,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,
