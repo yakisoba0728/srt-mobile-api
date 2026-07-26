@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+- **Server-side failures now have a taxonomy.** Almost every rejection arrived
+  as one undifferentiated `SrtAppError` with only `NET000001` special-cased, so
+  a caller could not tell "this train is sold out" from "your session died" from
+  "the queue refused you" without substring-matching Korean `msgTxt` — which is
+  what `srtgo` does (`srtgo/srtgo.py:721-744`) and which breaks the day a
+  message is reworded. Six new types, **each subclassing the one it refines**,
+  so no existing `except` clause changes meaning: `SrtNoResultsError`,
+  `SrtInvalidRequestError` and `SrtSeatUnavailableError` under `SrtAppError`;
+  `SrtNetFunnelKeyError` and `SrtQueueRejectedError` under `SrtNetFunnelError`;
+  `SrtIpBlockedError` under `SrtAuthError`. Read the tree as three caller
+  answers: *retry is pointless* (`NoResults`, `InvalidRequest`,
+  `SeatUnavailable`, `QueueRejected`, `IpBlocked`), *re-login and try again*
+  (`SessionExpired`), *get a fresh key* (`NetFunnelKey`).
+  **Classification is on `msgCd`, not on message text, because that is what the
+  app does.** The single place in all 21,673 files of the v2.0.41 bundle where a
+  server-supplied string is branched on is a code — `resultMap.msgCd == "S111"`
+  → `memberShipLogin()` (`ara1001l.js:1562-1573`). Every other branch is
+  `strResult == "FAIL"` (`ara1001l.js:206`, `:234`, `:1855`) or
+  `ErrorCode == -1` (`:193`, `:1840`), which carry no reason at all, and the app
+  never substring-matches `msgTxt` — it only displays it. Each exception keeps
+  the raw `.code` and `.raw`, and an unmapped code still yields a plain
+  `SrtAppError`, so the map grows from real traffic rather than from guesses.
+  The queue is the one subsystem whose own bundle discriminates:
+  `_showResultChkEnter` gives `kTsBlock` (301) and `kTsIpBlock` (302) their own
+  `"onBlock"`/`"onIpBlock"` events beside `"onError"`.
+  **`messages.js` turned out not to be a `msgCd` catalogue** — it is a
+  client-side UI string table keyed `error001`/`rsv001`/`login018`, 172 strings,
+  zero server codes. It matters in exactly one place: the sold-out seat page's
+  error shell embeds `Sr.msgs.error001`, so `SrtSeatUnavailableError.code` is
+  that alert *key*.
+  **Two of srtgo's six leads are confirmed, but by code:**
+  `"로그인 후 사용하십시오"` is our `S111` and
+  `"정상적인 경로로 접근 부탁드립니다"` is our `NET000001`. The remaining four
+  (`잔여석없음`, `사용자가 많아 접속이 원활하지 않습니다`,
+  `예약대기 접수가 마감되었습니다`, `예약대기자한도수초과`) are 0-hit in the
+  bundle, have no known `msgCd`, and the last two describe 예약대기 — a surface
+  this library does not implement. They are **not** encoded; a test pins that
+  they stay plain `SrtAppError`.
+  **No retry behaviour was added.** The single bounded `NET000001` search retry
+  is still the only self-directed retry, and `reserve` is still never retried
+  because a retry duplicates a booking. Both live empty-result shapes are pinned
+  against regression: the empty search FAIL (`WRG000000`) now raises
+  `SrtNoResultsError`, while an empty reservation list still returns an empty
+  list and the second `rsMap`/`WRT300005` FAIL envelope on that same successful
+  response is still never read.
+
 - The NetFunnel queue protocol is now complete. We sent only `getTidChkEnter`
   (5101); the bundle's own vendored `netfunnel.js` defines three request types
   (`RTYPE_CHK_ENTER=5002`, `RTYPE_SET_COMPLETE=5004`,

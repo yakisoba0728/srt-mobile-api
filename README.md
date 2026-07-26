@@ -297,6 +297,106 @@ pip install -e ".[test]"
 pytest -q -m "not live"
 ```
 
+### Error taxonomy
+
+A caller needs three answers out of a failure — *is retrying pointless? do I
+need to log in again? or was the request fine and there was simply nothing
+there?* — and until now the only way to get them was to substring-match the
+Korean `msgTxt`, which is what the third-party `srtgo` does
+(`srtgo/srtgo.py:721-744`). Every server-side failure now arrives as a named
+type instead.
+
+```
+SrtApiError
+├── SrtTransportError            HTTP failed before an app response existed
+├── SrtProtocolError             the response did not match the protocol
+├── SrtAuthError                 login/session
+│   ├── SrtSessionExpiredError   → RE-LOGIN AND TRY AGAIN
+│   └── SrtIpBlockedError        → retry is pointless from this network
+├── SrtAppError                  any app-declared failure (base; unchanged)
+│   ├── SrtNoResultsError        → THE REQUEST WAS FINE, NOTHING MATCHED
+│   ├── SrtInvalidRequestError   → retry is pointless; fix the payload
+│   └── SrtSeatUnavailableError  → retry is pointless for THIS train
+├── SrtMutationNotAllowedError   consent/kill-switch refusal, before any send
+└── SrtNetFunnelError            the queue
+    ├── SrtNetFunnelKeyError     → a fresh key may work (this one IS retried)
+    └── SrtQueueRejectedError    → retry is pointless right now
+```
+
+**Every new type subclasses the one it refines**, so no existing `except`
+clause changes meaning — `except SrtAppError` still catches every app-level
+rejection, `except SrtAuthError` around `login()` still catches an IP block. A
+test checks that exhaustively rather than by example.
+
+**Classification reads `msgCd`, not message text, because that is what the app
+does.** The single place in all 21,673 files of the v2.0.41 bundle where a
+server-supplied string is branched on is a code — `resultMap.msgCd == "S111"`
+(`ara1001l.js:1565`), which stashes the pending form and calls
+`memberShipLogin()`. Every other branch is `strResult == "FAIL"`
+(`ara1001l.js:206`, `:234`, `:1855`) or `ErrorCode == -1` (`:193`, `:1840`),
+neither of which carries a reason at all, and the app never substring-matches
+`msgTxt` — it only displays it. Each exception keeps the raw `.code` and the
+whole `.raw` response, so a caller can handle a code this library has not
+mapped, and so the map can be grown from real traffic.
+
+| Code | Type | Where it was seen |
+|---|---|---|
+| `WRG000000` "조회 결과가 없습니다." | `SrtNoResultsError` | live 2026-07-26, empty search window |
+| `WRT300005` "조회자료가 없습니다." | `SrtNoResultsError` | live 2026-07-26, reservation list `rsMap` |
+| `WRP011002` "승객수 오류" | `SrtInvalidRequestError` | live, reserve runtime probe |
+| `WRR000100` | `SrtInvalidRequestError` | live 2026-07-15, bounded zero-passenger one-shot |
+| `S111` | `SrtSessionExpiredError` | **bundle**, `ara1001l.js:1565` (reserve only) |
+| `NET000001` | `SrtNetFunnelKeyError` | live/spec; **0-hit in the bundle** |
+| `error001` (a `messages.js` key, not a `msgCd`) | `SrtSeatUnavailableError` | live 2026-07-26, sold-out seat page |
+| `301` / `302` (`kTsBlock`/`kTsIpBlock`) | `SrtQueueRejectedError` | **bundle**, netfunnel.js `_showResultChkEnter` |
+
+Anything unmapped stays a plain `SrtAppError` with its code attached — the
+pre-existing behaviour, deliberately unchanged.
+
+Two details worth stating plainly:
+
+- **`messages.js` is not a `msgCd` catalogue.** It is a client-side UI string
+  table keyed `error001`/`rsv001`/`login018` — 172 strings, zero server codes.
+  It earns its keep in exactly one place: the sold-out seat page returns a
+  shell whose only content is
+  `srtAlertBoxDivShow("알림", Sr.msgs.error001, null, "historyBack();")`, so
+  `SrtSeatUnavailableError.code` is that alert *key*. Strictly the shell means
+  "no car is selectable"; sold-out is the observed cause, not a claim the
+  server makes.
+- **The queue distinguishes "refused" from "broken" itself.**
+  `_showResultChkEnter` fires `"onBlock"` and `"onIpBlock"` as events separate
+  from `"onError"`. `303 kTsExpressNumber` also has its own event and is
+  deliberately *not* mapped — it is an admission, not a refusal.
+
+**Nothing about what the library does on its own initiative changed.** The
+single bounded `NET000001` search retry remains the only self-directed retry,
+and `reserve` is still never retried, because a retried reserve is a duplicate
+booking. `srtgo`'s CLI polls forever (`srtgo/srtgo.py:803-807`); that is macro
+behaviour for a CLI, not library behaviour. Three tests pin it: a
+`SrtNoResultsError` and a `SrtInvalidRequestError` search each issue exactly
+one POST, and a `SrtNetFunnelKeyError` search issues exactly two.
+
+**What `srtgo` claimed, and what survived the bundle.** Two of its six
+message-matched rules are independently confirmed, but by code rather than by
+message: `"로그인 후 사용하십시오"` → re-login *is* our `S111`, and
+`"정상적인 경로로 접근 부탁드립니다"` → discard the key *is* our `NET000001`.
+Neither exact substring appears in our bundle (the closest are the app's own
+client-side prompts `"로그인 후 사용하십시요"`, `messages.js:224`, note 시요 not
+시오, and `messages.js:231`). The other four — `"잔여석없음"`,
+`"사용자가 많아 접속이 원활하지 않습니다"`, `"예약대기 접수가 마감되었습니다"`,
+`"예약대기자한도수초과"` — are **0-hit across the bundle, have no known
+`msgCd`, and the last two describe 예약대기 (standby), a surface this library
+does not implement**. They are recorded here as srtgo-attested leads and are
+*not* encoded; a test pins that a FAIL carrying any of them under an unknown
+code stays a plain `SrtAppError`, so the refusal to guess stays a decision.
+
+Finally, the two live empty-result shapes are pinned against regression,
+because this is the change most likely to have broken them: an empty search
+really is a declared FAIL and now raises `SrtNoResultsError`, while an empty
+reservation list is `SUCC`/`IRZ000005` with empty arrays and still returns an
+empty list — the second `rsMap` envelope that says `FAIL`/`WRT300005` on that
+same response is still never read.
+
 ### Typed raw-backed read results
 
 Personal search accepts the exact mixed-case `ErrorCode`/`ErrorMsg` wrapper;
