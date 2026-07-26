@@ -46,9 +46,10 @@ recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
 surface, the two-category live enablement, the operator scripts, the
-reservation-list read, the NetFunnel queue protocol and the error taxonomy
+reservation-list read, the NetFunnel queue protocol, the error taxonomy and the
+real-card acknowledgement gate
 landed, the current offline suite at HEAD is
-`1126 passed, 1 deselected`. The deselected case is the
+`1134 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:

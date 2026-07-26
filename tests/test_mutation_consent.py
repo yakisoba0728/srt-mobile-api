@@ -25,6 +25,7 @@ from srt_mobile_api import (
     TrainSummary,
     require_mutation_consent,
 )
+from srt_mobile_api.consent import require_card_kind_claim
 from srt_mobile_api.errors import SrtApiError, SrtAuthError
 from srt_mobile_api.redaction import redact_payload
 from srt_mobile_api.safety import (
@@ -100,6 +101,10 @@ def test_mutation_consent_defaults_are_safe():
     assert consent.allow_refund is False
     assert consent.dry_run is True
     assert consent.fake_card_only is True
+    # Additive, and defaulted OFF: every consent written before this flag
+    # existed still means exactly what it meant, and the default posture stays
+    # fake-card-only.
+    assert consent.real_card_acknowledged is False
 
 
 def test_mutation_consent_is_frozen():
@@ -291,3 +296,57 @@ def test_reserve_rejects_a_non_srt_train():
     non_srt = dataclasses.replace(_eligible_train(), service_class_code="00")
     with pytest.raises(ValueError):
         client.reserve(non_srt, consent=MutationConsent(allow_reserve=True))
+
+
+# --- The card-kind claim ------------------------------------------------------
+#
+# Ported from the KORAIL port's real-card acknowledgement pattern
+# (korail_mobile_api/consent.py, http.py). A payment transmits the PAN in the
+# clear, so the consent must say WHICH kind of card it is -- exactly one of
+# fake_card_only or real_card_acknowledged.
+
+
+def test_card_kind_claim_accepts_a_default_fake_card_consent():
+    # The historical default. It must keep meaning "a non-chargeable test card"
+    # and must keep passing, or every consent written before the flag existed
+    # would change meaning.
+    require_card_kind_claim(MutationConsent(allow_payment=True))
+
+
+def test_card_kind_claim_accepts_an_acknowledged_real_card():
+    require_card_kind_claim(
+        MutationConsent(
+            allow_payment=True,
+            dry_run=False,
+            fake_card_only=False,
+            real_card_acknowledged=True,
+        )
+    )
+
+
+def test_card_kind_claim_refuses_an_unstated_card_kind():
+    # Neither claim: the historical refusal, unchanged.
+    with pytest.raises(SrtMutationNotAllowedError) as excinfo:
+        require_card_kind_claim(
+            MutationConsent(
+                allow_payment=True, dry_run=False, fake_card_only=False
+            )
+        )
+    assert "unstated card kind is never sent" in str(excinfo.value)
+
+
+def test_card_kind_claim_refuses_a_contradictory_consent():
+    # BOTH claims. A consent cannot simultaneously be a test card and an
+    # acknowledged real charge; it is refused rather than resolved in either
+    # direction, because an ambiguous consent is exactly the state a payment
+    # must never be sent on. Do not "fix" this by picking a winner.
+    with pytest.raises(SrtMutationNotAllowedError) as excinfo:
+        require_card_kind_claim(
+            MutationConsent(
+                allow_payment=True,
+                dry_run=False,
+                fake_card_only=True,
+                real_card_acknowledged=True,
+            )
+        )
+    assert "contradictory consent" in str(excinfo.value)

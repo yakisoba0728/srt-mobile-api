@@ -51,8 +51,46 @@ SENSITIVE_KEYS = frozenset(
         # (srtgo srt.py:1006/1138/1199). pnrNo is already covered above; these are
         # the settlement-target and change-number identifiers.
         "rsvChgTno",
+        # The PNR under its SNAKE_CASE spellings. `pnrNo` and `pnr_number` were
+        # already covered; `pnr_no` was not, and it is BOTH the refund step-2
+        # wire field (srtgo srt.py:1242) and the attribute name on
+        # SrtReservationHold / SrtReservationSummary / SrtRefundTicketInfo. Its
+        # absence meant redact_value(hold) -- which redacts a dataclass by FIELD
+        # NAME -- passed a real PNR through untouched.
+        "pnr_no",
+        # Refund secrets. The ticket RETURN PASSWORD is the credential that
+        # authorises a refund, under all three spellings we have seen it in:
+        # `ogtkRetPwd` (srtgo's step-1 response key), `tkRetPwd` (srtgo's step-2
+        # request field) and `retPwd` (our own app's offline ticket cache,
+        # webview/b.java:645-646). All three are masked, because which of them
+        # the live API actually uses is exactly the question that is unresolved
+        # -- see payloads.refund_payload.
+        "ogtkRetPwd",
+        "tkRetPwd",
+        "retPwd",
+        # Personal names on the refund forms: `buyPsNm` (purchaser, step-1
+        # response and our app's cache) and `psgNm` (passenger, srtgo's step-2
+        # request). Plain PII.
+        "buyPsNm",
+        "psgNm",
+        # SrtPaymentCard's own attribute names, so redact_value on the dataclass
+        # masks by field name rather than relying on CARD_RE to recognise the
+        # digits. CARD_RE only matches a 13-19 digit run, which a deliberately
+        # short synthetic test PAN, a 2-digit PIN, a YYMM expiry and a YYMMDD
+        # birthdate all slip past.
+        "card_number",
+        "card_password",
+        "card_expire_date",
+        "card_validation_number",
     }
 )
+# DELIBERATELY NOT REDACTED, and this is a decision rather than an oversight:
+# the refund's `saleDt` / `saleWctNo` / `saleSqno` (and their `ogtk*` response
+# spellings) are ticket-ISSUANCE identifiers, not credentials. With the return
+# password above masked they authorise nothing, and leaving them legible is what
+# makes a refund MutationPreview readable at all -- every other field on that
+# form is either the PNR, the password or a name. The same line is already drawn
+# on the cancel form, where `pnrNo` is masked and `jrnyCnt` is not.
 CARD_RE = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
 SESSION_RE = re.compile(r"(?i)(JSESSIONID=)[^&;\s]+")
 URL_USERINFO_RE = re.compile(r"(?i)\b(https?://)[^/@\s]+@")

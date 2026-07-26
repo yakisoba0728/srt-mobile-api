@@ -443,7 +443,8 @@ car/seat response or availability contract.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate, the
   consent-gated cancel surface, the reservation-list read, the NetFunnel
-  queue protocol and the error taxonomy: `1126 passed, 1 deselected`; the
+  queue protocol, the error taxonomy and the real-card acknowledgement gate:
+  `1134 passed, 1 deselected`; the
   deselected case remains the explicit live-service opt-in. No live mutation
   was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before

@@ -6,7 +6,13 @@ from srt_mobile_api.models import (
     SrtSession,
     TrainSearchResult,
 )
-from srt_mobile_api.redaction import redact_mapping, redact_text, redact_url, redact_value
+from srt_mobile_api.redaction import (
+    redact_mapping,
+    redact_payload,
+    redact_text,
+    redact_url,
+    redact_value,
+)
 from srt_mobile_api.safety import EXCLUDED_API_DOMAINS
 
 
@@ -160,3 +166,90 @@ def test_safety_excludes_dangerous_domains_without_stub_apis():
     assert "reservation" in EXCLUDED_API_DOMAINS
     assert "ard-payment-entry" in EXCLUDED_API_DOMAINS
     assert "payment" in EXCLUDED_API_DOMAINS
+
+
+# --- Payment and refund secrets ----------------------------------------------
+#
+# Every value below is obviously synthetic. There is no real PAN anywhere in
+# this repository, and these fixtures must never acquire one.
+
+
+def test_redact_payload_masks_every_payment_card_field():
+    # The five secrets a card payment puts on the wire, each under the exact
+    # field name /ata/selectListAta09036_n.do takes. A MutationPreview stores
+    # its payload through redact_payload, so these are what a preview of a
+    # payment can hold.
+    redacted = redact_payload(
+        {
+            "stlCrCrdNo1": "0000000000000000",  # PAN
+            "vanPwd1": "00",  # first two PIN digits
+            "crdVlidTrm1": "0101",  # expiry YYMM
+            "athnVal1": "000101",  # birthdate YYMMDD
+            "athnDvCd1": "J",  # card type
+            "mbCrdNo": "SYNTHETIC-MEMBER",  # membership number
+            "pnrNo": "SYNTHETIC-PNR",
+            # Not a secret: the amount and the fixed protocol constants stay
+            # legible, or a preview says nothing at all.
+            "totNewStlAmt": "36900",
+            "stlMnsCd1": "02",
+        }
+    )
+    for masked in (
+        "stlCrCrdNo1",
+        "vanPwd1",
+        "crdVlidTrm1",
+        "athnVal1",
+        "athnDvCd1",
+        "mbCrdNo",
+        "pnrNo",
+    ):
+        assert redacted[masked] == "[REDACTED]"
+    assert redacted["totNewStlAmt"] == "36900"
+    assert redacted["stlMnsCd1"] == "02"
+
+
+def test_redact_payload_masks_the_refund_return_password_in_every_spelling():
+    # The return password is the credential that authorises a refund, and which
+    # spelling the live API uses is precisely what is unresolved: srtgo's
+    # step-2 request says tkRetPwd, its step-1 response says ogtkRetPwd, and our
+    # own app's offline ticket cache (webview/b.java:645) says retPwd. All three
+    # are masked, so being wrong about the name cannot leak the value.
+    redacted = redact_payload(
+        {
+            "ogtkRetPwd": "SYNTHETIC-RETURN-PASSWORD",
+            "tkRetPwd": "SYNTHETIC-RETURN-PASSWORD",
+            "retPwd": "SYNTHETIC-RETURN-PASSWORD",
+            "buyPsNm": "SYNTHETIC-BUYER",
+            "psgNm": "SYNTHETIC-BUYER",
+            "pnr_no": "SYNTHETIC-PNR",
+        }
+    )
+    assert set(redacted.values()) == {"[REDACTED]"}
+
+
+def test_redact_payload_keeps_refund_sale_identifiers_legible():
+    # The counterpart decision, pinned so it stays a decision: the issuance
+    # identifiers are NOT credentials once the password above is masked, and a
+    # refund preview whose every field is [REDACTED] tells a caller nothing.
+    redacted = redact_payload(
+        {
+            "saleDt": "20990101",
+            "saleWctNo": "0000",
+            "saleSqno": "0001",
+            "cnc_dmn_cont": "승차권 환불로 취소",
+        }
+    )
+    assert redacted["saleDt"] == "20990101"
+    assert redacted["saleWctNo"] == "0000"
+    assert redacted["saleSqno"] == "0001"
+    assert redacted["cnc_dmn_cont"] == "승차권 환불로 취소"
+
+
+def test_redact_value_masks_the_pnr_under_its_snake_case_attribute_name():
+    # redact_value redacts a dataclass by FIELD NAME. `pnr_no` is the attribute
+    # on SrtReservationHold / SrtReservationSummary / SrtRefundTicketInfo and
+    # the refund step-2 wire field, and it used to be absent from SENSITIVE_KEYS
+    # while `pnrNo` and `pnr_number` were present -- so a real PNR passed
+    # through untouched.
+    assert redact_value({"pnr_no": "SYNTHETIC-PNR"}) == {"pnr_no": "[REDACTED]"}
+    assert redact_text("pnr_no=SYNTHETIC-PNR") == "pnr_no=[REDACTED]"

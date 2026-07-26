@@ -5,7 +5,11 @@ from typing import Any, Mapping
 import httpx
 
 from .config import APP_ORIGIN, NETFUNNEL_ORIGIN, SrtConfig
-from .consent import MutationConsent, require_mutation_consent
+from .consent import (
+    MutationConsent,
+    require_card_kind_claim,
+    require_mutation_consent,
+)
 from .errors import (
     SrtAppError,
     SrtAuthError,
@@ -313,7 +317,11 @@ class SrtHttpClient:
         3. ``category`` must be a member of
            :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` — the
            live-enablement block.
-        4. a ``payment`` also requires ``consent.fake_card_only``.
+        4. a ``payment`` also requires an unambiguous card-kind claim —
+           exactly one of ``consent.fake_card_only`` (a non-chargeable test
+           card) or ``consent.real_card_acknowledged`` (an acknowledged real
+           charge); neither and both are refused
+           (:func:`~srt_mobile_api.consent.require_card_kind_claim`).
         5. the client config must use the canonical origins, and
            ``assert_mutation_route`` + ``assert_mutation_route_category``
            restrict the target to
@@ -363,16 +371,23 @@ class SrtHttpClient:
                 "transmits a PAN in the clear. Use dry_run=True for a preview "
                 "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
-        # Defense-in-depth at the transmit boundary: a payment carries the PAN in
-        # the clear (srtgo pay_with_card), so the send gate itself refuses to
-        # transmit one unless fake_card_only is set. (No callable payment method
-        # exists yet; this keeps the invariant at the layer that actually sends.)
-        if category == "payment" and not consent.fake_card_only:
-            raise SrtMutationNotAllowedError(
-                "payment mutations require consent.fake_card_only=True; the PAN "
-                "is transmitted in the clear, so only non-chargeable test cards "
-                "are supported"
-            )
+        # Defense-in-depth at the transmit boundary: a payment carries the PAN
+        # in the clear, so the send gate itself refuses to transmit one unless
+        # the consent states, unambiguously, WHICH kind of card it is — exactly
+        # one of fake_card_only (a test card) or real_card_acknowledged (a real
+        # charge). See consent.require_card_kind_claim, which SrtClient.
+        # pay_with_card also calls before it reaches this method, so the claim
+        # is enforced at the public entry point AND again here at the layer that
+        # actually sends.
+        #
+        # This sits BEHIND the live-enablement block above deliberately. Today
+        # "payment" never gets this far — gate 3 refuses it first, and the
+        # "not live-enabled" refusal is the more informative one to surface, so
+        # the ordering is not an oversight. The check is kept current anyway so
+        # that opening the switch does not silently arrive with an unguarded
+        # PAN.
+        if category == "payment":
+            require_card_kind_claim(consent)
         # Canonical-origin safety, matching the read-only guard's requirement.
         if (
             self.config.base_url != APP_ORIGIN
