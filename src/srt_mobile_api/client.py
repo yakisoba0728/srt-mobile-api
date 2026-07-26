@@ -1044,7 +1044,9 @@ class SrtClient:
                 # Referer -- so this is the app's flow rather than a requirement.
                 referer=f"{self.config.base_url}/arc/selectListArc02012_n.do",
             )
-            return parse_seat_grid_response(raw, car_number=car_number)
+            return parse_seat_grid_response(
+                raw, car_number=car_number, cabin_class=cabin_class
+            )
 
     def get_timetable(self, train: TrainSummary) -> TimetablePage:
         with self._session_guard():

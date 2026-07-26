@@ -471,7 +471,9 @@ class _SeatGridParser(HTMLParser):
         self.handle_starttag(tag, attrs)
 
 
-def parse_seat_grid_response(html: str, *, car_number: str = "") -> SeatGrid:
+def parse_seat_grid_response(
+    html: str, *, car_number: str = "", cabin_class: str = ""
+) -> SeatGrid:
     """Parse the 좌석배치도 fragment ``/arc/selectListArc02011_n.do`` returns.
 
     **Live-captured 2026-07-26**, 수서 -> 동탄, train 315: 25,930 bytes and 74
@@ -526,6 +528,7 @@ def parse_seat_grid_response(html: str, *, car_number: str = "") -> SeatGrid:
         text=extract_text(html),
         raw=html,
         car_number=car_number,
+        cabin_class=cabin_class,
         seats=tuple(parser.seats),
     )
 

@@ -990,6 +990,14 @@ class SeatDesignation:
 
     car_number: str
     seats: tuple[SeatGridSeat, ...]
+    #: The ``psrmClCd`` the grid was FETCHED with ("1" 일반실 / "2" 특실), or
+    #: ``""`` when the designation was built by hand and the cabin is unknown.
+    #: Carried so a reservation cannot pair 특실 seat numbers with a 일반실
+    #: cabin code: nothing else in this chain remembered which cabin the grid
+    #: came from, so that mismatch was previously undetectable after the fact.
+    #: The app cannot produce one at all -- ara1001l.js:1427-1436 settles the
+    #: cabin and the seat-map jobId in a single transition.
+    cabin_class: str = ""
 
     def __post_init__(self) -> None:
         if not _is_digits(self.car_number):
@@ -1034,6 +1042,9 @@ class SeatGrid(HtmlPage):
 
     car_number: str = ""
     seats: tuple[SeatGridSeat, ...] = ()
+    #: The ``psrmClCd`` this grid was requested with. Preserved so
+    #: :meth:`choose` can stamp it onto the designation.
+    cabin_class: str = ""
 
     @property
     def selectable_seats(self) -> tuple[SeatGridSeat, ...]:
@@ -1060,7 +1071,11 @@ class SeatGrid(HtmlPage):
                     f"selectable seats are: {available}"
                 )
             chosen.append(seat)
-        return SeatDesignation(car_number=self.car_number, seats=tuple(chosen))
+        return SeatDesignation(
+            car_number=self.car_number,
+            seats=tuple(chosen),
+            cabin_class=self.cabin_class,
+        )
 
 
 @dataclass(frozen=True)

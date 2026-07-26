@@ -1484,6 +1484,28 @@ def personal_reservation_payload(
     # that seat_type is still type-validated on every path (_resolve_special_seat
     # is where that check lives).
     special_seat = _resolve_special_seat(train, seat_type)
+    # type(...) is SeatDesignation, not truthiness: a wrong type must still
+    # reach the dedicated validator below and get its own message.
+    if type(designated_seats) is SeatDesignation and designated_seats.cabin_class:
+        # The seat numbers and the cabin code must describe the same cabin. They
+        # were decided independently before: the grid was fetched with a
+        # cabin_class the designation did not remember, and psrmClCd1 came from
+        # seat_type alone, so picking 특실 seats and leaving seat_type at its
+        # GENERAL_FIRST default sent 일반실 as the class with 특실 car and seat
+        # numbers beside it. The app cannot express that -- ara1001l.js:1427-1436
+        # settles the cabin and the seat-map jobId in one transition -- so there
+        # is no evidence for how the server would treat it, which is reason
+        # enough not to send it.
+        designated_special = designated_seats.cabin_class == "2"
+        if designated_special != special_seat:
+            raise SrtProtocolError(
+                "SRT seat designation cabin does not match the reservation "
+                f"class: the grid was read as psrmClCd={designated_seats.cabin_class!r} "
+                f"but {seat_type.name} resolved to "
+                f"psrmClCd={'2' if special_seat else '1'!r}. Fetch the grid for "
+                "the cabin you intend to book, or pass "
+                "seat_type=SeatType.SPECIAL_ONLY / GENERAL_ONLY to match it."
+            )
     if standby:
         _refuse_ineligible_standby(train)
         # 예약대기 is a 일반실 waitlist in this app: ara1001l.js:1431 assigns
