@@ -108,14 +108,19 @@ READ_ONLY_ROUTES = frozenset(
         # It is also 0-hit across all 21,673 files of our v2.0.41 offline bundle
         # (as is `Atc14087`; the nearest real routes are Atc14016/Atc14017), and
         # it is single-sourced: ryanking13/SRT has no refund at all, so unlike
-        # the payment this is not even a claim two libraries make.
+        # the payment this is not even a claim two libraries make. The route
+        # itself is no longer a guess, though: it answered a live probe on
+        # 2026-07-26 with a proper business envelope for a non-existent PNR
+        # (msgCd WRT300005, "조회자료가 없습니다."), and then returned a real
+        # ticket's identity in the round trip that followed.
         #
         # Registering it does not put it in a refund's path by accident:
         # SrtClient.refund takes an already-fetched SrtRefundTicketInfo and
-        # never calls this itself, precisely so that a refund -- which can never
-        # be transmitted -- cannot cause a live request as a side effect of
-        # being refused. Reaching this route requires calling
-        # get_refund_ticket_info deliberately.
+        # never calls this itself, precisely so that a refused refund cannot
+        # cause a live request as a side effect of being refused, and so that
+        # step 2 can only ever be built from an identity step 1 actually
+        # returned. Reaching this route requires calling get_refund_ticket_info
+        # deliberately.
         ReadOnlyRoute("POST", "app", REFUND_TICKET_INFO_PATH),
         ReadOnlyRoute("GET", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10007_n.do"),
@@ -147,27 +152,27 @@ READ_ONLY_ROUTES = frozenset(
 #     ``SrtClient.cancel``, ``SrtClient.pay_with_card``, ``SrtClient.refund``.
 #     This is the axis that says the LEAST, which is exactly why it is listed
 #     first: having a method is not permission to send and is not evidence.
-#   * "can be transmitted" — reserve and cancel can, as of the two-category
-#     opening of :data:`SRT_LIVE_MUTATION_CATEGORIES` below, and ONLY under an
-#     explicit per-category ``MutationConsent`` with ``dry_run=False``. payment
-#     and refund still cannot: the send path
-#     (``SrtHttpClient.post_mutation_form``) refuses every category outside
-#     that set, at both the ``post_mutation_form`` gate and again at the
-#     ``_send_mutation_request`` send boundary.
+#   * "can be transmitted" — all four can, as of the 2026-07-26 opening of
+#     :data:`SRT_LIVE_MUTATION_CATEGORIES` below, and ONLY under an explicit
+#     per-category ``MutationConsent`` with ``dry_run=False``. The send path
+#     (``SrtHttpClient.post_mutation_form``) still refuses every category
+#     outside that set, at both the ``post_mutation_form`` gate and again at the
+#     ``_send_mutation_request`` send boundary, and a payment additionally needs
+#     an unambiguous card-kind claim.
 #   * "the shape is confirmed" — a method existing, and a category being
 #     transmittable, still say nothing about the form being the one the server
-#     accepts. For reserve and cancel that question was answered on 2026-07-25 by
-#     one live round trip (SUCC / IRR000018 for reserve, SUCC / IRG000000 for
-#     cancel), for the single-journey one-adult case only. payment and refund
-#     remain unanswered: no live run has ever been made on either, both wire
-#     formats are 0-hit in the offline bundle, the payment shape comes from one
-#     implementation counted twice and the refund shape from one with no
-#     upstream at all, and our own app does not use the payment path.
+#     accepts. That question was answered by two live round trips: reserve and
+#     cancel on 2026-07-25 (SUCC / IRR000018 and SUCC / IRG000000), payment and
+#     refund on 2026-07-26 (SUCC / IRT000000 and SUCC / IRT200277). Each covered
+#     the single-journey one-adult case ONLY, and the two payment/refund routes
+#     remain 0-hit in the offline bundle — the run is live-server evidence, not
+#     static corroboration.
 #
-# So the current invariant is: payment and refund cannot leave the process as a
-# live request no matter how permissive the caller's consent is, while reserve
-# and cancel can — deliberately, so the pair can be verified live — and every
-# one of these four routes remains unreachable through the read-only path.
+# So the current invariant is: each of the four categories may leave the process
+# only under its own explicit consent, only onto its own route (the
+# route/category binding below is re-asserted at the send boundary), only with
+# ``dry_run=False`` — and every one of these four routes remains unreachable
+# through the read-only path.
 #
 # Each host is "app" (POST). The trailing comment names the consent category the
 # route gates.
@@ -179,72 +184,88 @@ SRT_MUTATION_ROUTES = frozenset(
         # cancel (client method exists, preview by default; LIVE-ENABLED;
         # srtgo-sourced shape, 0-hit in v2.0.41, live-verified 2026-07-25)
         MutationRoute("POST", "app", "/ard/selectListArd02045_n.do"),
-        # payment (client method exists, preview ONLY; NOT live-enabled;
+        # payment (client method exists, preview by default; LIVE-ENABLED;
         # srtgo/ryanking13-sourced shape -- one vendored source, not two --
         # 0-hit in v2.0.41, and our app pays via the Ard02017/18 WebView
-        # instead; never sent by anyone here)
+        # instead; live-verified 2026-07-26, SUCC / IRT000000)
         MutationRoute("POST", "app", "/ata/selectListAta09036_n.do"),
-        # refund (client method exists, preview ONLY; NOT live-enabled;
+        # refund (client method exists, preview by default; LIVE-ENABLED;
         # single-source srtgo shape with no upstream at all, 0-hit in v2.0.41;
-        # never sent by anyone here)
+        # live-verified 2026-07-26, SUCC / IRT200277)
         MutationRoute("POST", "app", "/atc/selectListAtc02063_n.do"),
     }
 )
 
 # Consent categories whose requests are permitted to actually reach the network.
 #
-# EXACTLY TWO: "reserve" and "cancel". They are enabled together, and only
-# together, because they are the two halves of one reversible operation:
+# ALL FOUR, as of 2026-07-26. Each one is in this set because a live run
+# answered it, and the entry below records what that entry rests on. Membership
+# is never granted on the strength of an implementation existing; it is granted
+# on the strength of a response from app.srail.or.kr.
 #
-#   * ``SrtClient.reserve`` creates an unpaid hold.
-#   * ``SrtClient.cancel`` releases one, from a full
-#     :class:`~srt_mobile_api.models.SrtReservationHold` or from a bare PNR
-#     string.
+#   * "reserve" — LIVE-VERIFIED 2026-07-25. ``SrtClient.reserve`` created a real
+#     unpaid hold: ``SUCC`` / ``IRR000018``.
+#   * "cancel" — LIVE-VERIFIED 2026-07-25. ``SrtClient.cancel`` released it:
+#     ``SUCC`` / ``IRG000000``, and the ticket list afterwards carried no trace
+#     of the PNR.
+#   * "payment" — LIVE-VERIFIED 2026-07-26. ``SrtClient.pay_with_card`` charged
+#     a real card for a real hold: ``SUCC`` / ``IRT000000``.
+#   * "refund" — LIVE-VERIFIED 2026-07-26. The two-step ``SrtClient.
+#     get_refund_ticket_info`` -> ``SrtClient.refund`` returned the ticket:
+#     ``SUCC`` / ``IRT200277``, after which the account was verified empty of
+#     both reservations and tickets from a separate session.
 #
-# Enabling reserve without cancel would mean a mistake or a crash mid-flow
-# strands a real reservation on a real account with no programmatic way out.
-# Enabling cancel alone is harmless but useless. So the pair is the smallest
-# unit that is safe to open, and this set is what makes the operator-run
-# reserve->cancel round trip (``scripts/verify_reserve_cancel_roundtrip.py``,
-# with ``scripts/recover_hold.py`` as its safety net) physically possible.
+# reserve and cancel were opened FIRST and TOGETHER, before any of this was
+# known, and that ordering was deliberate: they are the two halves of one
+# reversible operation (reserve creates an unpaid hold, cancel releases one,
+# from a hold object or a bare PNR string). Enabling reserve without cancel
+# would mean a mistake or a crash mid-flow strands a real reservation on a real
+# account with no programmatic way out. That pair is what made the operator-run
+# round trip (``scripts/verify_reserve_cancel_roundtrip.py``, with
+# ``scripts/recover_hold.py`` as its safety net) physically possible, and it was
+# a decision about RECOVERABILITY, not evidence. payment and refund were then
+# opened on the same principle: a charge and its reversal, verified as one round
+# trip so nothing could be stranded paid.
 #
-# WHAT OPENING THE GATE DID AND DID NOT CLAIM. It was opened as a decision about
-# recoverability, not evidence — it is what made the verification physically
-# possible. That verification has since happened: on 2026-07-25 one operator-run
-# round trip reserved and cancelled a real hold against the real server
-# (reserve ``SUCC``/``IRR000018``, cancel ``SUCC``/``IRG000000``, and the ticket
-# list afterwards carried no trace of the PNR). So both halves are now confirmed
-# on the live server for the case that was exercised: ONE single-journey,
-# one-adult, general-seat reservation. Multi-leg (``jrnyCnt`` > 1), group and
-# standby were not exercised, and the cancel shape is still 0-hit across all
-# 21,673 files of our v2.0.41 offline bundle — it came from srtgo, and one live
-# success does not make it statically corroborated.
+# THE 2026-07-26 RUN, in full, because these two carried the thinnest evidence in
+# the repository and the run is now the whole of the case for them. A free probe
+# went first: a fake card and a non-existent PNR were sent to both routes, and
+# neither answered with a 404 or an HTML error shell — both answered with proper
+# business envelopes (``/atc/getListAtc14087.do`` with
+# ``msgCd=WRT300005``/"조회자료가 없습니다.", the payment route with
+# ``strResult=FAIL``/``msgCd=WRT100170``). That established the routes EXIST on
+# our app version without spending anything. A real round trip followed: 수서 ->
+# 동탄 (0551 -> 0552, the shortest SRT hop), 2026-08-09, train 315, one adult,
+# 7,500 KRW — paid, then refunded, then confirmed gone.
 #
-# payment AND refund STAY OUT. Both are now IMPLEMENTED --
-# ``SrtClient.pay_with_card`` and ``SrtClient.refund`` exist and build, gate,
-# preview and parse their forms -- and implementing them deliberately did NOT
-# open this gate. What is still missing is the only thing that ever mattered
-# here: live verification of each category's own wire format, which (like
-# cancel's) has zero hits in the offline bundle, and which is worse for these
-# two than for cancel. The payment shape comes from ONE implementation counted
-# twice (srtgo vendored ryanking13/SRT wholesale), the refund shape from one
-# implementation with no upstream at all, and our own app does not use the
-# payment path -- it charges through the Ard02017/18 WebView pages plus a
-# TransKey keypad and FIDO. So both may be legacy paths the server still
-# honours, or dead for our app version; nobody has tested either.
+# WHAT THE RUN DID NOT SETTLE. The origin is unchanged and still worth knowing:
+# ``Ata09036``, ``Atc02063`` and ``Atc14087`` are all 0-hit across the 21,673
+# files of our v2.0.41 offline bundle (which has no ``Atc02*`` family at all),
+# our own app charges through the Ard02017/18 WebView pages plus a TransKey
+# keypad and FIDO rather than this plaintext route, the payment shape comes from
+# ONE implementation counted twice (srtgo vendored ryanking13/SRT wholesale) and
+# the refund shape from one with no upstream at all. One live success does not
+# make any of that statically corroborated, and the run covered exactly one
+# single-journey, one-adult, general-seat ticket paid with one personal card in
+# one lump sum. Multi-leg, group, standby, corporate cards and instalments were
+# not exercised.
 #
-# A payment additionally transmits a PAN in the clear, which is why
+# A payment additionally transmits a PAN in the clear. That is why
 # ``post_mutation_form`` keeps a separate card-kind gate (exactly one of
-# ``fake_card_only`` / ``real_card_acknowledged``) behind this one.
+# ``fake_card_only`` / ``real_card_acknowledged``) behind this one, and why
+# :data:`CARD_SECRET_FIELDS` is enforced on the BODY rather than on the route:
+# opening this gate makes the body-shaped guard matter MORE, not less.
 #
-# Adding "payment" or "refund" to this set before that live verification is a
-# safety regression; ``test_mutation_live_paths`` carries a canary that pins
-# this set to exactly {"reserve", "cancel"} and so fails loudly on either
-# addition.
+# Adding a FIFTH category to this set is a safety decision of the same weight,
+# and must rest on the same kind of evidence; ``test_mutation_live_paths``
+# carries a canary that pins this set to exactly these four and so fails loudly
+# on any addition or removal.
 #
 # Kept as pure data in this module (no imports) so http.py can enforce it
 # without creating an import cycle.
-SRT_LIVE_MUTATION_CATEGORIES: frozenset[str] = frozenset({"reserve", "cancel"})
+SRT_LIVE_MUTATION_CATEGORIES: frozenset[str] = frozenset(
+    {"reserve", "cancel", "payment", "refund"}
+)
 
 # The consent category each mutation route belongs to. The mutation send path
 # cross-checks the caller-supplied category against the route so a consent for
@@ -461,11 +482,17 @@ def _assert_netfunnel_request(url: httpx.URL) -> None:
 #
 # The invariant this restores is worth more than the hole it closes, because it
 # is stated on the DATA rather than on the route: a PAN, a card PIN, a card
-# expiry or a cardholder birthdate may travel only as a ``payment``. Since
-# ``payment`` is not in :data:`SRT_LIVE_MUTATION_CATEGORIES`, the practical
-# consequence today is absolute — **card secrets cannot leave this process at
-# all, by any path.** If payment is ever live-enabled, the check degrades
-# gracefully to "card fields only on a payment" rather than silently vanishing.
+# expiry or a cardholder birthdate may travel only as a ``payment``.
+#
+# THIS CHECK MATTERS MORE SINCE 2026-07-26, NOT LESS. While ``payment`` was
+# outside :data:`SRT_LIVE_MUTATION_CATEGORIES` the consequence was absolute and
+# the guard was, in practice, a second lock on a door that was already welded
+# shut. Now that payment is live-enabled it is the ONLY thing standing between a
+# hand-assembled card form and the wire on every route that is not the payment
+# route: a card body aimed at a read path, at the reserve or cancel route under
+# a perfectly valid consent for that category, or at ``_send_mutation_request``
+# directly, is refused here and nowhere else. The check did not degrade when the
+# gate opened; it became load-bearing.
 CARD_SECRET_FIELDS = frozenset(
     {
         "stlCrCrdNo1",  # PAN
@@ -499,7 +526,7 @@ def assert_no_card_secrets(request: httpx.Request) -> None:
             + ", ".join(sorted(carried))
             + ") on a route that is not the card payment; a PAN, card PIN, "
             "expiry or cardholder birthdate may travel only as a payment "
-            "mutation, which is not live-enabled"
+            "mutation, on the payment route, under a payment consent"
         )
 
 

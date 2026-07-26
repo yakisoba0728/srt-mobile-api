@@ -6,18 +6,44 @@ acquire a real one.
 
 WHAT IS AND IS NOT BEING PINNED. These tests pin that the form is BUILT the way
 the reference implementation's live runs built it, that the odd
-``outDataSets.dsOutput0`` envelope parses, and above all that a payment CANNOT
-BE TRANSMITTED. They pin nothing about whether the live server accepts any of
-it: ``/ata/selectListAta09036_n.do`` is 0-hit across all 21,673 files of our
-v2.0.41 offline decompile, our own app pays through a WebView page plus the
-TransKey keypad and RaonSecure FIDO instead, and the two reference libraries
-that document this form are one vendored source counted twice. A green suite
-here means "we build what srtgo builds", never "this works".
+``outDataSets.dsOutput0`` envelope parses, and — since the 2026-07-26 live
+verification opened the gate — that a payment is GATED AND ROUTED correctly on
+its way to the wire.
+
+The old central claim of this file was "a payment cannot be transmitted". That
+claim is dead: one real charge against the real server answered ``SUCC`` /
+``IRT000000`` (7,500 KRW, 수서 → 동탄, one adult), and a prior fake-card probe
+answered ``FAIL`` / ``WRT100170``. The pins were not deleted with it — they were
+moved onto the invariants that survive, each of which now matters MORE than it
+did while the route was welded shut:
+
+* consent gating: no consent, a default consent, another category's consent and
+  ``dry_run=True`` all still refuse, and still issue zero requests;
+* the card-kind claim: exactly one of ``fake_card_only`` /
+  ``real_card_acknowledged``, neither and both refused;
+* the route/category binding, in both directions;
+* and ``safety.assert_no_card_secrets`` — card secret fields may travel ONLY as
+  a payment, which is now the sole thing keeping a hand-built card form off a
+  read route, off the reserve and cancel routes, and out of the private send
+  boundary under a non-payment category.
+
+What is still NOT pinned here is the server's acceptance of anything the live
+run did not exercise: ``/ata/selectListAta09036_n.do`` is 0-hit across all
+21,673 files of our v2.0.41 offline decompile, our own app pays through a
+WebView page plus the TransKey keypad and RaonSecure FIDO instead, the two
+reference libraries that document this form are one vendored source counted
+twice, and the run covered one single-journey one-adult personal-card lump sum.
+Group, multi-leg, corporate cards and instalments remain "we build what srtgo
+builds".
+
+Nothing here touches a network, a credential or a card: every send is against an
+``httpx.MockTransport``.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from urllib.parse import parse_qsl
 
 import httpx
 import pytest
@@ -91,16 +117,17 @@ def _form(**kwargs) -> dict[str, str]:
 
 
 class _Recorder:
-    def __init__(self) -> None:
+    def __init__(self, reply: dict | None = None) -> None:
         self.requests: list[httpx.Request] = []
+        self.reply = {"ok": True} if reply is None else reply
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        return httpx.Response(200, json={"ok": True})
+        return httpx.Response(200, json=self.reply)
 
 
-def _client() -> tuple[SrtClient, _Recorder]:
-    recorder = _Recorder()
+def _client(reply: dict | None = None) -> tuple[SrtClient, _Recorder]:
+    recorder = _Recorder(reply)
     client = SrtClient(SrtConfig(), transport=httpx.MockTransport(recorder))
     client.session.current = SrtSession(
         login_id="synthetic", user_map={"MB_CRD_NO": FAKE_MEMBERSHIP}
@@ -559,32 +586,51 @@ def test_payment_passenger_count_override_tolerates_surrounding_whitespace():
 # --- THE KILL SWITCH ----------------------------------------------------------
 
 
-def test_payment_is_not_live_enabled_canary():
-    # If this fails because "payment" appeared, do NOT fix the test. Enabling it
-    # is a separate decision that has not been made, and the route has never
-    # been exercised against the real server by anyone here.
-    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset({"reserve", "cancel"})
-    assert "payment" not in SRT_LIVE_MUTATION_CATEGORIES
+def test_payment_is_live_enabled_alongside_the_other_three_canary():
+    # CANARY, inverted rather than deleted on 2026-07-26. It used to pin
+    # "payment is not in the set". The set now means "a live run answered this
+    # category's wire format", and payment qualifies: SUCC / IRT000000 for a
+    # real 7,500 KRW charge, after a fake-card probe drew FAIL / WRT100170.
+    #
+    # The exact contents are still pinned, so a FIFTH category cannot appear
+    # quietly. If this fails because one did, do NOT fix the test — membership
+    # is granted for having been answered by the real server, not for being
+    # implemented, and for payment it also means a PAN travels in the clear.
+    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
+        {"reserve", "cancel", "payment", "refund"}
+    )
+    assert "payment" in SRT_LIVE_MUTATION_CATEGORIES
 
 
 @pytest.mark.parametrize(
     ("fake_card_only", "real_card_acknowledged"),
     [
-        (True, False),  # a fully-permissive consent claiming a test card
+        (True, False),  # a consent claiming a non-chargeable test card
         (False, True),  # ... and one acknowledging a REAL, chargeable card
     ],
 )
-def test_a_fully_permissive_payment_consent_still_cannot_transmit(
+def test_a_fully_valid_payment_consent_puts_the_documented_form_on_the_wire(
     fake_card_only, real_card_acknowledged
 ):
-    # THE CENTRAL INVARIANT OF THIS FILE. Implementing pay_with_card did not
-    # live-enable payment. A consent that opts into every category, sets
-    # dry_run=False, and states its card kind unambiguously -- including the
-    # real-card acknowledgement, the most permissive consent this library can
-    # express -- is still refused, and the recording transport sees ZERO
-    # requests. The refusal comes from the transport layer
-    # (SRT_LIVE_MUTATION_CATEGORIES), not from the absence of a method.
-    client, recorder = _client()
+    # WAS "a fully permissive payment consent still cannot transmit", which was
+    # this file's central invariant until the live verification refuted it. The
+    # pin moved to the question that replaced it: when every gate IS satisfied,
+    # what exactly goes out?
+    #
+    # Answer, asserted on the recorded request rather than on the builder: one
+    # POST, to the payment route and nothing else, form-encoded, carrying the
+    # thirty-one fields card_payment_payload built — the PAN, the PIN prefix,
+    # the expiry, the birthdate, the PNR, the amount and the membership number
+    # among them, byte for byte. Both card-kind claims are exercised, since the
+    # real-card acknowledgement is the most permissive consent this library can
+    # express and must behave identically on the wire.
+    #
+    # The stubbed reply carries the code the LIVE server returned on 2026-07-26
+    # (SUCC / IRT000000), so the round trip pinned here is the one that actually
+    # happened rather than an invented envelope.
+    client, recorder = _client(
+        _payment_response("outDataSets", msgCd="IRT000000")
+    )
     consent = MutationConsent(
         allow_reserve=True,
         allow_payment=True,
@@ -594,15 +640,35 @@ def test_a_fully_permissive_payment_consent_still_cannot_transmit(
         fake_card_only=fake_card_only,
         real_card_acknowledged=real_card_acknowledged,
     )
-    with pytest.raises(SrtMutationNotAllowedError) as excinfo:
-        client.pay_with_card(
-            _reservation(),
-            _card(),
-            consent=consent,
-            settlement_date=SETTLEMENT_DATE,
-        )
-    assert "not live-enabled" in str(excinfo.value)
-    assert recorder.requests == []
+    result = client.pay_with_card(
+        _reservation(),
+        _card(),
+        consent=consent,
+        settlement_date=SETTLEMENT_DATE,
+    )
+    assert isinstance(result, SrtPaymentResult)
+    assert result.succeeded is True
+    assert result.message_code == "IRT000000"
+    assert len(recorder.requests) == 1
+    request = recorder.requests[0]
+    assert request.method == "POST"
+    assert request.url.path == PAYMENT_ROUTE
+    assert request.headers["Content-Type"].startswith(
+        "application/x-www-form-urlencoded"
+    )
+    sent = dict(parse_qsl(request.content.decode("utf-8"), keep_blank_values=True))
+    assert sent == _form()
+    # Named explicitly, because these are the values a live send actually
+    # charges on, and "sent == _form()" alone would keep passing if _form()
+    # itself ever stopped carrying them.
+    assert sent["stlCrCrdNo1"] == FAKE_PAN
+    assert sent["vanPwd1"] == FAKE_PIN_PREFIX
+    assert sent["crdVlidTrm1"] == FAKE_EXPIRY
+    assert sent["athnVal1"] == FAKE_BIRTHDATE
+    assert sent["pnrNo"] == FAKE_PNR
+    assert sent["mbCrdNo"] == FAKE_MEMBERSHIP
+    assert sent["stlDmnDt"] == SETTLEMENT_DATE
+    assert sent["totNewStlAmt"] == "36900"
 
 
 @pytest.mark.parametrize(
@@ -614,6 +680,9 @@ def test_pay_with_card_refuses_an_unstated_or_contradictory_card_kind(
 ):
     # A transmit-path requirement, not a preview one: exactly one of the two
     # claims must hold. Neither and both are refused, and nothing is sent.
+    # Since 2026-07-26 this is the last gate before a real charge — the
+    # live-enablement block used to refuse every payment ahead of it — so the
+    # XOR is what an ambiguous consent now runs into instead of a closed door.
     client, recorder = _client()
     with pytest.raises(SrtMutationNotAllowedError):
         client.pay_with_card(
@@ -644,31 +713,52 @@ def test_a_dry_run_preview_does_not_require_a_card_kind_claim():
     assert recorder.requests == []
 
 
-def test_payment_consent_cannot_be_redirected_onto_an_enabled_route():
-    # A payment consent aimed at the CANCEL route (which is live-enabled) sends
-    # nothing. Two independent things stop it, and the assertions separate them
-    # rather than letting one hide the other:
-    #
-    #   * through post_mutation_form the live-enablement gate fires FIRST, on
-    #     the category, before the route is ever considered;
-    #   * the route/category binding refuses the pairing on its own, which is
-    #     what would still hold if the category were ever enabled.
+@pytest.mark.parametrize(
+    "foreign_route",
+    [
+        "/arc/selectListArc05013_n.do",  # reserve
+        "/ard/selectListArd02045_n.do",  # cancel
+        "/atc/selectListAtc02063_n.do",  # refund
+    ],
+)
+def test_a_payment_consent_cannot_be_aimed_at_another_categorys_route(foreign_route):
+    # The pin that used to read "the live-enablement gate refuses this first,
+    # and the route binding would refuse it anyway". The first half is gone —
+    # payment clears membership since 2026-07-26 — so the second half is now the
+    # ONLY thing stopping a genuine payment consent from POSTing a card form to
+    # the reserve, cancel or refund endpoint. It is asserted through the public
+    # send path (so the real gate ordering is exercised) and directly on
+    # assert_mutation_route_category (so the rule itself is pinned, not just its
+    # current position in the chain).
     from srt_mobile_api.safety import assert_mutation_route_category
 
     client, recorder = _client()
-    with pytest.raises(SrtMutationNotAllowedError) as excinfo:
+    with pytest.raises(SrtProtocolError) as excinfo:
         client.http.post_mutation_form(
-            "/ard/selectListArd02045_n.do",
+            foreign_route,
             _form(),
-            consent=MutationConsent(allow_payment=True, dry_run=False),
+            consent=MutationConsent(
+                allow_payment=True, dry_run=False, fake_card_only=True
+            ),
             category="payment",
         )
-    assert "not live-enabled" in str(excinfo.value)
+    assert "does not match route" in str(excinfo.value)
     assert recorder.requests == []
 
     with pytest.raises(SrtProtocolError):
-        assert_mutation_route_category("/ard/selectListArd02045_n.do", "payment")
+        assert_mutation_route_category(foreign_route, "payment")
     assert_mutation_route_category(PAYMENT_ROUTE, "payment")
+
+
+def test_the_payment_route_refuses_every_other_categorys_consent():
+    # The same cross-check from the other side: the payment route is the one
+    # route that may carry card secrets, so a consent for any OTHER category
+    # must not be able to reach it.
+    from srt_mobile_api.safety import assert_mutation_route_category
+
+    for category in ("reserve", "cancel", "refund"):
+        with pytest.raises(SrtProtocolError):
+            assert_mutation_route_category(PAYMENT_ROUTE, category)
 
 
 def test_the_payment_route_is_not_reachable_through_a_read():
@@ -683,12 +773,21 @@ def test_the_payment_route_is_not_reachable_through_a_read():
         assert_read_only_request(request, SrtConfig())
 
 
-# --- A PAN cannot leave this process by ANY path ------------------------------
+# --- A PAN may leave this process ONLY as a payment ---------------------------
 #
 # The route/category rules could not close one case: a caller hand-assembles a
 # payment body and posts it to a DIFFERENT, permitted route. That is neither a
 # category violation nor a route violation, so nothing else refuses it. These
 # pin the guard stated on the DATA instead.
+#
+# THIS SECTION GOT MORE IMPORTANT ON 2026-07-26, NOT LESS. While payment was
+# outside SRT_LIVE_MUTATION_CATEGORIES the practical consequence of these tests
+# was already guaranteed by the membership gate — card secrets could not leave
+# by ANY path, because no payment could leave at all. Now that payment is
+# live-enabled, assert_no_card_secrets is the only thing left standing between a
+# hand-built card form and the wire on every route that is not the payment
+# route. Each test below is therefore load-bearing on its own, and none of them
+# may be relaxed on the grounds that "some other gate catches it".
 
 
 def test_card_secret_fields_are_the_four_wire_secrets():

@@ -1,20 +1,42 @@
 """Offline contract tests for the SRT refund (환불) surface, both steps.
 
-No network, no credentials, no real ticket. Every value is obviously synthetic.
-
 WHAT IS AND IS NOT BEING PINNED. These pin that the two-step flow is BUILT and
-PARSED the way the single reference implementation's live runs did it, and above
-all that a refund CANNOT BE TRANSMITTED and that a refused refund sends nothing
-at all -- not even the step-1 read. They pin nothing about whether the live
-server accepts any of it. This surface has thinner evidence than the card
-payment: ``Atc02063`` and ``Atc14087`` are 0-hit across all 21,673 files of our
-v2.0.41 offline decompile (the bundle has no ``Atc02*`` family whatsoever), and
-unlike the payment it is not even a claim two libraries make -- ryanking13/SRT
-has no refund at all, so there is exactly one source and no upstream to
-corroborate it.
+PARSED the way the single reference implementation's live runs did it, and --
+since the 2026-07-26 live verification opened the gate -- that a refund is GATED,
+ROUTED and SEQUENCED correctly on its way to the wire.
+
+The old central claim of this file was "a refund cannot be transmitted". That
+claim is dead: one real refund against the real server returned a real ticket
+and answered ``SUCC`` / ``IRT200277``, after which the account was confirmed
+empty of both reservations and tickets from a separate session. The pins were
+not deleted with it, they were moved onto the invariants that survive:
+
+* consent gating -- no consent, a default consent, another category's consent
+  and ``dry_run=True`` all still refuse, and still issue zero requests;
+* the route/category binding, in both directions;
+* the TWO-STEP SEPARATION: step 1 still POSTs no body at all, and step 2 is
+  still built only from an identity step 1 returned. ``refund`` never fetches
+  its own ``SrtRefundTicketInfo``, so a refused refund makes zero requests and a
+  permitted one makes exactly one -- to the refund route, never to step 1.
+
+One doubt this file used to record is now settled rather than pinned open:
+srtgo's ``tkRetPwd`` / ``psgNm`` / ``pnr_no`` spellings are the ones the live
+server accepted, so they are pinned as CORRECT instead of as DISPUTED.
+
+What is still not pinned is anything the run did not exercise. ``Atc02063`` and
+``Atc14087`` are 0-hit across all 21,673 files of our v2.0.41 offline decompile
+(the bundle has no ``Atc02*`` family whatsoever), and unlike the payment this is
+not even a claim two libraries make -- ryanking13/SRT has no refund at all, so
+there is exactly one source and no upstream. The run covered one single-journey,
+one-adult ticket.
+
+No network, no credentials, no real ticket: every value is obviously synthetic
+and every send is against an ``httpx.MockTransport``.
 """
 
 from __future__ import annotations
+
+from urllib.parse import parse_qsl
 
 import httpx
 import pytest
@@ -355,19 +377,26 @@ def test_refund_form_maps_step_one_fields_onto_their_renamed_step_two_names():
     assert form["psgNm"] == FAKE_BUYER
 
 
-def test_refund_form_uses_the_disputed_srtgo_spellings_deliberately():
-    # DISPUTED, and pinned so the choice stays visible rather than becoming an
-    # accident. srtgo says tkRetPwd / psgNm / pnr_no; our OWN app's offline
-    # ticket cache says retPwd / buyPsNm / pnrNo
+def test_refund_form_uses_the_srtgo_spellings_the_live_server_accepted():
+    # SETTLED 2026-07-26, and the pin stays because the answer is now a fact
+    # worth protecting rather than a choice worth flagging. srtgo says
+    # tkRetPwd / psgNm / pnr_no; our OWN app's offline ticket cache says
+    # retPwd / buyPsNm / pnrNo
     # (analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:645,648,651).
     # That site deserialises a base64 SharedPreferences blob ("ticketListOffline")
-    # into a display model -- a LOCAL CACHE, not an outbound request -- so it is
-    # not evidence about this endpoint. We send srtgo's spelling because it is
-    # the only one attested by a live run of THIS route.
+    # into a display model -- a LOCAL CACHE, not an outbound request -- so it was
+    # never evidence about this endpoint, and the live refund proved it: this
+    # exact form returned a real ticket (SUCC / IRT200277).
     #
-    # If this route is ever exercised and rejected, invert these three first.
-    # The project has been burned here before: srtgo's txtPrnNo for korail's
-    # txtPnrNo, the same class of single-source trust.
+    # This test used to say the three names were DISPUTED and to nominate the
+    # cache spellings as the first thing to try if the route were ever rejected.
+    # It was not: the route was exercised and accepted. Do not "correct" these
+    # to the app's cache spellings.
+    #
+    # The precedent that motivated the doubt still stands and is worth keeping
+    # straight: srtgo really did ship txtPrnNo for korail's txtPnrNo. srtgo was
+    # wrong there and right here, so single-source field names have to be tested
+    # one at a time, not trusted or distrusted as a class.
     form = refund_payload(_info())
     assert "tkRetPwd" in form and "retPwd" not in form
     assert "psgNm" in form and "buyPsNm" not in form
@@ -491,52 +520,92 @@ def test_refund_preview_redacts_the_password_the_name_and_the_pnr():
 # --- THE KILL SWITCH ----------------------------------------------------------
 
 
-def test_refund_is_not_live_enabled_canary():
-    # If this fails because "refund" appeared, do NOT fix the test. Enabling it
-    # is a separate decision that has not been made, and this route has the
-    # thinnest evidence in the repository.
-    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset({"reserve", "cancel"})
-    assert "refund" not in SRT_LIVE_MUTATION_CATEGORIES
+def test_refund_is_live_enabled_alongside_the_other_three_canary():
+    # CANARY, inverted rather than deleted on 2026-07-26. It used to pin
+    # "refund is not in the set". The set now means "a live run answered this
+    # category's wire format", and refund qualifies: SUCC / IRT200277 for a real
+    # ticket, with the account confirmed empty afterwards from a separate
+    # session.
+    #
+    # The exact contents are still pinned, so a FIFTH category cannot appear
+    # quietly. If this fails because one did, do NOT fix the test -- membership
+    # is granted for having been answered by the real server, not for being
+    # implemented.
+    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
+        {"reserve", "cancel", "payment", "refund"}
+    )
+    assert "refund" in SRT_LIVE_MUTATION_CATEGORIES
 
 
-def test_a_fully_permissive_refund_consent_still_cannot_transmit():
-    # THE CENTRAL INVARIANT. A consent opting into every category with
-    # dry_run=False is refused, and the recording transport sees ZERO requests.
-    client, recorder = _client()
-    with pytest.raises(SrtMutationNotAllowedError) as excinfo:
-        client.refund(
-            _info(),
-            consent=MutationConsent(
-                allow_reserve=True,
-                allow_payment=True,
-                allow_cancel=True,
-                allow_refund=True,
-                dry_run=False,
-                fake_card_only=False,
-                real_card_acknowledged=True,
-            ),
-        )
-    assert "not live-enabled" in str(excinfo.value)
-    assert recorder.requests == []
+def test_a_fully_valid_refund_consent_puts_the_documented_form_on_the_wire():
+    # WAS "a fully permissive refund consent still cannot transmit", which was
+    # this file's central invariant until the live verification refuted it. The
+    # pin moved to the question that replaced it: when every gate IS satisfied,
+    # what exactly goes out?
+    #
+    # Answer, asserted on the recorded request rather than on the builder: one
+    # POST, to the refund route and nothing else, carrying the seven documented
+    # fields with srtgo's spellings -- the same body the live server accepted.
+    # The stubbed reply carries the code it returned (SUCC / IRT200277).
+    client, recorder = _client(
+        {"resultMap": [{"strResult": "SUCC", "msgCd": "IRT200277", "msgTxt": "정상처리"}]}
+    )
+    result = client.refund(
+        _info(),
+        consent=MutationConsent(
+            allow_reserve=True,
+            allow_payment=True,
+            allow_cancel=True,
+            allow_refund=True,
+            dry_run=False,
+            fake_card_only=False,
+            real_card_acknowledged=True,
+        ),
+    )
+    assert isinstance(result, SrtRefundResult)
+    assert result.succeeded is True
+    assert result.message_code == "IRT200277"
+    assert len(recorder.requests) == 1
+    request = recorder.requests[0]
+    assert request.method == "POST"
+    assert request.url.path == REFUND_ROUTE
+    sent = dict(parse_qsl(request.content.decode("utf-8"), keep_blank_values=True))
+    assert sent == refund_payload(_info())
+    assert sent["tkRetPwd"] == FAKE_RETURN_PASSWORD
+    assert sent["psgNm"] == FAKE_BUYER
+    assert sent["pnr_no"] == FAKE_PNR
 
 
-def test_a_refused_refund_does_not_perform_the_step_one_read_either():
-    # THE REASON THE TWO STEPS ARE SEPARATE METHODS. Fusing them would mean
-    # every refund attempt fires a real step-1 request and only THEN discovers
-    # step 2 is refused -- a live request left behind for an operation that can
-    # never complete. refund() takes an already-fetched SrtRefundTicketInfo and
-    # never calls step 1 itself, so a refused refund touches the network zero
-    # times. Do not "simplify" this by having refund() fetch its own info.
+def test_a_refund_never_performs_the_step_one_read_itself():
+    # THE REASON THE TWO STEPS ARE SEPARATE METHODS, and it did not change when
+    # the gate opened -- only the reason for caring did. It used to be "a
+    # refused refund must not leave a live step-1 request behind for an
+    # operation that can never complete". Now that a refund CAN complete, the
+    # surviving invariant is the sequencing one: step 2's body is nothing but
+    # the identity step 1 returned, so refund() takes an already-fetched
+    # SrtRefundTicketInfo and never fetches one itself. A refused refund still
+    # makes zero requests; a permitted one makes exactly one, to the refund
+    # route, never to step 1.
+    #
+    # Do not "simplify" this by having refund() fetch its own info.
     client, recorder = _client()
     with pytest.raises(SrtMutationNotAllowedError):
-        client.refund(
-            _info(),
-            consent=MutationConsent(allow_refund=True, dry_run=False),
-        )
+        client.refund(_info(), consent=MutationConsent(dry_run=False))
     assert recorder.requests == []
+
+    permitted, recorder = _client(
+        {"resultMap": [{"strResult": "SUCC", "msgCd": "IRT200277"}]}
+    )
+    permitted.refund(
+        _info(), consent=MutationConsent(allow_refund=True, dry_run=False)
+    )
+    assert [request.url.path for request in recorder.requests] == [REFUND_ROUTE]
+    assert TICKET_INFO_ROUTE not in [
+        request.url.path for request in recorder.requests
+    ]
     # `refund` must not even hold a reference to step 1: assert on the source
-    # rather than re-filtering the empty list above, which would be vacuously
-    # true and would survive any regression.
+    # rather than re-filtering the list above, which would keep passing if the
+    # coupling were reintroduced behind a conditional.
     import inspect
 
     source = inspect.getsource(SrtClient.refund)
@@ -554,9 +623,42 @@ def test_refund_route_is_not_reachable_through_a_read():
         assert_read_only_request(request, SrtConfig())
 
 
-def test_refund_consent_cannot_be_pointed_at_another_categorys_route():
+@pytest.mark.parametrize(
+    "foreign_route",
+    [
+        "/arc/selectListArc05013_n.do",  # reserve
+        "/ard/selectListArd02045_n.do",  # cancel
+        "/ata/selectListAta09036_n.do",  # payment
+    ],
+)
+def test_a_refund_consent_cannot_be_aimed_at_another_categorys_route(foreign_route):
+    # The route/category cross-check, and since 2026-07-26 it is the only thing
+    # stopping a genuine refund consent from POSTing this body to a different
+    # category's endpoint -- the live-enablement block used to refuse a refund
+    # ahead of it. Asserted through the public send path (real gate ordering)
+    # and directly on the rule.
     from srt_mobile_api.safety import assert_mutation_route_category
 
+    client, recorder = _client()
+    with pytest.raises(SrtProtocolError) as excinfo:
+        client.http.post_mutation_form(
+            foreign_route,
+            refund_payload(_info()),
+            consent=MutationConsent(allow_refund=True, dry_run=False),
+            category="refund",
+        )
+    assert "does not match route" in str(excinfo.value)
+    assert recorder.requests == []
+
     with pytest.raises(SrtProtocolError):
-        assert_mutation_route_category("/ard/selectListArd02045_n.do", "refund")
+        assert_mutation_route_category(foreign_route, "refund")
     assert_mutation_route_category(REFUND_ROUTE, "refund")
+
+
+def test_the_refund_route_refuses_every_other_categorys_consent():
+    # The same cross-check from the other side.
+    from srt_mobile_api.safety import assert_mutation_route_category
+
+    for category in ("reserve", "cancel", "payment"):
+        with pytest.raises(SrtProtocolError):
+            assert_mutation_route_category(REFUND_ROUTE, category)

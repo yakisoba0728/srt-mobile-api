@@ -251,13 +251,13 @@ class SrtHttpClient:
         # just the category half. Three checks, and all three must hold:
         #
         #   * the category is live-enabled. SRT_LIVE_MUTATION_CATEGORIES holds
-        #     exactly {"reserve", "cancel"}, so this refuses payment and refund
+        #     the four live-verified categories, so this refuses anything else
         #     outright.
         #   * the path is one of the four registered mutation routes, so this
         #     function cannot be repurposed to POST an arbitrary endpoint.
         #   * the path BELONGS to that category. Without this one the first
-        #     check is not sufficient: category="reserve" (live-enabled) paired
-        #     with the payment route would build and send a POST to
+        #     check is not sufficient: category="reserve" paired with the
+        #     payment route would build and send a POST to
         #     /ata/selectListAta09036_n.do, carrying whatever `data` held —
         #     which for a payment is a PAN in the clear. The route/category
         #     binding used to live only in post_mutation_form, so a direct call
@@ -268,7 +268,7 @@ class SrtHttpClient:
         if category not in SRT_LIVE_MUTATION_CATEGORIES:
             raise SrtMutationNotAllowedError(
                 f"SRT mutation category {category!r} is not live-enabled; only "
-                "reserve and cancel may be transmitted (see "
+                "reserve, cancel, payment and refund may be transmitted (see "
                 "safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
         assert_mutation_route("POST", path)
@@ -338,17 +338,22 @@ class SrtHttpClient:
            category.
 
         Gate 3 is the decisive one: ``SRT_LIVE_MUTATION_CATEGORIES`` holds
-        exactly ``{"reserve", "cancel"}``. So **``payment`` and ``refund`` are
-        refused here unconditionally** with
+        exactly ``{"reserve", "cancel", "payment", "refund"}`` — the four
+        categories a live run has answered (reserve/cancel 2026-07-25,
+        payment/refund 2026-07-26). Anything else is refused here
+        unconditionally with
         :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError`, no matter how
-        permissive the consent is, while a consented, non-dry-run ``reserve`` or
-        ``cancel`` proceeds to the wire. ``_send_mutation_request``, the function
+        permissive the consent is, while a consented, non-dry-run call in one of
+        the four proceeds to the wire. ``_send_mutation_request``, the function
         that actually calls ``send``, independently re-asserts all of gate 3 and
         gate 5 — membership, ``assert_mutation_route`` and
-        ``assert_mutation_route_category`` — so both the payment/refund refusal
-        and the route/category binding hold at the true send boundary, and an
-        enabled category cannot be pointed at another category's route there.
-        Meanwhile the read-only path
+        ``assert_mutation_route_category`` — so both the membership check and the
+        route/category binding hold at the true send boundary, and no category
+        can be pointed at another category's route there. It also applies
+        :func:`~srt_mobile_api.safety.assert_no_card_secrets` to every
+        non-``payment`` category, which is the only thing that stops a
+        hand-assembled card body riding a genuine ``reserve`` consent now that
+        payment is enabled. Meanwhile the read-only path
         (:func:`~srt_mobile_api.safety.assert_read_only_request`) refuses all
         four routes by allowlist, so a mutation can only ever travel this
         method.
@@ -367,18 +372,18 @@ class SrtHttpClient:
         # Live-enablement block. Placed after the consent and dry-run gates (so
         # those keep their meaning and their error messages) but before every
         # check below, because from here on a call would otherwise actually
-        # transmit. SRT_LIVE_MUTATION_CATEGORIES holds {"reserve", "cancel"},
-        # so this is what refuses payment and refund at the transport layer
-        # rather than merely by the absence of a client method.
+        # transmit. SRT_LIVE_MUTATION_CATEGORIES holds the four categories whose
+        # wire format a live run has answered, so this is what refuses anything
+        # else at the transport layer rather than merely by the absence of a
+        # client method.
         if category not in SRT_LIVE_MUTATION_CATEGORIES:
             raise SrtMutationNotAllowedError(
                 f"SRT mutation category {category!r} is not live-enabled: only "
-                "reserve and cancel may be transmitted, because they are the "
-                "two halves of one reversible operation. payment and refund are "
-                "implemented but unverified: enabling either requires verifying "
-                "its wire format against the live server, which nobody has "
-                "done, and a payment additionally transmits a PAN in the clear. "
-                "Use dry_run=True for a preview "
+                "reserve, cancel, payment and refund may be transmitted, and "
+                "each is in that set because a live run answered it (reserve "
+                "and cancel 2026-07-25, payment and refund 2026-07-26). Adding "
+                "a category requires verifying its wire format against the live "
+                "server first. Use dry_run=True for a preview "
                 "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
             )
         # Defense-in-depth at the transmit boundary: a payment carries the PAN
@@ -390,12 +395,11 @@ class SrtHttpClient:
         # is enforced at the public entry point AND again here at the layer that
         # actually sends.
         #
-        # This sits BEHIND the live-enablement block above deliberately. Today
-        # "payment" never gets this far — gate 3 refuses it first, and the
-        # "not live-enabled" refusal is the more informative one to surface, so
-        # the ordering is not an oversight. The check is kept current anyway so
-        # that opening the switch does not silently arrive with an unguarded
-        # PAN.
+        # This sits BEHIND the live-enablement block above deliberately: a
+        # category that may not be transmitted at all should say so first. Since
+        # 2026-07-26 "payment" clears gate 3, so this is now the gate that
+        # actually decides whether a PAN goes out — exactly what it was kept
+        # current for while the switch was shut.
         if category == "payment":
             require_card_kind_claim(consent)
         # Canonical-origin safety, matching the read-only guard's requirement.

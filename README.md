@@ -61,10 +61,10 @@ reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
 surface, the two-category live enablement, the operator scripts, the
 reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
-real-card acknowledgement gate and the consent-gated card-payment and refund
-surfaces
+real-card acknowledgement gate, the consent-gated card-payment and refund
+surfaces and the four-category live enablement
 landed, the current offline suite at HEAD is
-`1285 passed, 1 deselected`. The deselected case is the
+`1307 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:

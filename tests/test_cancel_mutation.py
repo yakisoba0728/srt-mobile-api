@@ -621,20 +621,22 @@ def test_cancel_is_bound_to_the_cancel_route_and_category():
         assert_read_only_request(request, SrtConfig())
 
 
-def test_cancel_is_live_enabled_but_payment_and_refund_are_not():
+def test_cancel_is_live_enabled_alongside_the_other_three():
     # The gate this whole surface depends on. cancel must be enabled or a hold
-    # created by reserve could not be released; payment and refund must not be,
-    # since neither is implemented or live-verified.
+    # created by reserve could not be released. This used to add "and payment
+    # and refund must NOT be"; both were live-verified on 2026-07-26 and joined
+    # the set, so the assertion moved from their absence to the exact contents —
+    # the four categories a live run has answered, and no fifth.
+    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
+        {"reserve", "cancel", "payment", "refund"}
+    )
     assert "cancel" in SRT_LIVE_MUTATION_CATEGORIES
     assert "reserve" in SRT_LIVE_MUTATION_CATEGORIES
-    assert "payment" not in SRT_LIVE_MUTATION_CATEGORIES
-    assert "refund" not in SRT_LIVE_MUTATION_CATEGORIES
 
 
 def test_cancel_live_path_wiring_parses_the_envelope_without_opening_the_gate():
-    # The send path cannot be exercised for real (and must not be: the gate
-    # stays closed), so stub the ONE call cancel makes and assert what it hands
-    # over and what it does with the answer. This pins the route, category,
+    # Stub the ONE call cancel makes and assert what it hands over and what it
+    # does with the answer. This pins the route, category,
     # consent and form that a live send would carry, and that the response is
     # returned as a parsed SrtCancelResult rather than a raw dict.
     client, recorder = _client_with(_cancel_reply())

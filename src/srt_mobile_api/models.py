@@ -403,12 +403,15 @@ INSTALLMENT_MONTH_OPTIONS = frozenset({0, *range(2, 13), 24})
 
 @dataclass(frozen=True)
 class SrtPaymentCard:
-    """The card fields a 카드결제 puts on the wire, validated but never sent here.
+    """The card fields a 카드결제 puts on the wire, validated before they go.
 
-    **Nothing in this library can transmit these values.** ``payment`` is
-    outside :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, so
-    :meth:`~srt_mobile_api.client.SrtClient.pay_with_card` can only ever return
-    a redacted preview. This type exists so the form can be BUILT and checked.
+    **These values really can be transmitted.** ``payment`` joined
+    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` on 2026-07-26, so
+    :meth:`~srt_mobile_api.client.SrtClient.pay_with_card` with
+    ``dry_run=False`` and an unambiguous card-kind claim will charge this card.
+    The default remains a redacted preview, and
+    :data:`~srt_mobile_api.safety.CARD_SECRET_FIELDS` keeps these four names off
+    every route that is not the payment route.
 
     The four SECRET fields — :attr:`card_number`, :attr:`card_password`,
     :attr:`card_validation_number`, :attr:`card_expire_date` — are each
@@ -478,13 +481,14 @@ class SrtPaymentCard:
 class SrtPaymentResult:
     """The parsed envelope of a card payment (카드결제).
 
-    **UNVERIFIED, and differently unverified from every other envelope here.**
-    The route, the body and this envelope come from the reference
-    implementations' live runs only; the route ``Ata09036`` has zero hits across
+    **LIVE-VERIFIED 2026-07-26**: one real charge answered ``SUCC`` /
+    ``IRT000000`` and one fake-card probe answered ``FAIL`` / ``WRT100170``, so
+    both branches below have been read off the wire. The origin is unchanged —
+    the route, the body and this envelope came from the reference
+    implementations' live runs only, the route ``Ata09036`` has zero hits across
     all 21,673 files of our v2.0.41 offline decompile, and our own app does not
     use this path at all (see
-    :func:`~srt_mobile_api.parsers.parse_card_payment_response`). No request has
-    ever been sent, so no response has ever been seen by this repository.
+    :func:`~srt_mobile_api.parsers.parse_card_payment_response`).
 
     ``succeeded`` and ``failed`` are NOT complements, and that is the point. The
     reference implementations treat only an explicit ``"FAIL"`` as a failure and
@@ -517,8 +521,8 @@ class SrtRefundTicketInfo:
     ``outDataSets.dsOutput1[0]`` — note ``dsOutput1``, not the ``dsOutput0``
     every other read here uses. See
     :func:`~srt_mobile_api.parsers.parse_refund_ticket_info_response` for the
-    provenance, which is thinner than the payment's: this route exists in ONE
-    reference library, not two.
+    provenance: this route exists in ONE reference library, not two, and is
+    live-verified as of 2026-07-26.
 
     :attr:`return_password` is the credential that authorises the refund and is
     hidden from ``repr``; it and :attr:`buyer_name` and :attr:`pnr_no` are
@@ -540,12 +544,14 @@ class SrtRefundTicketInfo:
 class SrtRefundResult:
     """The parsed envelope of a paid-ticket refund (환불).
 
-    **UNVERIFIED, and by a thinner margin than anything else here.** Unlike the
-    payment — which at least has one implementation copied into two libraries —
-    this route exists in exactly ONE reference implementation, was added there
-    four days after it vendored its SRT support from elsewhere, and has no
-    upstream at all. The route is 0-hit across all 21,673 files of our v2.0.41
-    offline decompile, and no request has ever been sent from this repository.
+    **LIVE-VERIFIED 2026-07-26**: ``SUCC`` / ``IRT200277`` for a real ticket,
+    after which the account was confirmed empty from a separate session. The
+    origin is unchanged and still the thinnest here. Unlike the payment — which
+    at least has one implementation copied into two libraries — this route
+    exists in exactly ONE reference implementation, was added there four days
+    after it vendored its SRT support from elsewhere, and has no upstream at
+    all. The route is 0-hit across all 21,673 files of our v2.0.41 offline
+    decompile, so the run is live-server evidence and not static corroboration.
 
     The envelope itself is the ordinary SRT ``resultMap`` SUCC/FAIL one — the
     same as cancel's, and unlike the payment's ``outDataSets.dsOutput0``. A

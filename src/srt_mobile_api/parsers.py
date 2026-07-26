@@ -1264,17 +1264,19 @@ def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
 def parse_card_payment_response(data: dict[str, Any]) -> SrtPaymentResult:
     """Parse the response of a card payment (카드결제).
 
-    **NOTHING HAS EVER SEEN ONE OF THESE.** No payment request has been sent
-    from this repository and none can be — ``payment`` is outside
-    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`. The shape below
-    is what the reference implementations' live runs read, and their agreement
-    is not corroboration: srtgo's payment code is a vendored copy of
-    ryanking13/SRT's (see
-    :func:`~srt_mobile_api.payloads.card_payment_payload`), so this is one
+    **LIVE-VERIFIED 2026-07-26.** One real charge against the real server —
+    7,500 KRW, 수서 → 동탄, one adult — answered in exactly this envelope:
+    ``strResult='SUCC'``, ``msgCd='IRT000000'``. A prior probe with a fake card
+    and a non-existent PNR answered ``strResult='FAIL'``, ``msgCd='WRT100170'``,
+    so both branches of the parse below have now been read off the wire.
+
+    The origin is unchanged and still worth knowing. The shape came from the
+    reference implementations' live runs, and their agreement is not
+    corroboration: srtgo's payment code is a vendored copy of ryanking13/SRT's
+    (see :func:`~srt_mobile_api.payloads.card_payment_payload`), so that is one
     source, not two. The route itself is 0-hit across all 21,673 files of our
     v2.0.41 offline decompile, and our own app pays through a WebView page and a
-    secure keypad instead, so it is entirely possible this endpoint is dead for
-    our app version.
+    secure keypad instead — the server honours this plaintext route anyway.
 
     THE ENVELOPE IS THE ODD ONE OUT, and that is the one genuinely interesting
     fact here. Every other SRT mutation this library parses answers in
@@ -1326,12 +1328,15 @@ def parse_refund_ticket_info_response(
 ) -> SrtRefundTicketInfo:
     """Parse refund step 1 — the issued ticket's identity.
 
-    **UNVERIFIED, and single-sourced.** ``/atc/getListAtc14087.do`` is 0-hit
-    across all 21,673 files of our v2.0.41 offline decompile (as is
-    ``Atc14087``; the nearest real routes are ``Atc14016`` and ``Atc14017``),
-    and unlike the card payment it is not even a claim two libraries make:
-    ryanking13/SRT has no refund at all, and srtgo added this route from
-    scratch. No response has ever been observed by this repository.
+    **LIVE-VERIFIED 2026-07-26, and still single-sourced.**
+    ``/atc/getListAtc14087.do`` is 0-hit across all 21,673 files of our v2.0.41
+    offline decompile (as is ``Atc14087``; the nearest real routes are
+    ``Atc14016`` and ``Atc14017``), and unlike the card payment it is not even a
+    claim two libraries make: ryanking13/SRT has no refund at all, and srtgo
+    added this route from scratch. What the live run added is that the route
+    answers: a non-existent PNR drew the business envelope
+    ``msgCd='WRT300005'`` / "조회자료가 없습니다." in ``dsOutput0``, and a real
+    ticket's identity came back in ``dsOutput1`` exactly as described below.
 
     TWO SHAPE ODDITIES, both srtgo's and neither ours:
 
@@ -1345,8 +1350,8 @@ def parse_refund_ticket_info_response(
       ``ErrorCode`` in ``{"", "0"}`` and ignore the message.
 
     The strict condition is implemented as documented rather than relaxed to
-    match the house style. On a route nobody has exercised, failing loudly on a
-    response we only half recognise is the cheap mistake — a refund that will
+    match the house style. On a route with one attesting source, failing loudly
+    on a response we only half recognise is the cheap mistake — a refund that will
     not build costs nothing, whereas proceeding from a misread identity is how
     the wrong ticket gets refunded. Any deviation raises
     :class:`~srt_mobile_api.errors.SrtAppError` carrying the server's own code
@@ -1445,20 +1450,24 @@ def parse_refund_ticket_info_response(
 def parse_refund_response(data: dict[str, Any]) -> SrtRefundResult:
     """Parse refund step 2 — the ordinary ``resultMap`` SUCC/FAIL envelope.
 
-    **NOTHING HAS EVER SEEN ONE.** No refund request has been sent from this
-    repository and none can be: ``refund`` is outside
-    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`.
-    ``/atc/selectListAtc02063_n.do`` is 0-hit across all 21,673 files of our
-    v2.0.41 offline decompile — the bundle has no ``Atc02*`` family at all — and
-    it is attested by exactly one reference implementation, with no upstream to
-    corroborate it. See :func:`~srt_mobile_api.payloads.refund_payload` for the
-    disputed field names on the request side.
+    **LIVE-VERIFIED 2026-07-26.** One real refund against the real server
+    returned the 수서 → 동탄 ticket bought minutes earlier and answered
+    ``strResult='SUCC'``, ``msgCd='IRT200277'``; the account was then confirmed
+    empty of both reservations and tickets from a separate session.
+
+    The origin is unchanged. ``/atc/selectListAtc02063_n.do`` is 0-hit across all
+    21,673 files of our v2.0.41 offline decompile — the bundle has no ``Atc02*``
+    family at all — and it is attested by exactly one reference implementation,
+    with no upstream to corroborate it. What the run settled is that srtgo's
+    request-side field spellings are the ones the server takes; see
+    :func:`~srt_mobile_api.payloads.refund_payload`.
 
     Note the contrast worth keeping straight: this envelope is the ORDINARY
     ``resultMap`` one, the same as cancel's, while the card payment on the very
     same flow answers in ``outDataSets.dsOutput0``. Both go through
     :func:`_parse_result_envelope`, which accepts either container, so neither
-    parser hard-asserts a layout nobody has verified.
+    parser hard-asserts a single layout — which is what let the same code read
+    both live responses without a change.
 
     A business failure is RETURNED, not raised, matching cancel: a caller asking
     "was my ticket refunded?" must be able to read the answer without exception

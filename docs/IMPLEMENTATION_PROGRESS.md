@@ -541,10 +541,13 @@ car/seat response or availability contract.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate, the
   consent-gated cancel surface, the reservation-list read, the NetFunnel
-  queue protocol, the error taxonomy, the real-card acknowledgement gate and the
-  consent-gated card-payment and refund surfaces: `1285 passed, 1 deselected`; the
-  deselected case remains the explicit live-service opt-in. No live mutation
-  was ever run.
+  queue protocol, the error taxonomy, the real-card acknowledgement gate, the
+  consent-gated card-payment and refund surfaces and the four-category live
+  enablement: `1307 passed, 1 deselected`; the deselected case remains the
+  explicit live-service opt-in. Every mutation in the suite is against an
+  `httpx.MockTransport`; the live runs are the operator scripts' job.
+- Prior offline gate before payment and refund were live-enabled:
+  `1285 passed, 1 deselected`.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.
 - Prior full offline gate at `955de306`, including the additive

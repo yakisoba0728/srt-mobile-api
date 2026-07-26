@@ -62,9 +62,11 @@ SENSITIVE_KEYS = frozenset(
         # authorises a refund, under all three spellings we have seen it in:
         # `ogtkRetPwd` (srtgo's step-1 response key), `tkRetPwd` (srtgo's step-2
         # request field) and `retPwd` (our own app's offline ticket cache,
-        # webview/b.java:645-646). All three are masked, because which of them
-        # the live API actually uses is exactly the question that is unresolved
-        # -- see payloads.refund_payload.
+        # webview/b.java:645-646). All three stay masked. The live API's own
+        # spelling is settled -- the 2026-07-26 refund sent `tkRetPwd` and the
+        # server took it -- but a value this sensitive is masked under every
+        # name it has ever appeared under, not only the winning one, so a cached
+        # or step-1 copy cannot leak through a name this set forgot.
         "ogtkRetPwd",
         "tkRetPwd",
         "retPwd",

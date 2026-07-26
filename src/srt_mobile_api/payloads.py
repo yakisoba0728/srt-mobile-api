@@ -959,10 +959,15 @@ def unpaid_reservation_cancel_payload(
 # bridge.js:2,31,66-68) and RaonSecure FIDO (com.raon.fido.*,
 # AndroidManifest.xml:315). None of that is HTTP form fields.
 #
-# So this plaintext endpoint may be a legacy path the server still honours, or
-# it may be dead for our app version. NOBODY HAS TESTED IT. No request has ever
-# been sent from this repository, and payment is not live-enabled
-# (safety.SRT_LIVE_MUTATION_CATEGORIES), so none can be.
+# So this plaintext endpoint is a path the app itself does not take. It HAS now
+# been tested: on 2026-07-26 this exact form charged a real card against the real
+# server (SUCC / IRT000000, 7,500 KRW, 수서 -> 동탄, one adult), after a free
+# probe with a fake card had already drawn a proper business envelope
+# (FAIL / WRT100170) rather than a 404. It is a legacy path the server still
+# honours. What that run did NOT do is corroborate the fields it never
+# exercised: it was one single-journey, one-adult ticket on one personal card in
+# one lump sum, so group, multi-leg, corporate cards and instalments below are
+# still srtgo-attested only.
 #
 # THE TWO REFERENCE LIBRARIES ARE ONE SOURCE, NOT TWO. This was verified rather
 # than assumed, by diffing their payment bodies directly: srtgo's 31-field dict
@@ -1096,13 +1101,17 @@ def card_payment_payload(
 ) -> dict[str, str]:
     """Build the card-payment (카드결제) form for a reserved-but-unpaid PNR.
 
-    **UNVERIFIED. Read the module comment above this function before relying on
-    any field here.** In short: the route has zero hits in our v2.0.41 bundle,
-    our app pays through a WebView page plus a TransKey keypad and FIDO instead,
-    the two reference libraries that document this form are one vendored source
-    counted twice, and nobody has ever sent this request. Nothing in this
-    library can send it either — ``payment`` is outside
-    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`.
+    **LIVE-VERIFIED 2026-07-26** (``SUCC`` / ``IRT000000``, 7,500 KRW, 수서 →
+    동탄, one adult), and ``payment`` is in
+    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, so this form
+    really can charge a card. **Read the module comment above this function
+    before relying on any field the run did not exercise.** In short: the route
+    has zero hits in our v2.0.41 bundle, our app pays through a WebView page plus
+    a TransKey keypad and FIDO instead, and the two reference libraries that
+    document this form are one vendored source counted twice. The run settled
+    the route and the single-journey one-adult personal-card lump-sum case; the
+    group, multi-leg, corporate-card and instalment fields below remain
+    srtgo-attested only.
 
     Every value goes on the wire as a string. The 31 fields, their order and
     their constants reproduce what the reference implementation's live runs
@@ -1204,19 +1213,25 @@ def refund_payload(info: SrtRefundTicketInfo) -> dict[str, str]:
     which produces the ``info`` this consumes. The two are separate methods on
     purpose; see that method for why they are not fused into one call.
 
-    **UNVERIFIED, and by a thinner margin than the payment.** The payment route
-    at least has one implementation copied into two libraries. This one exists
-    in exactly ONE: ryanking13/SRT has no refund at all — no ``reserve_info``,
-    no ``getListAtc14087``, no ``selectListAtc02063``, no ``tkRetPwd`` — and
-    srtgo added both steps from scratch four days after vendoring its SRT
-    support (2024-12-17, "FIX: SRT refund needs new API"). There is no upstream
-    to have agreed with it. ``Atc02063`` is 0-hit across all 21,673 files of our
-    v2.0.41 offline decompile; there is no ``Atc02*`` family in the bundle at
-    all.
+    **LIVE-VERIFIED 2026-07-26**, and the origin is unchanged. This exact form
+    refunded a real, paid ticket against the real server (``SUCC`` /
+    ``IRT200277``, 수서 → 동탄, one adult, 7,500 KRW; the account was then
+    confirmed empty of both reservations and tickets from a separate session).
+    Where it came from is still worth knowing, and is still the thinnest chain
+    in this module: the payment route at least has one implementation copied
+    into two libraries, while this one exists in exactly ONE — ryanking13/SRT
+    has no refund at all (no ``reserve_info``, no ``getListAtc14087``, no
+    ``selectListAtc02063``, no ``tkRetPwd``), and srtgo added both steps from
+    scratch four days after vendoring its SRT support (2024-12-17, "FIX: SRT
+    refund needs new API"). There is no upstream to have agreed with it,
+    ``Atc02063`` is 0-hit across all 21,673 files of our v2.0.41 offline
+    decompile, and there is no ``Atc02*`` family in the bundle at all. One live
+    success is live-server evidence, not static corroboration, and it covered
+    one single-journey, one-adult ticket.
 
-    **THE FIELD NAMES ARE DISPUTED, AND THIS LIBRARY HAS BEEN BURNED HERE
-    BEFORE.** Two of the seven are spelled differently by the only two sources
-    we have:
+    **THE DISPUTED FIELD NAMES ARE NOW SETTLED — srtgo's spellings are the ones
+    the server takes.** Two of the seven used to be spelled differently by the
+    only two sources we had:
 
     * ``tkRetPwd`` (srtgo's request field) against ``retPwd`` — the spelling our
       OWN app uses at ``analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:645``.
@@ -1229,20 +1244,19 @@ def refund_payload(info: SrtRefundTicketInfo) -> dict[str, str]:
     (``b.java:613,624-632``), then copies keys out into a display model. It is
     deserialisation of a LOCAL OFFLINE TICKET CACHE, not an outbound request. It
     also spells the PNR ``pnrNo`` (camelCase) where srtgo's refund form says
-    ``pnr_no``, which is a third disagreement and one more reason not to read
-    the cache as an API schema.
+    ``pnr_no``, which was a third disagreement.
 
-    So this is genuinely unresolved. We send srtgo's spelling, because srtgo's
-    is the only spelling attested by a live run of THIS endpoint, and the cache
-    is not evidence about this endpoint at all. The doubt is recorded rather
-    than resolved.
+    That argument is now demonstrated rather than argued: the 2026-07-26 run
+    sent ``tkRetPwd``, ``psgNm`` and ``pnr_no`` and the server refunded the
+    ticket. The cache spellings ``retPwd``/``buyPsNm``/``pnrNo`` are not this
+    endpoint's field names.
 
-    Why that caution is not theoretical: this project already shipped srtgo's
-    misspelling of a korail refund field — ``txtPrnNo`` for ``txtPnrNo`` — a
-    transposition that came from the same class of single-source trust. If this
-    route is ever exercised and rejected, the field names above are the first
-    place to look, and ``retPwd``/``buyPsNm``/``pnrNo`` are the first
-    alternatives to try.
+    Why the caution was not theoretical, and why the outcome is worth stating
+    explicitly: this project already shipped srtgo's misspelling of a korail
+    refund field — ``txtPrnNo`` for ``txtPnrNo`` — a transposition that came
+    from the same class of single-source trust. srtgo was wrong THERE and right
+    HERE, which is the actual lesson: single-source field names have to be
+    tested one at a time, not trusted or distrusted as a class.
 
     Note also srtgo's own internal renaming, which is a hand-written fingerprint
     rather than a server contract: step 1 returns ``ogtkRetPwd`` and ``buyPsNm``
@@ -1283,7 +1297,8 @@ def refund_payload(info: SrtRefundTicketInfo) -> dict[str, str]:
         "saleDt": info.sale_date.strip(),
         "saleWctNo": info.sale_window_number.strip(),
         "saleSqno": info.sale_sequence_number.strip(),
-        # DISPUTED SPELLINGS -- see the docstring. srtgo's names, not our app's.
+        # srtgo's names, not our app's cache spellings -- the disagreement is
+        # settled in srtgo's favour by the 2026-07-26 live refund. See docstring.
         "tkRetPwd": info.return_password.strip(),
         "psgNm": info.buyer_name.strip(),
     }

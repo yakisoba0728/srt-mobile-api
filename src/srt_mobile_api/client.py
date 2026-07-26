@@ -844,9 +844,9 @@ class SrtClient:
         :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form` with
         ``category="cancel"`` and returns the parsed
         :class:`~srt_mobile_api.models.SrtCancelResult`. That send path is open:
-        ``safety.SRT_LIVE_MUTATION_CATEGORIES`` holds ``{"reserve", "cancel"}``,
-        the pair enabled together so a hold can always be released. A category
-        outside it is refused with
+        ``safety.SRT_LIVE_MUTATION_CATEGORIES`` holds ``{"reserve", "cancel",
+        "payment", "refund"}``, and reserve/cancel were enabled together so a
+        hold can always be released. A category outside it is refused with
         :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError`, which sends
         nothing.
         """
@@ -885,35 +885,45 @@ class SrtClient:
         passenger_count: str | None = None,
         settlement_date: str | None = None,
     ) -> MutationPreview | SrtPaymentResult:
-        """Build a card payment (카드결제) for an unpaid PNR — preview only, today.
+        """Charge a card (카드결제) against an unpaid PNR under consent.
 
-        **THIS METHOD CANNOT TRANSMIT.** ``payment`` is not a member of
-        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, which holds
-        exactly ``{"reserve", "cancel"}``. With ``dry_run=False`` the call is
-        refused by :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form`
-        with :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` and
-        nothing reaches the network, no matter how permissive the consent is —
-        including one that acknowledges a real card. Implementing this method
-        did not open that gate; doing so is a separate decision, and a test
-        pins the refusal.
+        **Live-verified on 2026-07-26.** ``/ata/selectListAta09036_n.do`` with
+        this 31-field body charged a real card for a real hold against the real
+        server, answering ``strResult='SUCC'``, ``msgCd='IRT000000'``: 수서 →
+        동탄 (0551 → 0552), 2026-08-09, train 315, one adult, 7,500 KRW, paid and
+        then refunded in the same run. A free probe went first — a fake card and
+        a non-existent PNR — and the route answered a proper business envelope
+        (``strResult='FAIL'``, ``msgCd='WRT100170'``) rather than a 404 or an
+        HTML error shell, which is what established the route exists on our app
+        version without spending anything.
 
-        **PROVENANCE — the weakest in this library.** The route, the 31-field
-        body and the response envelope come from the reference implementations'
-        live runs and nothing else:
+        ``payment`` is therefore a member of
+        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, and a
+        ``dry_run=False`` call **moves real money**. The default is still
+        ``dry_run=True``.
+
+        **PROVENANCE — the origin is unchanged, and still the thinnest here.**
+        The route, the body and the response envelope came from the reference
+        implementations' live runs and nothing else, and the 2026-07-26 run is
+        live-server evidence rather than static corroboration:
 
         * ``/ata/selectListAta09036_n.do`` has ZERO hits across all 21,673 files
           of our v2.0.41 offline decompile, as does every ``Ata09*`` route.
         * Our own app does not use this path. It serialises ``#rsvForm`` to
           ``/ard/selectListArd02017_n.do`` (personal) or ``Ard02018`` (group)
           and charges through the TransKey secure keypad and RaonSecure FIDO —
-          not through plain HTTP form fields.
+          not through plain HTTP form fields. The server honours this plaintext
+          route anyway; that is now a fact rather than a hope.
         * The two reference libraries are ONE source. srtgo's payment code is a
           character-for-character vendored copy of ryanking13/SRT's, so their
           agreement corroborates nothing.
 
-        So this endpoint may be a legacy path the server still honours, or it
-        may be dead for our app version. Nobody has tested it, and this library
-        cannot.
+        And the run covered exactly one case: a single-journey, one-adult,
+        general-seat ticket, one personal card, one lump sum. Group, multi-leg,
+        corporate cards and instalments were not exercised. ``IRT000000`` is the
+        same confirmation code korail returns for its own card approval, which
+        is one more instance of the shared-platform pattern this project has
+        recorded elsewhere.
 
         ``reservation`` is a row from :meth:`get_reservations` — the read that
         can name an unpaid PNR. Note that read's own limits: only its EMPTY
@@ -936,8 +946,9 @@ class SrtClient:
         all become ``[REDACTED]`` — and performs NO network I/O. With
         ``dry_run=False`` the consent must additionally state which kind of card
         it is (:func:`~srt_mobile_api.consent.require_card_kind_claim`: exactly
-        one of ``fake_card_only`` or ``real_card_acknowledged``) before the send
-        path refuses it anyway.
+        one of ``fake_card_only`` or ``real_card_acknowledged``; neither and
+        both are refused). That claim is checked here and again at the send
+        gate, and it is now the last thing between a real PAN and the wire.
         """
         require_mutation_consent(consent, "payment")
         session = self.session.current
@@ -981,9 +992,9 @@ class SrtClient:
         # previewing harder. post_mutation_form re-checks this itself.
         require_card_kind_claim(consent)
         with self._session_guard():
-            # Refused here, every time, by the live-enablement gate. Kept as a
-            # real call rather than a raise so the refusal is the transport
-            # layer's single decision and cannot drift out of sync with it.
+            # The single send path, so the gate ordering and the refusals stay
+            # the transport layer's decision and cannot drift out of sync with
+            # it. Since 2026-07-26 this reaches the wire.
             response = self.http.post_mutation_form(
                 route,
                 form,
@@ -1001,14 +1012,17 @@ class SrtClient:
         :class:`~srt_mobile_api.models.SrtRefundTicketInfo`. Feed that to
         :meth:`refund`.
 
-        **THIS ONE CAN ACTUALLY TRANSMIT**, unlike :meth:`refund`, because it is
-        classified as a read and registered in
+        This travels the READ path, not the mutation gate: it is classified as a
+        read and registered in
         :data:`~srt_mobile_api.safety.READ_ONLY_ROUTES`. That classification is
         an inference, not a proof — see the comment on the route there for what
         supports it and what does not — and the route is 0-hit in our v2.0.41
-        bundle and attested by exactly one reference implementation. Calling
-        this is a deliberate act against an unverified endpoint; nothing in the
-        refund path calls it for you.
+        bundle and attested by exactly one reference implementation. The route
+        itself is live-verified (2026-07-26): a probe with a non-existent PNR got
+        a proper business envelope back (``msgCd='WRT300005'``, "조회자료가
+        없습니다."), and the round trip that followed read a real ticket's
+        identity from it. Nothing in the refund path calls it for you —
+        :meth:`refund` takes the identity you already hold.
 
         ``pnr_no`` is restricted to alphanumerics and hyphens. It is
         interpolated into a URL, so anything else could smuggle extra query
@@ -1056,43 +1070,50 @@ class SrtClient:
         *,
         consent: MutationConsent,
     ) -> MutationPreview | SrtRefundResult:
-        """Refund an issued ticket (환불) — step 2 of 2. **Cannot transmit.**
+        """Refund an issued ticket (환불) — step 2 of 2, under consent.
 
-        ``refund`` is not a member of
-        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, which holds
-        exactly ``{"reserve", "cancel"}``. A ``dry_run=False`` call is refused by
-        :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form` with
-        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` and nothing
-        reaches the network, however permissive the consent is. Implementing
-        this did not open that gate.
+        **Live-verified on 2026-07-26.** ``/atc/selectListAtc02063_n.do`` with
+        this seven-field body returned a real, paid ticket against the real
+        server, answering ``strResult='SUCC'``, ``msgCd='IRT200277'``: the 수서 →
+        동탄 (0551 → 0552) ticket bought minutes earlier in the same run, after
+        which the account was verified empty of both reservations and tickets
+        from a separate session. ``refund`` is therefore a member of
+        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` and a
+        ``dry_run=False`` call **really returns the ticket**; the default is
+        still ``dry_run=True``.
 
         ``ticket_info`` comes from :meth:`get_refund_ticket_info`. **The two
-        steps are deliberately NOT fused into one method.** A combined call
-        would perform step 1 — a real network request — and only then discover
-        that step 2 is refused, so every attempt to refund would leave a live
-        request behind for an operation that can never complete. Keeping them
-        apart means a refused refund sends nothing at all, which is what the
-        tests assert.
+        steps are deliberately NOT fused into one method**, and that is still
+        true now that both can transmit. Step 2's body is nothing but the
+        identity step 1 returned (sale date, window, sequence, return password,
+        purchaser), so this method takes an already-fetched
+        :class:`~srt_mobile_api.models.SrtRefundTicketInfo` and never fetches
+        one itself: a refund that is refused — by consent, by session, by
+        anything — sends nothing at all rather than leaving a live step-1 read
+        behind, and a caller cannot fabricate a step-2 form for a ticket the
+        server never described. It also means a dry run needs no network. Do not
+        "simplify" this by having :meth:`refund` fetch its own info.
 
-        It also means a dry run needs no network: the preview is built purely
-        from the ``ticket_info`` the caller already holds.
+        **PROVENANCE — the origin is unchanged, and thinner than the payment's.**
+        The card payment at least has one implementation copied into two
+        libraries. This route exists in exactly ONE: ryanking13/SRT has no refund
+        at all, and srtgo added both steps from scratch four days after vendoring
+        its SRT support. There is no upstream to have agreed with it,
+        ``Atc02063`` is 0-hit across all 21,673 files of our v2.0.41 offline
+        decompile, and the bundle has no ``Atc02*`` family whatsoever. The
+        2026-07-26 run is live-server evidence, not static corroboration, and it
+        covered exactly one single-journey, one-adult ticket.
 
-        **PROVENANCE — thinner than the payment's.** The card payment at least
-        has one implementation copied into two libraries. This route exists in
-        exactly ONE: ryanking13/SRT has no refund at all, and srtgo added both
-        steps from scratch four days after vendoring its SRT support. There is
-        no upstream to have agreed with it, ``Atc02063`` is 0-hit across all
-        21,673 files of our v2.0.41 offline decompile, and the bundle has no
-        ``Atc02*`` family whatsoever.
-
-        **Two of the seven field names are disputed** — ``tkRetPwd`` against our
-        own app's ``retPwd``, and ``psgNm`` against ``buyPsNm``. We send srtgo's
-        spelling because it is the only one attested by a live run of this
-        endpoint, and this project has already been burned once by trusting a
-        single-source field name (srtgo's ``txtPrnNo`` for korail's
-        ``txtPnrNo``). See
-        :func:`~srt_mobile_api.payloads.refund_payload` for the full argument
-        and the alternatives to try first if it is ever rejected.
+        **The disputed field names are now settled in srtgo's favour.**
+        ``tkRetPwd`` (against our own app's ``retPwd``) and ``psgNm`` (against
+        ``buyPsNm``) were single-sourced and doubted here, because this project
+        had already been burned once by exactly that — srtgo's ``txtPrnNo`` for
+        korail's ``txtPnrNo``, which really was a typo. These two are not: the
+        live run sent ``tkRetPwd``/``psgNm``/``pnr_no`` and the server accepted
+        them. The app-side ``retPwd``/``buyPsNm`` spellings come from a local
+        ``"ticketListOffline"`` cache handler, which was never evidence about
+        this request, and that is now demonstrated rather than argued. See
+        :func:`~srt_mobile_api.payloads.refund_payload`.
 
         Gated by ``require_mutation_consent(consent, "refund")``. With the
         default ``dry_run=True`` it returns a
@@ -1115,9 +1136,8 @@ class SrtClient:
                 payload=form,
             )
         with self._session_guard():
-            # Refused here, every time, by the live-enablement gate. Kept as a
-            # real call rather than a raise so the refusal stays the transport
-            # layer's single decision.
+            # The single send path, so gate ordering and refusals stay the
+            # transport layer's decision. Since 2026-07-26 this reaches the wire.
             response = self.http.post_mutation_form(
                 route,
                 form,

@@ -62,10 +62,13 @@ class MutationConsent:
     rather than resolved in either direction, because an ambiguous consent is
     exactly the state a payment must never be sent on.
 
-    Setting it is NOT what enables a payment. ``payment`` is outside
-    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, so the send
-    path refuses one regardless of how this flag is set; the card-kind claim is
-    a requirement to send, never a permission to.
+    Setting it is NOT what enables a payment. Live enablement is
+    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`'s job and
+    ``allow_payment``'s; this flag only says which kind of card is in the form.
+    The card-kind claim is a requirement to send, never a permission to — but
+    since ``payment`` was live-enabled on 2026-07-26 it is the last gate before
+    a real PAN goes out, so ``real_card_acknowledged=True`` now means money can
+    actually move.
     """
 
     allow_reserve: bool = False

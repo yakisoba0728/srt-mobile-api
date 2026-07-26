@@ -4,27 +4,34 @@ These exercise ``reserve`` and the gated ``SrtHttpClient.post_mutation_form``
 against an ``httpx.MockTransport`` that records requests and returns synthetic
 envelopes. No real network, no real credentials, no real card.
 
-The invariant under test has two halves, and both are enforced at the transport
-layer rather than by the presence or absence of a client method:
+All four categories — reserve, cancel, payment and refund — are live-enabled as
+of 2026-07-26, so the invariant these tests pin is no longer "some categories
+cannot be sent". It is that a mutation can only ever travel ONE path, under
+consent, to its OWN route, and that the guard stated on the request BODY holds
+independently of all of that:
 
-* **payment and refund transmit nothing, ever.** ``post_mutation_form`` — the
-  only method that can send a state-changing request — refuses every category
-  outside ``safety.SRT_LIVE_MUTATION_CATEGORIES``, and the true send boundary
+* **each category may transmit, and only its own route.**
+  ``post_mutation_form`` — the only method that can send a state-changing
+  request — refuses every category outside
+  ``safety.SRT_LIVE_MUTATION_CATEGORIES``, and the true send boundary
   (``_send_mutation_request``) re-asserts the same membership AND the
-  route/category binding, so an enabled category cannot be aimed at the payment
-  or refund path either. The tests below pin that refusal for both under a fully
-  permissive consent (including one that drops ``fake_card_only``), pin it for
-  direct calls to the send boundary in both forms, and confirm a recording
-  transport saw ZERO requests each time.
-* **reserve and cancel may transmit**, under an explicit per-category consent
-  with ``dry_run=False``, so that the operator-run reserve->cancel round trip
-  is possible. The tests pin that they now clear the live-enablement block and
-  are stopped only by the route/category binding behind it.
+  route/category binding, so no category can be aimed at another's path. Both
+  halves are pinned here, for all four categories in both directions, with a
+  recording transport confirming ZERO requests on every refusal and exactly one
+  on every permitted send.
+* **a category outside the set still cannot transmit at all.** The membership
+  check has not been removed, only widened, so it is pinned with a category that
+  is genuinely not enabled.
+* **a card body may travel only as a payment.** Now that the payment route is
+  open this is the only thing stopping a hand-assembled card form from riding a
+  genuine reserve or cancel consent (see ``test_payment_mutation`` for the full
+  set; the send-boundary case is pinned there).
 
-A canary pins the enabled set to exactly ``{"reserve", "cancel"}``, so either
-adding payment/refund or removing a half of the pair fails loudly. The gate
-ordering ahead of everything (consent, then dry-run) and the reserve form's
-wire fidelity to srtgo are pinned here too.
+A canary pins the enabled set to exactly
+``{"reserve", "cancel", "payment", "refund"}``, so adding a FIFTH category or
+removing any of these four fails loudly. The gate ordering ahead of everything
+(consent, then dry-run) and the reserve form's wire fidelity to srtgo are pinned
+here too.
 """
 
 from __future__ import annotations
@@ -563,58 +570,70 @@ def _fully_permissive(*, fake_card_only: bool = True) -> MutationConsent:
     )
 
 
-def test_live_mutation_categories_is_exactly_reserve_and_cancel_canary():
+def test_live_mutation_categories_is_exactly_the_four_verified_ones_canary():
     # CANARY. SRT_LIVE_MUTATION_CATEGORIES is the single switch that decides
-    # which state-changing requests may leave this library. It holds exactly the
-    # reversible pair: reserve creates an unpaid hold, cancel releases one, and
-    # neither is safe to enable without the other.
+    # which state-changing requests may leave this library, and it means exactly
+    # one thing: a live run has answered this category's own wire format.
+    # reserve (SUCC/IRR000018) and cancel (SUCC/IRG000000) on 2026-07-25;
+    # payment (SUCC/IRT000000) and refund (SUCC/IRT200277) on 2026-07-26.
     #
-    # If this test fails because payment or refund appeared, do NOT "fix" the
-    # test. Neither has a client method, neither has a live-verified wire
-    # format, and a payment transmits a PAN in the clear. If it fails because a
-    # category was REMOVED, the round-trip verification script can no longer
-    # run. Either way, confirm the intent and update the safety comment, README
-    # and CHANGELOG in the same change.
-    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset({"reserve", "cancel"})
-    assert "payment" not in SRT_LIVE_MUTATION_CATEGORIES
-    assert "refund" not in SRT_LIVE_MUTATION_CATEGORIES
+    # If this fails because a FIFTH category appeared, do NOT "fix" the test.
+    # Membership is not granted for being implemented; it is granted for having
+    # been answered by the real server, and for payment that also means a PAN
+    # travels in the clear. If it fails because one was REMOVED, some already
+    # verified operation just became unreachable — reserve without cancel would
+    # strand real holds. Either way, confirm the intent and update the safety
+    # comment, README and CHANGELOG in the same change.
+    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
+        {"reserve", "cancel", "payment", "refund"}
+    )
 
 
-REFUSED_CATEGORIES = ("payment", "refund")
+ENABLED_CATEGORIES = ("reserve", "cancel", "payment", "refund")
+# A category name that is deliberately NOT in the enabled set. The membership
+# check was widened on 2026-07-26, not deleted, so it still needs something to
+# refuse or the gate would be pinned only by its own absence.
+UNENABLED_CATEGORY = "checkin"
 
 
-@pytest.mark.parametrize("category", REFUSED_CATEGORIES)
-def test_post_mutation_form_refuses_payment_and_refund_under_full_consent(category):
-    # The core invariant for the two categories that stay shut: even a
-    # hand-assembled low-level call with a consent that opts into everything
-    # and sets dry_run=False cannot transmit. The absence of a client method is
-    # NOT what holds the line here — post_mutation_form itself refuses.
+@pytest.mark.parametrize("category", ENABLED_CATEGORIES)
+def test_post_mutation_form_transmits_each_enabled_category_to_its_own_route(
+    category,
+):
+    # WAS "payment and refund cannot transmit". That claim died with the
+    # 2026-07-26 live verification, so the pin moved onto what replaced it: each
+    # of the four categories, under an explicit consent with dry_run=False,
+    # reaches the wire — and reaches exactly ONE route, its own, with the body it
+    # was handed. Anything that quietly rerouted or duplicated a mutation would
+    # fail here.
+    client, recorder = _client_with(_all_routes_reply())
+    payload = client.http.post_mutation_form(
+        ROUTE_BY_CATEGORY[category],
+        _reserve_form(),
+        consent=_fully_permissive(),
+        category=category,
+    )
+    assert payload == {"ok": True}
+    assert [request.url.path for request in recorder.requests] == [
+        ROUTE_BY_CATEGORY[category]
+    ]
+
+
+def test_post_mutation_form_still_refuses_a_category_outside_the_enabled_set():
+    # The membership gate itself, pinned on a category the set does not hold.
+    # Widening SRT_LIVE_MUTATION_CATEGORIES to four did not remove this check,
+    # and a consent cannot opt into an unknown category anyway — so the refusal
+    # that arrives first is the consent one, and the transport-level membership
+    # check is pinned directly below.
     client, recorder = _client_with(_all_routes_reply())
     with pytest.raises(SrtMutationNotAllowedError) as excinfo:
         client.http.post_mutation_form(
-            ROUTE_BY_CATEGORY[category],
+            RESERVE_ROUTE,
             _reserve_form(),
             consent=_fully_permissive(),
-            category=category,
+            category=UNENABLED_CATEGORY,
         )
-    assert "not live-enabled" in str(excinfo.value)
-    assert recorder.requests == []
-
-
-@pytest.mark.parametrize("category", REFUSED_CATEGORIES)
-def test_post_mutation_form_issues_zero_requests_when_refusing(category):
-    # Same refusal, but the assertion of record is the transport's own view: the
-    # mock transport must observe no request at all, including under a consent
-    # that also drops the fake-card restriction (which for payment would
-    # otherwise be the only remaining guard).
-    client, recorder = _client_with(_all_routes_reply())
-    with pytest.raises(SrtMutationNotAllowedError):
-        client.http.post_mutation_form(
-            ROUTE_BY_CATEGORY[category],
-            _reserve_form(),
-            consent=_fully_permissive(fake_card_only=False),
-            category=category,
-        )
+    assert "unknown mutation category" in str(excinfo.value)
     assert recorder.requests == []
 
 
@@ -622,47 +641,55 @@ def test_send_mutation_request_asserts_live_enablement_itself():
     # Defense in depth at the TRUE send boundary: _send_mutation_request is the
     # function that calls httpx.Client.send, so it re-checks membership instead
     # of trusting post_mutation_form. Called directly — i.e. bypassing every
-    # gate above it — a non-enabled category still refuses before building or
-    # sending anything.
+    # gate above it, including the consent check that would otherwise reject an
+    # unknown category first — a non-enabled category still refuses before
+    # building or sending anything.
     client, recorder = _client_with(_all_routes_reply())
-    for category in REFUSED_CATEGORIES:
-        with pytest.raises(SrtMutationNotAllowedError) as excinfo:
-            client.http._send_mutation_request(
-                ROUTE_BY_CATEGORY[category],
-                category=category,
-                data=_reserve_form(),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-        assert "not live-enabled" in str(excinfo.value)
+    with pytest.raises(SrtMutationNotAllowedError) as excinfo:
+        client.http._send_mutation_request(
+            RESERVE_ROUTE,
+            category=UNENABLED_CATEGORY,
+            data=_reserve_form(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    assert "not live-enabled" in str(excinfo.value)
     assert recorder.requests == []
 
 
-@pytest.mark.parametrize("category", ("reserve", "cancel"))
-@pytest.mark.parametrize("route_category", REFUSED_CATEGORIES)
+@pytest.mark.parametrize(
+    ("category", "route_category"),
+    [
+        (category, route_category)
+        for category in ENABLED_CATEGORIES
+        for route_category in ENABLED_CATEGORIES
+        if category != route_category
+    ],
+)
 def test_send_mutation_request_refuses_an_enabled_category_on_a_foreign_route(
     category, route_category
 ):
-    # The half the membership check alone does NOT cover, and the case the test
-    # above never exercised because it only ever passed refused categories: a
-    # category that IS live-enabled, aimed at a route belonging to a different
-    # category. Membership passes here by construction, so if the route/category
-    # binding lived only in post_mutation_form a direct call would build and
-    # send a POST to the payment or refund endpoint carrying whatever `data`
-    # held — for a payment, a PAN in the clear. The send boundary must apply
-    # assert_mutation_route_category itself.
+    # The half the membership check does NOT cover, and the half that carries
+    # the whole load now that all four categories pass membership: a category
+    # aimed at a route belonging to a DIFFERENT category. If the route/category
+    # binding lived only in post_mutation_form, a direct call here would build
+    # and send a POST to the wrong endpoint carrying whatever `data` held — for
+    # a payment, a PAN in the clear. The send boundary must apply
+    # assert_mutation_route_category itself. Every one of the twelve mismatched
+    # ordered pairs is exercised; the matching pairs are the positive control
+    # below.
     client, recorder = _client_with(_all_routes_reply())
     with pytest.raises(SrtProtocolError) as excinfo:
         client.http._send_mutation_request(
             ROUTE_BY_CATEGORY[route_category],
             category=category,
-            data={"stlCrCrdNo1": "4111111111111111"},
+            data={"pnrNo": "SYNTHETIC"},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
     assert "does not match route" in str(excinfo.value)
     assert recorder.requests == []
 
 
-@pytest.mark.parametrize("category", ("reserve", "cancel"))
+@pytest.mark.parametrize("category", ENABLED_CATEGORIES)
 def test_send_mutation_request_refuses_an_unregistered_route(category):
     # The route allowlist half, likewise re-asserted at the send boundary: an
     # enabled category cannot be used to POST an endpoint that is not one of the
@@ -680,10 +707,10 @@ def test_send_mutation_request_refuses_an_unregistered_route(category):
     assert recorder.requests == []
 
 
-@pytest.mark.parametrize("category", ("reserve", "cancel"))
+@pytest.mark.parametrize("category", ENABLED_CATEGORIES)
 def test_send_mutation_request_transmits_its_own_category_route(category):
     # The positive control for the two tests above: the binding refuses foreign
-    # routes without also blocking the pair the gate exists to allow. Called
+    # routes without also blocking the four the gate exists to allow. Called
     # directly with its OWN route, an enabled category still reaches the wire.
     client, recorder = _client_with(_all_routes_reply())
     response = client.http._send_mutation_request(
@@ -698,16 +725,24 @@ def test_send_mutation_request_transmits_its_own_category_route(category):
     ]
 
 
-@pytest.mark.parametrize("category", ("reserve", "cancel"))
-def test_post_mutation_form_lets_the_enabled_pair_reach_the_later_gates(category):
-    # The other half of the new invariant, and the reason the tests above had to
-    # be narrowed rather than deleted: reserve and cancel are no longer stopped
-    # at the live-enablement block. They now pass it and reach the route/
-    # category binding gates below it, which is what makes the operator's live
-    # round trip possible. Proven by sending to the WRONG route for the
-    # category: the error must be the route-binding SrtProtocolError, not the
-    # live-enablement refusal, and nothing may be transmitted.
-    wrong_route = ROUTE_BY_CATEGORY["refund" if category == "reserve" else "payment"]
+@pytest.mark.parametrize("category", ENABLED_CATEGORIES)
+def test_post_mutation_form_lets_every_enabled_category_reach_the_later_gates(
+    category,
+):
+    # The other half of the invariant, and the reason the refusal tests above
+    # were rewritten rather than deleted: none of the four is stopped at the
+    # live-enablement block any more. Each passes it and reaches the route/
+    # category binding gate below it. Proven by sending to the WRONG route for
+    # the category: the error must be the route-binding SrtProtocolError, not
+    # the live-enablement refusal, and nothing may be transmitted.
+    wrong_route = ROUTE_BY_CATEGORY[
+        {
+            "reserve": "refund",
+            "cancel": "payment",
+            "payment": "cancel",
+            "refund": "reserve",
+        }[category]
+    ]
     client, recorder = _client_with(_all_routes_reply())
     with pytest.raises(SrtProtocolError) as excinfo:
         client.http.post_mutation_form(
@@ -806,18 +841,30 @@ def test_mutation_route_category_binding_rejects_a_mismatch():
     assert_mutation_route_category(CANCEL_ROUTE, "cancel")
 
 
-def test_post_mutation_form_refuses_real_card_payment_at_the_send_gate():
-    # Defense-in-depth: a payment with fake_card_only disabled is refused. The
-    # live-enablement block refuses it first (payment is deliberately NOT in the
-    # enabled pair); the fake-card gate remains behind it as the second line for
-    # the day a payment category is implemented and verified.
+@pytest.mark.parametrize(
+    ("fake_card_only", "real_card_acknowledged"),
+    [(False, False), (True, True)],
+)
+def test_post_mutation_form_refuses_an_unstated_card_kind_at_the_send_gate(
+    fake_card_only, real_card_acknowledged
+):
+    # THE GATE THAT NOW DECIDES WHETHER A PAN GOES OUT. It used to sit behind
+    # the live-enablement block, which refused every payment first and made this
+    # a second lock on a welded door. Since 2026-07-26 a payment clears
+    # membership, so this is the last check before the wire, and it is pinned in
+    # both failing directions: neither claim stated, and both stated at once.
+    # Everything else about the call is valid — real consent, right route, right
+    # category, dry_run=False — so only the card-kind claim can be what refuses.
     client, recorder = _client_with(_all_routes_reply())
     with pytest.raises(SrtMutationNotAllowedError):
         client.http.post_mutation_form(
             PAYMENT_ROUTE,
             {"pnrNo": "SYNTHETIC"},
             consent=MutationConsent(
-                allow_payment=True, dry_run=False, fake_card_only=False
+                allow_payment=True,
+                dry_run=False,
+                fake_card_only=fake_card_only,
+                real_card_acknowledged=real_card_acknowledged,
             ),
             category="payment",
         )
