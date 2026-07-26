@@ -1545,7 +1545,14 @@ def personal_reservation_payload(
         "jrnyTpCd": "11",
         "jrnySqno1": "001",
         "stndFlg": "N",
-        "trnGpCd1": "300",
+        # ara1001l.js:1440 sends item.trnGpCd -- the search row's own value.
+        # Every fixture observed so far pairs stlbTrnClsfCd=="17" with
+        # trnGpCd=="300", and this builder already refuses a non-17 train, so
+        # the constant has never been wrong. Prefer the row's value anyway: the
+        # seat routes at :724-725 and :830-831 already enforce this same field
+        # off the train, and reading it in one place while ignoring it in
+        # another is how the two drift apart.
+        "trnGpCd1": train.train_group_code or "300",
         "trnGpCd": "109",
         # 단체구분. Always "0" here: this library builds personal reservations
         # only, and grpDv="1" is the 단체 branch whose booking was removed on
@@ -1683,7 +1690,7 @@ def _second_journey_slot_fields(
         "arvStnRunOrdr2": _required_digits(
             leg.arrival_run_order, "second leg arrival_run_order"
         ),
-        "trnGpCd2": "300",
+        "trnGpCd2": leg.train_group_code or "300",
         "psrmClCd2": "2" if special_seat else "1",
         "locSeatAttCd2": _WINDOW_SEAT_CODES.get(window_seat, "000"),
         "rqSeatAttCd2": _validated_seat_attr_code(seat_attr_code),

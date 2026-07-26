@@ -1976,6 +1976,22 @@ def _reservation_list_container(
     return rows
 
 
+#: Reservation-list columns whose value is a FIXED-WIDTH identifier rather than
+#: a quantity, and the width it must keep. JSON numbers arrive here with their
+#: leading zeros already gone -- a 06:30 departure comes back as 63000 -- and
+#: str() alone would hand a five-character time to a payment builder that
+#: requires six digits, refusing every departure before 10:00. An amount like
+#: rcvdAmt has no such problem, which is why this is a list and not a blanket
+#: rule.
+_ZERO_PADDED_RESERVATION_COLUMNS = {
+    "dptTm": 6,
+    "arvTm": 6,
+    "iseLmtTm": 6,
+    "dptRsStnCd": 4,
+    "arvRsStnCd": 4,
+}
+
+
 def _reservation_list_optional_string(
     row: dict[str, Any],
     key: str,
@@ -2004,11 +2020,13 @@ def _reservation_list_optional_string(
     value = row.get(key)
     if isinstance(value, str):
         return value
+    width = _ZERO_PADDED_RESERVATION_COLUMNS.get(key)
     # bool is an int subclass; a flag is not an identifier or an amount.
     if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
+        return str(value).zfill(width) if width else str(value)
     if isinstance(value, float) and value.is_integer():
-        return str(int(value))
+        text = str(int(value))
+        return text.zfill(width) if width else text
     return None
 
 
