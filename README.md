@@ -64,7 +64,7 @@ reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
 real-card acknowledgement gate and the consent-gated card-payment and refund
 surfaces
 landed, the current offline suite at HEAD is
-`1282 passed, 1 deselected`. The deselected case is the
+`1283 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:

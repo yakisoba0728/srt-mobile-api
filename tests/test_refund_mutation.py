@@ -27,6 +27,7 @@ from srt_mobile_api import (
     SrtClient,
     SrtConfig,
     SrtMutationNotAllowedError,
+    SrtNoResultsError,
     SrtProtocolError,
     SrtRefundResult,
     SrtRefundTicketInfo,
@@ -174,13 +175,49 @@ def test_step_one_parses_the_ds_output1_payload():
     assert info.buyer_name == FAKE_BUYER
 
 
-def test_step_one_ignores_a_ds_output0_payload():
-    # Pins that the container really is dsOutput1: the same row under dsOutput0
-    # must NOT be read.
+def test_step_one_does_not_read_an_identity_out_of_ds_output0():
+    """The payload container really is dsOutput1.
+
+    An identity row placed under dsOutput0 must never be read as the ticket
+    identity -- refunding from a misread identity is how the wrong ticket gets
+    refunded. It now raises an app error rather than a protocol error, because
+    live traffic showed dsOutput0 is where the server puts its business
+    failure; either way, no identity is returned.
+    """
     payload = _ticket_info_response()
     payload["outDataSets"] = {"dsOutput0": payload["outDataSets"]["dsOutput1"]}
-    with pytest.raises(SrtProtocolError):
+    with pytest.raises((SrtProtocolError, SrtAppError)):
         parse_refund_ticket_info_response(payload)
+
+
+def test_step_one_reports_a_missing_ticket_as_a_business_failure():
+    """LIVE 2026-07-26: the wrapper succeeds while the lookup fails.
+
+    Probing an unissued PNR returned ErrorCode "0" / ErrorMsg "" with the real
+    answer in dsOutput0: msgCd WRT300005, "조회자료가 없습니다.". Before this,
+    the parser only looked at dsOutput1 and raised a protocol error, so a
+    caller asking "is this PNR refundable?" could not tell a missing ticket
+    from a broken server.
+    """
+    payload = {
+        "ErrorCode": "0",
+        "ErrorMsg": "",
+        "outDataSets": {
+            "dsOutput0": [
+                {
+                    "msgCd": "WRT300005",
+                    "strResult": "FAIL",
+                    "msgTxt": "조회자료가 없습니다.",
+                }
+            ]
+        },
+    }
+    with pytest.raises(SrtAppError) as excinfo:
+        parse_refund_ticket_info_response(payload)
+    assert excinfo.value.code == "WRT300005"
+    # WRT300005 is the "nothing there" code the reservation list also returns,
+    # so the taxonomy must class it as no-results rather than a hard failure.
+    assert isinstance(excinfo.value, SrtNoResultsError)
 
 
 @pytest.mark.parametrize(

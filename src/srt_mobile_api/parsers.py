@@ -1388,6 +1388,27 @@ def parse_refund_ticket_info_response(
         )
     row = _first_row(datasets.get("dsOutput1"))
     if not row:
+        # LIVE 2026-07-26: the wrapper can succeed (`ErrorCode "0"`,
+        # `ErrorMsg ""`) while the lookup itself failed, and the server then
+        # puts a business row in `dsOutput0` instead of the payload in
+        # `dsOutput1`. Probing an unissued PNR returned
+        # `{"msgCd": "WRT300005", "strResult": "FAIL",
+        #   "msgTxt": "조회자료가 없습니다."}` there.
+        #
+        # That is "no such ticket", not a malformed response, so it must not
+        # surface as a protocol error: a caller checking whether a PNR is
+        # refundable would be unable to tell a missing ticket from a broken
+        # server. Classify it from the server's own code and let the taxonomy
+        # decide, exactly as every other read does.
+        failure = _first_row(datasets.get("dsOutput0"))
+        if failure:
+            code = failure.get("msgCd") or ""
+            message = failure.get("msgTxt") or ""
+            raise classify_app_error(
+                str(code),
+                str(message),
+                raw=safe_raw,
+            )
         raise SrtProtocolError(
             "SRT refund ticket info response missing dsOutput1 payload",
             raw=safe_raw,
