@@ -1129,3 +1129,37 @@ force. Re-run the sweep near a peak booking window rather than probing
 repeatedly — ten searches in a session is already close to what this project
 considers polite.
 
+## Seat designation (1103) needs no MITM — the pages are fetchable (2026-07-26)
+
+Everything previously written about `1103` said its submit form lives in a
+server-rendered page and therefore needs a traffic capture. The first half is
+true and the conclusion is wrong: **those pages are served to our own
+authenticated session, so their HTML and inline JavaScript can simply be read.**
+
+Demonstrated in three read-only calls:
+
+1. `get_seat_page` (`/arc/selectListArc02012_n.do`) returns ~55 KB of HTML. It
+   does NOT contain `fn_submit`, which is why the offline bundle search kept
+   coming up empty — but it does carry the car `<option>` list and a form.
+2. That page defines `<form id="trnScarSeatFrm">` with eleven inputs, seeded
+   with the journey's own values: `trnGpCd`, `runDt`, `trnNo`, `scarNo`
+   (empty until a car is picked), `psrmClCd`, `dptRsStnCd`, `arvRsStnCd`,
+   `seatAttCd`, `dptStnRunOrdr`, `arvStnRunOrdr`, `choiceSeatCount`.
+3. Its inline script shows what picking a car does: set `scarNo`, serialise the
+   form, and `$.ajax` POST it to **`/arc/selectListArc02011_n.do`** with
+   `dataType: "html"`, then split the response on `#`.
+
+`Arc02011` and `trnScarSeatFrm` are both 0-hit in the v2.0.41 bundle. They
+exist only in what the server renders, which is exactly why static analysis
+could not reach them and exactly why fetching the page does.
+
+A hand-built POST to `Arc02011` with guessed `dptStnRunOrdr`/`arvStnRunOrdr`
+came back as an alert shell rather than a seat grid, so the remaining work is
+getting the field values from the train row instead of hardcoding them. That is
+ordinary implementation, not a capture problem.
+
+**The general lesson, which applies beyond this endpoint:** when this project
+concludes "server-rendered, needs a capture", check first whether the page can
+be requested with the session we already have. A WebView shell hides its logic
+from the APK, not from an authenticated HTTP client.
+
