@@ -83,9 +83,10 @@ reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
 real-card acknowledgement gate, the consent-gated card-payment and refund
 surfaces, the four-category live enablement, the three bundle-evidenced
 reservation variants (group, standby, round trip), the 환승 (transfer)
-search and reservation and the 좌석배치도 (seat grid) read
+search and reservation, the 좌석배치도 (seat grid) read and the 좌석지정
+(seat-designated) reservation
 landed, the current offline suite at HEAD is
-`1448 passed, 1 deselected`. The deselected case is the
+`1463 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -850,6 +851,45 @@ own `"0"`: this route is HTML and carries no `msgCd` at all.
 Registering it moved the read allowlist from 22 routes to 23. It creates
 nothing, it is refused by `assert_mutation_route`, and
 `SRT_LIVE_MUTATION_CATEGORIES` is untouched.
+
+### 좌석지정 — seat-designated reservation (`jobId=1103`)
+
+`reserve(train, *, designated_seats=…, consent=…)` reserves NAMED seats instead
+of letting the server assign them. Keyword-only and defaulted to `None`, so an
+existing caller's form is byte-for-byte and order-for-order what it was, which a
+test asserts. No route and no consent category was added: it is the same
+`reserve` operation on `/arc/selectListArc05013_n.do` under the same consent,
+and `SRT_LIVE_MUTATION_CATEGORIES` is untouched.
+
+```python
+page  = client.get_seat_page(train, passengers=party)
+grid  = client.get_seat_grid(train, page.cars[0].car_number, passengers=party)
+seats = grid.choose("1B", "2C")          # printed labels, validated selectable
+hold  = client.reserve(train, passengers=party, designated_seats=seats,
+                       consent=MutationConsent(dry_run=False, allow_reserve=True))
+```
+
+The seat count must equal the party size, and `SeatDesignation` will not hold a
+seat the grid marked unselectable — so an `N` seat is unrepresentable rather
+than merely rejected.
+
+**Read this before sending one live: the body is evidenced, the target is
+inferred.** Every field — `jobId=1103`, `seatNo1_1..N` from the PRINTED labels,
+`scarGridcnt1`, `scarGridcnt2="0"`, `scarNo1`, `scarNo2=""` — comes from
+`ara0101v.js:866-882` and `ara1001l.js:1435-1436`. What does *not* come from
+the bundle is the endpoint: the app's seat callback ends in `fn_submit()`, whose
+definition lives in the server-rendered booking page, and the endpoint used here
+is taken from the commented-out `//Sr.ara1001l.fn_callReserv();` on the very
+next line. **The operator's next step is to fetch `/ara/ara0101v.do` and read
+its inline `fn_submit`** — the same page-fetching technique that opened the seat
+grid. If it targets something other than `Arc05013`, the body is still right and
+only the route moves.
+
+It does not compose with `standby` (`jobId` cannot be both `1102` and `1103`) or
+with `round_trip` (the app's 왕복 seat callback writes no seat fields at all, so
+that body is unevidenced); both raise `ValueError` before anything is built. It
+is not offered on `reserve_group` or `reserve_transfer`, which disable and blank
+seat selection respectively.
 
 ### Mutual verification
 

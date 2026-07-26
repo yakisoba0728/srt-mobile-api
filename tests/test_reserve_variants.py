@@ -211,7 +211,7 @@ def test_defaulted_variants_leave_the_reserve_form_byte_for_byte_unchanged():
     # was live-verified on 2026-07-25 -- identical values AND identical key
     # order, since order is what the existing arvDt1 position pins depend on.
     implicit = _default_form()
-    explicit = _default_form(standby=False, round_trip=False)
+    explicit = _default_form(standby=False, round_trip=False, designated_seats=None)
 
     assert implicit == explicit
     assert list(implicit) == list(explicit)
@@ -231,6 +231,12 @@ def test_reserve_signature_keeps_every_new_parameter_keyword_only_and_defaulted(
         parameter = parameters[name]
         assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
         assert parameter.default is False
+    # 좌석지정 joined them on the same terms: keyword-only, and defaulted to
+    # "not designated" rather than to False, since its absence is an absent
+    # object and not a false flag.
+    designated = parameters["designated_seats"]
+    assert designated.kind is inspect.Parameter.KEYWORD_ONLY
+    assert designated.default is None
 
 
 # --- standby (예약대기, jobId 1102) --------------------------------------------
@@ -385,13 +391,12 @@ def test_reserve_standby_live_send_uses_the_same_route_key_flow_and_category(
     assert "reserveType" not in form
 
 
-def test_seat_map_reservation_is_named_but_deliberately_not_implemented():
-    # 1103 is evidenced (ara0101v.js:90, ara1001l.js:1436) but unreachable
-    # offline: it is set on the ARC0201C branch, which navigates to the seat-map
-    # page and hands off to a fn_submit() whose only hit in the whole bundle is
-    # the call site (ara0101v.js:882) -- its definition is server-rendered, so
-    # neither the submit target nor the body is knowable. The constant exists so
-    # "not implemented" is not mistaken for "not known about"; nothing emits it.
+def test_no_undesignated_reservation_emits_the_seat_map_job_or_its_fields():
+    # 1103 (시트맵예약) IS implemented now -- see tests/test_seat_designation.py
+    # -- and this test is the other half of that: it is reachable ONLY through
+    # designated_seats. Neither a plain personal reservation nor a standby one
+    # may emit the job type or a single field of its family
+    # (ara0101v.js:866-882), because both would be a body the app never builds.
     assert RESERVE_SEATMAP_JOBID == "1103"
     for standby in (False, True):
         train = _standby_train() if standby else _eligible_train()

@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+- **좌석지정 (seat-designated reservation, `jobId=1103`) — body evidenced,
+  submit target inferred.** `reserve(train, *, designated_seats=…, consent=…)`,
+  keyword-only and defaulted to `None`: the undesignated form is byte-for-byte
+  AND order-for-order what the 2026-07-25 live round trip sent, and a test
+  asserts it. `SRT_MUTATION_ROUTES` (five) and `SRT_LIVE_MUTATION_CATEGORIES`
+  (four) are untouched — a designated reservation is the same operation on the
+  same route under the same `reserve` consent.
+  **The body is bundle-evidenced field by field** (`ara0101v.js:866-882`):
+  `jobId=1103` (`ara1001l.js:1435-1436`), `seatNo1_1..N`, `scarGridcnt1`,
+  `scarGridcnt2="0"`, `scarNo1`, `scarNo2=""` — slot 2 blanked rather than
+  omitted, because 여정 slot 2 belongs to a 환승 second leg and a designated
+  one-way journey has none.
+  **`seatNo1_*` carries the PRINTED label, not the internal seat number.** The
+  app builds it from `scarSeatNm` and never uses `scarSeatNo`
+  (`ara0101v.js:870-874`), so the field spelled `seatNo` transmits the NAME.
+  This is the identifier pair the sibling korail client was bitten by, and a
+  test pins it against a car where 1B/2C are internally 2/7.
+  **THE SUBMIT TARGET IS INFERRED, and it is what an operator must settle.**
+  `fn_submit()` is called at `ara0101v.js:882` and defined nowhere in the
+  bundle — its definition is in the server-rendered booking page. This library
+  POSTs `/arc/selectListArc05013_n.do` on the strength of the commented-out
+  `//Sr.ara1001l.fn_callReserv();` on the next line, that being the function
+  which serialises `#rsvForm` to exactly that URL (`ara1001l.js:1541-1550`).
+  **Fetch `/ara/ara0101v.do` and read its inline `fn_submit` before sending one
+  live** — the same technique that opened the seat grid. If it targets
+  something else, the body is still right and only the route moves.
+  **Validation.** The seat count must equal the passenger count
+  (`choiceSeatCount` is `totPrnb`, `ara1001l.js:1511`), and `SeatDesignation`
+  refuses at construction to hold a seat the grid marked `N`, a repeated seat,
+  an empty list, or a non-numeric car — so an unselectable seat is
+  unrepresentable rather than merely rejected.
+  **Does not compose with `standby`** (`jobId` cannot be both `1102` and
+  `1103`; the app reaches them from two different branches,
+  `ara1001l.js:1435-1449`) **or with `round_trip`** (좌석지정 왕복 exists in the
+  app but its callback writes no seat fields at all, `ara0101v.js:884-892`, so
+  that body is unevidenced). Both raise `ValueError` before anything is built.
+  Not offered on `reserve_group` (단체 disables the seat picker) or
+  `reserve_transfer` (좌석지정 blanks slot 2).
+  `reserveType` stays `"11"`: it is srtgo-only, 0-hit in our bundle, srtgo has
+  no seat-map reservation, and nothing says it tracks `jobId`.
+  Offline gate: `1463 passed, 1 deselected` (was `1448`).
+
 - **좌석배치도 (seat grid) read LIVE-CONFIRMED (2026-07-26), and it needed no
   capture.** `SrtClient.get_seat_grid(train, car_number) -> SeatGrid` over
   `POST /arc/selectListArc02011_n.do` — the seat page's own follow-up read,

@@ -2,6 +2,7 @@ import re
 
 from .models import (
     PassengerCounts,
+    SeatDesignation,
     SeatType,
     SrtPaymentCard,
     SrtRefundTicketInfo,
@@ -33,18 +34,26 @@ RESERVE_PERSONAL_JOBID = "1101"
 # _STANDBY_ROW_IMAGES.
 RESERVE_STANDBY_JOBID = "1102"
 
-# 시트맵예약 (seat-map reservation), NOT IMPLEMENTED, deliberately. The value is
-# evidenced (ara0101v.js:90, ara1001l.js:1436) but the request it belongs to is
-# not: 1103 is set only on the ARC0201C branch, which navigates to the seat-map
-# page (/arc/selectListArc02012_n.do -- our read-only SrtClient.get_seat_page)
-# and hands off to a `fn_submit()` that has exactly one hit in the whole bundle,
-# the call site itself (ara0101v.js:882). Its definition lives in the
-# server-rendered page, so neither the submit target nor the body is knowable
-# offline. What IS visible is the extra field family a seat-map reservation
-# carries (ara0101v.js:871-878: seatNo1_1..N from the picked seat NAMES,
-# scarGridcnt1/scarGridcnt2, scarNo1/scarNo2) -- recorded here so a future
-# capture has somewhere to land, and so that "unimplemented" is not mistaken
-# for "unknown".
+# 시트맵예약 (seat-map / seat-designated reservation). Emitted by
+# personal_reservation_payload when designated_seats is given, and by nothing
+# else. The value is evidenced twice: the app's own gloss on its form seed
+# (ara0101v.js:90) and the single write, on the ARC0201C branch that navigates
+# to the seat-map page (ara1001l.js:1435-1436).
+#
+# WHAT IS EVIDENCED AND WHAT IS NOT, because the difference matters more here
+# than anywhere else in this module:
+#
+#   * The field family IS evidenced, in full, at ara0101v.js:866-882 -- see
+#     _seat_designation_fields for the line-by-line reading.
+#   * The SUBMIT TARGET IS NOT. The seat callback ends in `fn_submit()`, which
+#     has exactly one hit in all 21,673 bundle files, the call site itself
+#     (ara0101v.js:882); its definition lives in the server-rendered booking
+#     page. The line immediately below it is the commented-out
+#     `//Sr.ara1001l.fn_callReserv();` -- the function that serialises #rsvForm
+#     and POSTs /arc/selectListArc05013_n.do (ara1001l.js:1541-1550) -- which
+#     is why this library sends a designated reservation there. That is an
+#     INFERENCE from a comment, not a capture, and it is the single thing an
+#     operator must settle; see SrtClient.reserve.
 RESERVE_SEATMAP_JOBID = "1103"
 
 # 여정유형코드 (jrnyTpCd). Two values exist and the app's own common-code table
@@ -997,6 +1006,64 @@ def _refuse_ineligible_standby(train: TrainSummary) -> None:
         )
 
 
+def _seat_designation_fields(
+    designation: SeatDesignation,
+    *,
+    passenger_total: int,
+) -> dict[str, str]:
+    """The 좌석지정 field family, read line by line off ara0101v.js:866-882.
+
+    The app's seat-selection popup returns
+    ``obj = {scarSeatNo: "2,7,10", scarSeatNm: "1B,2C,3B", scarNo: 1}`` — BOTH
+    identifier lists and the car — and the 편도 branch does this with it::
+
+        var scarSeatArr = obj.scarSeatNm.split(",");          // :870
+        for (...) oSeatData1["seatNo1_" + (i+1)] = scarSeatArr[i];  // :872-874
+        oSeatData1["scarGridcnt1"] = scarSeatArr.length;      // :876
+        oSeatData1["scarGridcnt2"] = 0;                       // :877
+        oSeatData1["scarNo1"] = obj.scarNo;                   // :878
+        oSeatData1["scarNo2"] = "";                           // :879
+
+    **The field spelled ``seatNo`` carries the seat's NAME.** It is built from
+    ``scarSeatNm``, the PRINTED labels, and ``scarSeatNo`` — the internal seat
+    numbers — is received and then never used. That is worth stating loudly
+    because the sibling korail client has the mirror-image convention, and
+    comparing the wrong one against a reservation detail once made it look as
+    though a server had ignored a seat map entirely.
+
+    **Slot 2 is blanked, not omitted**: ``scarGridcnt2="0"`` and ``scarNo2=""``
+    are written explicitly on the one-way path. 여정 slot 2 belongs to a 환승
+    second leg (see :func:`transfer_reservation_payload`), and a seat-designated
+    one-way journey has none — so the app clears it rather than leaving whatever
+    was there, and so does this.
+
+    The party-size rule is enforced here because this is the one place both
+    halves are in scope. ``choiceSeatCount`` on the seat page and the grid is
+    ``totPrnb`` (``ara1001l.js:1511``), i.e. the app asks the seat map for
+    exactly as many seats as there are passengers; sending a different number
+    of ``seatNo1_*`` fields is a body the app cannot produce, and the failure it
+    would produce live is a real hold with the wrong seats on it.
+    """
+    if type(designation) is not SeatDesignation:
+        raise ValueError("designated_seats must be a SeatDesignation")
+    seat_count = len(designation.seats)
+    if seat_count != passenger_total:
+        raise ValueError(
+            "designated seats must match the passenger count: "
+            f"{seat_count} seat(s) for {passenger_total} passenger(s)"
+        )
+    fields = {
+        f"seatNo1_{index}": label
+        for index, label in enumerate(designation.printed_seat_labels, start=1)
+    }
+    fields["scarGridcnt1"] = str(seat_count)
+    # Explicitly zero / empty, exactly as the 편도 branch writes them.
+    fields["scarGridcnt2"] = "0"
+    fields["scarNo1"] = designation.car_number
+    fields["scarNo2"] = ""
+    return fields
+
+
 def personal_reservation_payload(
     train: TrainSummary,
     passengers: PassengerCounts,
@@ -1006,6 +1073,7 @@ def personal_reservation_payload(
     window_seat: bool | None = None,
     standby: bool = False,
     round_trip: bool = False,
+    designated_seats: SeatDesignation | None = None,
 ) -> dict[str, str]:
     """Build the 개인예약 / 예약대기 reservation form (``/arc/selectListArc05013_n.do``).
 
@@ -1070,9 +1138,52 @@ def personal_reservation_payload(
     different family entirely (``psgTpCd1..5``/``psgInfoPerPrnb1..5``, indexed by
     passenger TYPE), which is the reading this suffix is most often confused
     with.
+
+    ``designated_seats`` (좌석지정) switches ``jobId`` to ``1103`` (시트맵예약)
+    and appends the seat family — ``seatNo1_1..N``, ``scarGridcnt1``,
+    ``scarGridcnt2``, ``scarNo1``, ``scarNo2`` — built by
+    :func:`_seat_designation_fields`, which is where the per-field evidence is.
+    Three things about it are worth reading before sending one live:
+
+    * **The BODY is bundle-evidenced; the TARGET is inferred.** See
+      :data:`RESERVE_SEATMAP_JOBID`. Every field and value comes from
+      ara0101v.js:866-882; the endpoint comes from the commented-out
+      ``//Sr.ara1001l.fn_callReserv();`` beside the ``fn_submit()`` call, and
+      ``fn_submit`` itself is defined in a page the bundle does not contain.
+    * **It does not compose with ``standby``.** ``jobId`` cannot be both
+      ``1102`` and ``1103``, and the app never offers the choice: fn_moveRsv
+      assigns ``1103`` on the ARC0201C (좌석선택) branch and ``1101``/``1102``
+      on the ARC0102C branch, which are different destinations
+      (ara1001l.js:1435-1449).
+    * **It does not compose with ``round_trip`` either**, and this one is a
+      restriction rather than a contradiction. 좌석지정 왕복 exists in the app
+      (``POP_REQ_SEATSELECT_GO_BACK``, const.js:10) but its callback writes NO
+      seat fields at all — it just calls ``fn_callReserv()``
+      (ara0101v.js:884-892). Only the 편도 branch (:866-882) produces the field
+      family, so a 왕복 designated body is a shape this repository has no
+      evidence for, and guessing it would mean guessing on a route that creates
+      real holds.
+
+    ``reserveType`` stays ``"11"`` for a designated reservation. It is
+    srtgo-only and 0-hit in the bundle (see below), srtgo has no seat-map
+    reservation at all, and nothing indicates it tracks ``jobId`` — so it is
+    left where the live-verified personal path put it rather than dropped or
+    changed on a hunch.
     """
     if type(train) is not TrainSummary:
         raise ValueError("reservation requires an exact TrainSummary")
+    if designated_seats is not None and standby:
+        raise ValueError(
+            "seat designation (jobId 1103) and standby (jobId 1102) are "
+            "different job types on different app branches "
+            "(ara1001l.js:1435-1449); a reservation cannot be both"
+        )
+    if designated_seats is not None and round_trip:
+        raise ValueError(
+            "seat designation is implemented for 편도 only: the app's 왕복 "
+            "seat callback writes no seat fields at all (ara0101v.js:884-892), "
+            "so the 왕복 designated body is unevidenced"
+        )
     if not isinstance(netfunnel_key, str):
         raise ValueError("netfunnel_key must be a string")
     # SRT-only guard (srtgo train_name != "SRT" check): stlbTrnClsfCd must be the
@@ -1156,8 +1267,25 @@ def personal_reservation_payload(
         # this has to override rather than defer to seat_type.
         special_seat = False
 
+    # Seat fields are built BEFORE the form, so a party/seat-count mismatch or a
+    # non-selectable seat raises while nothing exists yet -- the same reason
+    # every other validation in this builder runs before the dict is assembled.
+    seat_fields = (
+        _seat_designation_fields(
+            designated_seats, passenger_total=passengers.total
+        )
+        if designated_seats is not None
+        else {}
+    )
+    if designated_seats is not None:
+        job_id = RESERVE_SEATMAP_JOBID
+    elif standby:
+        job_id = RESERVE_STANDBY_JOBID
+    else:
+        job_id = RESERVE_PERSONAL_JOBID
+
     payload = {
-        "jobId": RESERVE_STANDBY_JOBID if standby else RESERVE_PERSONAL_JOBID,
+        "jobId": job_id,
         "jrnyCnt": "1",
         "jrnyTpCd": "11",
         "jrnySqno1": "001",
@@ -1205,6 +1333,14 @@ def personal_reservation_payload(
             window_seat=window_seat,
         )
     )
+    # LAST, so that a body without designated seats is byte-for-byte and
+    # order-for-order the one the 2026-07-25 live round trip sent. Where the
+    # server-rendered #rsvForm actually puts these inputs is not knowable
+    # offline (it is the same page fn_submit lives in), so appending is a
+    # position this repository chose rather than one it read; the app writes
+    # them into the gds_rsv store, not into an ordered form, so nothing in the
+    # bundle fixes their place either.
+    payload.update(seat_fields)
     return payload
 
 

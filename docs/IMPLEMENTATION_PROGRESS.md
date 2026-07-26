@@ -304,6 +304,12 @@ form seed — `ara0101v.js:90`,
   `payloads.RESERVE_SEATMAP_JOBID` records the value and the field family such a
   body would carry (`seatNo1_1..N`, `scarGridcnt1`/`2`, `scarNo1`/`2`,
   `ara0101v.js:871-878`), and a test asserts nothing emits it.
+  **Superseded 2026-07-26:** implemented as `reserve(..., designated_seats=…)`
+  — see "좌석지정 (Seat-Designated Reservation)" below. The BODY was knowable
+  after all (the field family above is the whole of it); the submit TARGET is
+  still not, and is now the one open question rather than the whole feature. The
+  test that asserted nothing emits `1103` was kept and narrowed: no
+  *undesignated* reservation may emit it or any field of its family.
 - Compatibility is pinned, not assumed: every new parameter is keyword-only and
   defaulted off, and `test_reserve_variants` asserts the default form is
   byte-for-byte AND order-for-order what it was, so the existing
@@ -867,10 +873,13 @@ car/seat response or availability contract.
   queue protocol, the error taxonomy, the real-card acknowledgement gate, the
   consent-gated card-payment and refund surfaces, the four-category live
   enablement, the three bundle-evidenced reservation variants, the 환승
-  (transfer) search and reservation and the 좌석배치도 (seat grid) read:
-  `1448 passed, 1 deselected`; the deselected case remains the
+  (transfer) search and reservation, the 좌석배치도 (seat grid) read and the
+  좌석지정 (seat-designated) reservation:
+  `1463 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
   `httpx.MockTransport`; the live runs are the operator scripts' job.
+- Prior offline gate after the seat-grid read, before seat designation:
+  `1448 passed, 1 deselected`.
 - Prior offline gate before the seat-grid read: `1404 passed, 1 deselected`.
 - Prior offline gate before the reservation variants (group, standby, round
   trip): `1311 passed, 1 deselected`.
@@ -1257,3 +1266,77 @@ journey, `get_seat_page(train, passengers=…)`, take a `car_number` from
 read: no consent, no NetFunnel, no hold. The one thing worth watching is a
 `"0#…"` refusal on a train whose seats the page said were free — that would mean
 the envelope carries conditions this repository has not seen.
+
+## 좌석지정 (Seat-Designated Reservation, `jobId=1103`) — BODY EVIDENCED, TARGET INFERRED
+
+`SrtClient.reserve(train, *, designated_seats=…, consent=…)`. Keyword-only and
+defaulted to `None`, so every existing caller's form is byte-for-byte and
+order-for-order what the 2026-07-25 live round trip sent; a test asserts exactly
+that. Nothing was added to `SRT_MUTATION_ROUTES` (still five) or to
+`SRT_LIVE_MUTATION_CATEGORIES` (still four) — a designated reservation is the
+same operation on the same route under the same `reserve` consent.
+
+The flow is four calls, three of which already existed:
+
+```python
+page  = client.get_seat_page(train, passengers=party)
+grid  = client.get_seat_grid(train, page.cars[0].car_number, passengers=party)
+seats = grid.choose("1B", "2C")
+hold  = client.reserve(train, passengers=party, designated_seats=seats, consent=…)
+```
+
+### The three evidence tiers, which are not the same tier
+
+| Part | Tier | Source |
+| --- | --- | --- |
+| The seats themselves (grid read, padding, Y/N, both identifiers) | **live-confirmed 2026-07-26** | the live read of `Arc02011` |
+| `jobId="1103"` | **bundle-evidenced** | `ara0101v.js:90` (gloss), `ara1001l.js:1435-1436` (the single write) |
+| `seatNo1_1..N`, `scarGridcnt1`, `scarGridcnt2="0"`, `scarNo1`, `scarNo2=""` | **bundle-evidenced** | `ara0101v.js:866-882`, line by line |
+| `seatNo1_*` carrying the PRINTED label | **bundle-evidenced** | `ara0101v.js:870-874`: built from `scarSeatNm`; `scarSeatNo` is received and never used |
+| Field ORDER within the body | **ours** | the app writes into the `gds_rsv` store, not an ordered form; appended last so the undesignated body is unchanged |
+| `reserveType="11"` on a `1103` body | **unknown** | srtgo-only field, 0-hit in the bundle, and srtgo has no seat-map reservation; left where the personal path put it |
+| **The submit target** | **INFERRED** | `fn_submit()` is called at `ara0101v.js:882` and defined nowhere in the bundle; the next line is the commented-out `//Sr.ara1001l.fn_callReserv();`, the function that POSTs `/arc/selectListArc05013_n.do` (`ara1001l.js:1541-1550`) |
+
+### What the operator must fetch next
+
+**Fetch `/ara/ara0101v.do` with an authenticated session and read its inline
+`fn_submit`.** That is the same technique that opened the seat grid — the page
+is server-rendered, which hides it from the APK and not from us — and it is the
+one thing standing between "a valid body" and "a valid request". If `fn_submit`
+POSTs `Arc05013`, this implementation is complete as written; if it targets
+something else, the body is still right and only the route moves. Reading the
+page is a read, costs nothing, and creates nothing.
+
+Only after that is a live designated reservation worth attempting, and it should
+be the same shape as the 2026-07-25 round trip: 수서 → 동탄, one adult, one seat,
+`dry_run=False` with `allow_reserve=True`, PNR kept, cancelled immediately.
+`scripts/recover_hold.py` releases a hold from the PNR string alone. What to
+check on the response is whether the seat came back as the one that was asked
+for — and note that a reservation detail may echo the seat in the OTHER
+identifier space, which is the korail trap: compare printed label to printed
+label.
+
+### What does not compose, and why
+
+* **`standby`** — `jobId` cannot be both `1102` and `1103`, and the app reaches
+  them from two different branches (`ara1001l.js:1435-1449`). `ValueError`.
+* **`round_trip`** — 좌석지정 왕복 exists in the app
+  (`POP_REQ_SEATSELECT_GO_BACK`, `const.js:10`) but its callback writes **no**
+  seat fields; it just calls `fn_callReserv()` (`ara0101v.js:884-892`). Only the
+  편도 branch produces the family, so the 왕복 designated body is unevidenced and
+  guessing it would mean guessing on a route that creates real holds.
+  `ValueError`.
+* **`reserve_group`** — 단체 resets the seat option and disables the picker
+  (`ara0101v.js:446-457`), so the builder takes no such parameter.
+* **`reserve_transfer`** — 좌석지정 blanks the transfer's slot 2
+  (`ara0101v.js:875-879`), which is the opposite of what a transfer needs.
+
+### Validation, and where it lives
+
+`SeatDesignation` refuses at construction to hold a seat the grid marked `N`, a
+repeated seat, an empty seat list, or a non-numeric car — so an unselectable
+seat is unrepresentable rather than merely rejected. The party-size rule lives
+in `payloads._seat_designation_fields`, the one place both the seats and the
+passenger counts are in scope: `choiceSeatCount` is `totPrnb`
+(`ara1001l.js:1511`), so the app asks the seat map for exactly as many seats as
+there are passengers, and a mismatch is a body the app cannot produce.

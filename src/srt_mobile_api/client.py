@@ -30,6 +30,7 @@ from .models import (
     NoticeListResult,
     PassengerCounts,
     SearchPageState,
+    SeatDesignation,
     SeatGrid,
     SeatSelectionPage,
     SeatType,
@@ -931,6 +932,7 @@ class SrtClient:
         netfunnel_key: str | None = None,
         standby: bool = False,
         round_trip: bool = False,
+        designated_seats: SeatDesignation | None = None,
     ) -> MutationPreview | SrtReservationHold:
         """Create a personal (개인예약) SRT reservation hold under explicit consent.
 
@@ -1020,6 +1022,55 @@ class SrtClient:
         ``go_seatDsXml``, ``ara0101v.js:143-144``, which is not reproducible from
         a search row) is UNVERIFIED; treat them as two independent holds until a
         live run says otherwise.
+
+        **designated_seats** (좌석지정, ``jobId=1103``) reserves NAMED seats
+        instead of letting the server assign them. Build it from a grid this
+        library read:
+
+        1. ``page = get_seat_page(train, passengers=party)`` → the cars,
+        2. ``grid = get_seat_grid(train, page.cars[0].car_number,
+           passengers=party)`` → the seats, **live-confirmed 2026-07-26**,
+        3. ``grid.choose("1B", "2C")`` → a
+           :class:`~srt_mobile_api.models.SeatDesignation`,
+        4. ``reserve(train, passengers=party, designated_seats=…, consent=…)``.
+
+        The count must equal the party size and every seat must have been marked
+        selectable; both are refused before anything is built, and the second is
+        unrepresentable by the time it gets here because
+        :class:`~srt_mobile_api.models.SeatDesignation` will not hold an ``N``
+        seat.
+
+        **What this rests on, in three tiers, because they are not the same.**
+
+        * *Live-confirmed (2026-07-26)*: the seat grid read that produces the
+          seats, including the five-character zero-padding that gates it.
+        * *Bundle-evidenced*: the form's seat fields and their values —
+          ``seatNo1_1..N`` from the PRINTED labels, ``scarGridcnt1``,
+          ``scarGridcnt2="0"``, ``scarNo1``, ``scarNo2=""``
+          (``ara0101v.js:866-882``) — and ``jobId=1103`` itself
+          (``ara1001l.js:1435-1436``).
+        * *INFERRED, and the one thing an operator must settle*: that this body
+          goes to ``/arc/selectListArc05013_n.do`` at all. The app's seat
+          callback ends in ``fn_submit()``, whose definition is in the
+          server-rendered booking page and not in the bundle; the endpoint here
+          comes from the commented-out ``//Sr.ara1001l.fn_callReserv();`` on the
+          next line, that being the function which POSTs the personal
+          reservation. **Fetch ``/ara/ara0101v.do`` and read its inline
+          ``fn_submit`` before trusting this**, the same technique that opened
+          the seat grid — a WebView shell hides its logic from the APK, not from
+          an authenticated HTTP client. If ``fn_submit`` targets something else,
+          this method is aiming a valid body at the wrong URL.
+
+        Nothing was added to
+        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` or to
+        :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES`: a designated
+        reservation is the same operation on the same route under the same
+        ``reserve`` consent. It does not compose with ``standby`` (a different
+        ``jobId``) or ``round_trip`` (the 왕복 seat callback writes no seat
+        fields at all, so its body is unevidenced), and both combinations raise
+        ``ValueError`` before anything is built. It is not offered on
+        :meth:`reserve_group` or :meth:`reserve_transfer` at all — 단체 disables
+        the seat picker, and 좌석지정 blanks the transfer's slot 2.
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
@@ -1031,6 +1082,7 @@ class SrtClient:
                 window_seat=window_seat,
                 standby=standby,
                 round_trip=round_trip,
+                designated_seats=designated_seats,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,

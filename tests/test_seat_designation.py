@@ -13,12 +13,16 @@ three-character train number at both the builder and the safety boundary.
 
 from __future__ import annotations
 
+import inspect
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode
 
 import httpx
 import pytest
 
 from srt_mobile_api import (
+    MutationConsent,
+    MutationPreview,
     PassengerCounts,
     SeatDesignation,
     SeatGrid,
@@ -27,14 +31,25 @@ from srt_mobile_api import (
     SrtClient,
     SrtConfig,
     SrtProtocolError,
+    SrtReservationHold,
     SrtSeatUnavailableError,
+    SrtSession,
     SrtSessionExpiredError,
     TrainSummary,
 )
 from srt_mobile_api.parsers import parse_seat_grid_response
-from srt_mobile_api.payloads import SEAT_TRAIN_NUMBER_LENGTH, seat_grid_payload
+from srt_mobile_api.payloads import (
+    RESERVE_SEATMAP_JOBID,
+    SEAT_TRAIN_NUMBER_LENGTH,
+    group_reservation_payload,
+    personal_reservation_payload,
+    seat_grid_payload,
+    transfer_reservation_payload,
+)
 from srt_mobile_api.safety import (
     SEAT_GRID_PATH,
+    SRT_LIVE_MUTATION_CATEGORIES,
+    SRT_MUTATION_ROUTE_CATEGORIES,
     SRT_MUTATION_ROUTES,
     MutationRoute,
     READ_ONLY_ROUTES,
@@ -43,7 +58,10 @@ from srt_mobile_api.safety import (
     assert_read_only_request,
 )
 
+FIXTURES = Path(__file__).parent / "fixtures"
 SEAT_GRID_ROUTE = "/arc/selectListArc02011_n.do"
+RESERVE_ROUTE = "/arc/selectListArc05013_n.do"
+SYNTHETIC_NF = "SYNTHETIC_NETFUNNEL_KEY"
 
 
 def _seat_train(train_no: str = "315") -> TrainSummary:
@@ -63,6 +81,34 @@ def _seat_train(train_no: str = "315") -> TrainSummary:
         arrival_station_code="0552",
         departure_run_order="000001",
         arrival_run_order="000002",
+    )
+
+
+def _reservable_train(raw: dict | None = None) -> TrainSummary:
+    """The same row, completed with everything a reservation form needs.
+
+    Kept separate from :func:`_seat_train` so the grid tests keep exercising the
+    minimum a seat read requires, which is less than a reservation requires.
+    """
+    return TrainSummary(
+        train_no="315",
+        train_group_code="300",
+        service_class_code="17",
+        run_date="20260812",
+        departure_date="20260812",
+        departure_time="060000",
+        arrival_time="061900",
+        departure_station_code="0551",
+        arrival_station_code="0552",
+        departure_station_name="수서",
+        arrival_station_name="동탄",
+        departure_run_order="000001",
+        arrival_run_order="000002",
+        departure_consist_order="000001",
+        arrival_consist_order="000002",
+        general_seat_availability="예약가능",
+        special_seat_availability="매진",
+        raw=raw or {},
     )
 
 
@@ -449,3 +495,275 @@ def test_seat_grid_boundary_refuses_query_parameters(query):
 def test_seat_grid_boundary_refuses_a_get():
     with pytest.raises(SrtProtocolError):
         assert_read_only_request(_grid_request(method="GET"), SrtConfig())
+
+
+# --- seat-designated reservation (좌석지정, jobId 1103) -------------------------
+#
+# The REQUEST body below is bundle-evidenced field by field (ara0101v.js:866-882)
+# and the seats in it come from a live-confirmed read. The submit TARGET is
+# inferred -- fn_submit is defined in a server-rendered page -- and these tests
+# pin the inference as an inference: they assert the route this library uses,
+# not that the server accepts it.
+
+
+def _designation(*labels: str, car_number: str = "3") -> SeatDesignation:
+    grid = parse_seat_grid_response(
+        (FIXTURES / "seat_grid_car_seats.html").read_text(encoding="utf-8"),
+        car_number=car_number,
+    )
+    return grid.choose(*labels)
+
+
+def _reserve_form(**kwargs) -> dict[str, str]:
+    return personal_reservation_payload(
+        _reservable_train(),
+        kwargs.pop("passengers", PassengerCounts(adult=1)),
+        netfunnel_key=SYNTHETIC_NF,
+        **kwargs,
+    )
+
+
+def test_the_undesignated_reserve_form_is_byte_for_byte_and_order_for_order():
+    # The compatibility claim, stated against the parameter that was just
+    # added: naming designated_seats=None must produce the form that existed
+    # before it did -- same values, same key ORDER (the arvDt1 position pins in
+    # test_mutation_live_paths depend on order).
+    implicit = _reserve_form()
+    explicit = _reserve_form(designated_seats=None)
+
+    assert implicit == explicit
+    assert list(implicit) == list(explicit)
+    assert implicit["jobId"] == "1101"
+    assert not [
+        key for key in implicit if key.startswith(("seatNo", "scarNo", "scarGridcnt"))
+    ]
+
+
+def test_designated_form_adds_only_the_seat_family_and_switches_the_job_id():
+    before = _reserve_form()
+    after = _reserve_form(designated_seats=_designation("1B"))
+
+    added = {key: value for key, value in after.items() if key not in before}
+    changed = {
+        key: (before[key], after[key])
+        for key in before.keys() & after.keys()
+        if before[key] != after[key]
+    }
+    # ara0101v.js:872-879, in the app's own write order.
+    assert added == {
+        "seatNo1_1": "1B",
+        "scarGridcnt1": "1",
+        "scarGridcnt2": "0",
+        "scarNo1": "3",
+        "scarNo2": "",
+    }
+    # jobId and NOTHING else: ara1001l.js:1435-1436 sets 1103 on the seat
+    # branch, and the seat callback touches no other reservation field.
+    assert changed == {"jobId": ("1101", RESERVE_SEATMAP_JOBID)}
+    assert not [key for key in before if key not in after]
+    # reserveType is left where the live-verified personal path put it: srtgo
+    # has no seat-map reservation, so there is no source saying it should move.
+    assert after["reserveType"] == "11"
+
+
+def test_seat_numbers_on_the_wire_are_the_printed_labels_not_the_internal_ones():
+    # THE trap. ara0101v.js:870-874 builds seatNo1_* from scarSeatNm (the
+    # printed labels) and never uses scarSeatNo (the internal numbers), so the
+    # field spelled "seatNo" carries the NAME. In this car the printed 1B/2C are
+    # internal 2/7 -- if the two were ever swapped, this is the test that says so.
+    designation = _designation("1B", "2C")
+    form = _reserve_form(
+        passengers=PassengerCounts(adult=2), designated_seats=designation
+    )
+
+    assert [seat.internal_seat_number for seat in designation.seats] == ["2", "7"]
+    assert form["seatNo1_1"] == "1B"
+    assert form["seatNo1_2"] == "2C"
+    assert "2" not in (form["seatNo1_1"], form["seatNo1_2"])
+
+
+def test_seat_slots_are_numbered_from_one_in_the_chosen_order():
+    form = _reserve_form(
+        passengers=PassengerCounts(adult=3),
+        designated_seats=_designation("2D", "1C", "3A"),
+    )
+
+    assert [form[f"seatNo1_{index}"] for index in (1, 2, 3)] == ["2D", "1C", "3A"]
+    assert form["scarGridcnt1"] == "3"
+    assert "seatNo1_4" not in form
+
+
+def test_journey_slot_two_is_blanked_rather_than_omitted():
+    # ara0101v.js:877-879 writes scarGridcnt2=0 and scarNo2="" explicitly on the
+    # 편도 path. 여정 slot 2 belongs to a 환승 second leg; a designated one-way
+    # journey has none, and the app clears the slot rather than leaving it.
+    form = _reserve_form(designated_seats=_designation("1B"))
+
+    assert form["scarGridcnt2"] == "0"
+    assert form["scarNo2"] == ""
+    # And the journey count still says one journey: slot 2 being present and
+    # empty is not a transfer.
+    assert form["jrnyCnt"] == "1"
+    assert form["jrnyTpCd"] == "11"
+
+
+@pytest.mark.parametrize(
+    ("party", "labels"),
+    [(1, ("1B", "2C")), (2, ("1B",)), (3, ("1B", "2C"))],
+)
+def test_designated_seat_count_must_equal_the_passenger_count(party, labels):
+    with pytest.raises(ValueError, match="match the passenger count"):
+        _reserve_form(
+            passengers=PassengerCounts(adult=party),
+            designated_seats=_designation(*labels),
+        )
+
+
+def test_a_seat_the_grid_marked_unselectable_cannot_reach_the_form():
+    # Two layers, on purpose. SeatDesignation refuses to hold an 'N' seat at
+    # all, so the form builder cannot be handed one through the normal path;
+    # constructing one directly is refused for the same reason.
+    grid = parse_seat_grid_response(
+        (FIXTURES / "seat_grid_car_seats.html").read_text(encoding="utf-8"),
+        car_number="3",
+    )
+    unselectable = next(seat for seat in grid.seats if not seat.selectable)
+
+    with pytest.raises(ValueError, match="not selectable"):
+        SeatDesignation(car_number="3", seats=(unselectable,))
+    with pytest.raises(ValueError, match="not selectable"):
+        grid.choose(unselectable.printed_seat_label)
+
+
+def test_designated_seats_must_be_a_seat_designation():
+    with pytest.raises(ValueError, match="SeatDesignation"):
+        _reserve_form(designated_seats=("1B",))
+
+
+def test_seat_designation_does_not_compose_with_standby_or_round_trip():
+    # jobId cannot be both 1102 and 1103, and the app reaches them from two
+    # different branches (ara1001l.js:1435-1449).
+    with pytest.raises(ValueError, match="cannot be both"):
+        personal_reservation_payload(
+            _reservable_train(raw={"gnrmRsvPsbImg": "IMAGE::grd_WF_Waiting.png"}),
+            PassengerCounts(adult=1),
+            netfunnel_key=SYNTHETIC_NF,
+            standby=True,
+            designated_seats=_designation("1B"),
+        )
+    # 좌석지정 왕복 exists in the app but its callback writes no seat fields
+    # (ara0101v.js:884-892), so the 왕복 designated body is unevidenced.
+    with pytest.raises(ValueError, match="편도 only"):
+        _reserve_form(round_trip=True, designated_seats=_designation("1B"))
+
+
+def test_group_and_transfer_builders_take_no_designated_seats():
+    # 단체 disables the seat picker (ara0101v.js:446-457) and 좌석지정 blanks a
+    # transfer's slot 2 (:875-879), so neither builder offers the parameter --
+    # rather than accepting one and discarding it.
+    for builder in (group_reservation_payload, transfer_reservation_payload):
+        assert "designated_seats" not in inspect.signature(builder).parameters
+
+
+# --- the client path ----------------------------------------------------------
+
+
+def _reserving_client() -> tuple[SrtClient, list[httpx.Request]]:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/ts.wseq":
+            if request.url.params["opcode"] == "5004":
+                return httpx.Response(
+                    200, text="NetFunnel.gControl.result='5004:200:utime=1';"
+                )
+            return httpx.Response(
+                200,
+                text=(
+                    "NetFunnel.gRtype=5101;NetFunnel.gControl.result="
+                    "'5101:200:key=SYNTHETIC_ACQUIRED_KEY&nwait=0&nnext=0';"
+                ),
+            )
+        if request.url.path == RESERVE_ROUTE:
+            return httpx.Response(
+                200,
+                json={
+                    "resultMap": [
+                        {
+                            "strResult": "SUCC",
+                            "msgCd": "IRR000018",
+                            "msgTxt": "정상처리되었습니다",
+                        }
+                    ],
+                    "reservListMap": [{"pnrNo": "SYNTHETIC-PNR"}],
+                    "trainListMap": [],
+                    "commandMap": [],
+                },
+            )
+        raise AssertionError(f"unexpected request to {request.url.path}")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    client.session.current = SrtSession(login_id="synthetic", user_map={})
+    return client, requests
+
+
+def test_reserve_preview_carries_the_seat_fields_and_sends_nothing():
+    client, requests = _reserving_client()
+    try:
+        preview = client.reserve(
+            _reservable_train(),
+            consent=MutationConsent(allow_reserve=True),
+            passengers=PassengerCounts(adult=2),
+            designated_seats=_designation("1B", "2C"),
+        )
+    finally:
+        client.close()
+
+    assert isinstance(preview, MutationPreview)
+    assert requests == []
+    assert preview.category == "reserve"
+    assert preview.route == RESERVE_ROUTE
+    assert preview.payload["jobId"] == RESERVE_SEATMAP_JOBID
+    assert preview.payload["seatNo1_1"] == "1B"
+    assert preview.payload["seatNo1_2"] == "2C"
+    assert preview.payload["scarNo1"] == "3"
+
+
+def test_reserve_transmits_the_designated_body_on_the_existing_reserve_route():
+    # The route is the INFERENCE this feature rests on: fn_submit's definition
+    # is server-rendered, and this library sends the designated body to the same
+    # personal reservation endpoint under the same consent category. The test
+    # pins what we send, not that the server accepts it.
+    client, requests = _reserving_client()
+    try:
+        hold = client.reserve(
+            _reservable_train(),
+            consent=MutationConsent(dry_run=False, allow_reserve=True),
+            passengers=PassengerCounts(adult=1),
+            designated_seats=_designation("3C"),
+        )
+    finally:
+        client.close()
+
+    assert isinstance(hold, SrtReservationHold)
+    assert [request.url.path for request in requests] == [
+        "/ts.wseq",
+        RESERVE_ROUTE,
+        "/ts.wseq",
+    ]
+    form = dict(httpx.QueryParams(requests[1].content.decode()))
+    assert form["jobId"] == RESERVE_SEATMAP_JOBID
+    assert form["seatNo1_1"] == "3C"
+    assert form["scarGridcnt1"] == "1"
+    assert form["scarNo1"] == "3"
+
+
+def test_seat_designation_adds_no_route_and_no_consent_category():
+    # It rides the existing reserve category on the existing reserve route. The
+    # canary in test_mutation_live_paths pins the category set globally; this
+    # pins that THIS feature did not touch it.
+    assert SRT_LIVE_MUTATION_CATEGORIES == {"reserve", "cancel", "payment", "refund"}
+    assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
+    assert MutationRoute("POST", "app", RESERVE_ROUTE) in SRT_MUTATION_ROUTES
+    assert len(SRT_MUTATION_ROUTES) == 5
