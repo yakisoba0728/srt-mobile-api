@@ -854,3 +854,33 @@ group response risk. Still deferred within that surface: **`jobId=1103`
 bundle (`fn_submit()` is defined in the server-rendered page), and srtgo's
 standby-option POST `/ata/selectListAta01135_n.do`, which is 0-hit here with no
 equivalent in our app. Both would need capture, not inference.
+
+## Live status of the reservation variants (2026-07-26)
+
+**Round trip — VERIFIED.** 수서→동탄 20260809 train 315 outbound and
+동탄→수서 20260810 train 604 return, one adult each, `round_trip=True` on both
+calls. `TrainSearchQuery.for_return_leg` swapped the stations correctly
+(0551→0552 became 0552→0551), each call produced its own PNR, both cancelled
+`SUCC`/`IRG000000`, and the account was verified empty. This confirms the
+bundle-derived model: a round trip is TWO separate reservations, not one
+request carrying two legs, and `jrnyCnt` stays `"1"` throughout.
+
+**Standby — NOT VERIFIED, for want of an eligible train.** The app decides
+standby eligibility from the search row's `gnrmRsvPsbImg`, and live searches
+returned only `IMAGE::grd_WF_Soldout.png` and `IMAGE::grd_WF_Ok01.png` — never
+`IMAGE::grd_WF_Waiting.png`. Four searches were tried across sold-out
+수서→부산 and 수서→동대구 departures on four dates; every train was plainly
+sold out with no standby offered. The image values themselves are now
+live-confirmed, which corroborates the bundle over srtgo (srtgo keys standby
+off `rsvWaitPsbCd`, a column our app never reads for this and which the group
+search does not even return). Whether SRT offers 예약대기 at all on these
+routes is unknown; the code path remains offline-tested only.
+
+**Group — NOT ATTEMPTED, deliberately.** `ara1001l.js:1597-1610` shows the app
+forces `pnrNo` to `-1` for a group reservation and identifies it by
+`resultMap.tmpJobSqno1` instead. If the live response really carries no PNR,
+`cancel` — which takes a PNR — would have nothing to act on, so a live group
+booking could be a ten-seat hold this library cannot release. That risk needs
+an explicit decision before anyone sends one, and the first live attempt should
+capture the raw response (including from a raised `SrtProtocolError`) to settle
+`pnrNo` versus `tmpJobSqno1` before anything else.
