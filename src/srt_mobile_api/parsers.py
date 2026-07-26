@@ -1110,11 +1110,45 @@ def _first_row(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _declares_status(row: dict[str, Any]) -> bool:
+    status = row.get("strResult")
+    return isinstance(status, str) and bool(status)
+
+
 def normalize_result_row(data: dict[str, Any]) -> dict[str, Any]:
+    """Pick the result row from whichever container actually carries one.
+
+    ``outDataSets.dsOutput0`` is preferred, as documented, but ONLY when it
+    holds a usable row. The previous test was ``"dsOutput0" in out`` -- key
+    presence alone -- which made the advertised ``resultMap`` fallback
+    unreachable: an empty or null ``dsOutput0`` returned ``{}`` and the caller
+    raised "must contain a result row" while a perfectly good FAIL row sat in
+    ``resultMap`` unread. On refund, cancel and payment that turns a stated
+    reason into an exception that cannot say whether money moved.
+
+    When BOTH containers declare a status and they disagree, the FAILING one
+    wins. That combination has never been observed on these three routes, so
+    this is a deliberate fail-closed choice rather than an observed rule: the
+    opposite default let a side-car ``dsOutput0`` of ``[{"strResult":"SUCC"}]``
+    mask a ``resultMap`` FAIL, and a refund that did not happen must not read
+    as one that did. This backend does ship contradictory containers in one
+    body -- ``tests/fixtures/reservation_list_empty.json`` carries a SUCC
+    ``resultMap`` beside a FAIL ``rsMap`` -- so the case is not hypothetical,
+    it merely has not been seen with this particular pair.
+    """
     out = data.get("outDataSets") or {}
-    if isinstance(out, dict) and "dsOutput0" in out:
-        return _first_row(out.get("dsOutput0"))
-    return _first_row(data.get("resultMap"))
+    primary: dict[str, Any] = {}
+    if isinstance(out, dict):
+        primary = _first_row(out.get("dsOutput0"))
+    fallback = _first_row(data.get("resultMap"))
+
+    if not _declares_status(primary):
+        return primary or fallback
+    if not _declares_status(fallback):
+        return primary
+    if primary.get("strResult") == fallback.get("strResult"):
+        return primary
+    return fallback if fallback.get("strResult") != "SUCC" else primary
 
 
 def parse_mutual_verification_response(
