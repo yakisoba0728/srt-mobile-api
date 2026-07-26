@@ -1340,3 +1340,34 @@ in `payloads._seat_designation_fields`, the one place both the seats and the
 passenger counts are in scope: `choiceSeatCount` is `totPrnb`
 (`ara1001l.js:1511`), so the app asks the seat map for exactly as many seats as
 there are passengers, and a mismatch is a body the app cannot produce.
+
+## Seat designation (1103) — live-verified end to end (2026-07-26)
+
+수서→동탄 train 315 on 20260812, one adult, car 1.
+
+- `get_seat_page` → car list; `get_seat_grid(train, "1")` → **56 seats parsed,
+  27 selectable**, each carrying both identifiers separately
+  (`internal_seat_number="1"`, `printed_seat_label="1A"`, `seat_attribute_code="015"`).
+- `reserve(..., designated_seats=grid.choose("1C"))` → `SUCC` / `IRR000018`,
+  and the hold came back with **`scarNo=1`, `seatNo=1C` — exactly the seat
+  requested**. Cancelled `IRG000000`, account back to zero. No payment.
+
+**This settles the one thing the implementation had to infer.** The submit
+target was unknown because `fn_submit`'s definition could not be found — it is
+in neither the bundle, nor `/ara/ara0101v.do`, nor `/main/main.do`, nor the
+seat-grid response, all of which were fetched and searched. The implementation
+reasoned from the commented-out `fn_callReserv()` beside its call site that the
+existing reservation route was the target, and the live server confirmed it:
+the ordinary `Arc05013` accepts the seat fields and honours them.
+
+It also confirms the bundle's reading that the form transmits the PRINTED
+label, not the internal number — we sent `1C` and got `1C` back. korail is the
+opposite way round (its form takes the internal `seat_no` and echoes the
+printed `seat_spec`), so the two clients genuinely differ here and the
+identifier types must not be carried across.
+
+**The five-digit zero-padding of `trnNo` was the whole gate on the grid read.**
+Sending `315` returns a 147-byte alert shell whose message
+("출발 20분 전부터 좌석이 자동배정됩니다") reads like a timing rule and is a red
+herring; `00315` returns the grid. Referer and route length make no difference.
+
