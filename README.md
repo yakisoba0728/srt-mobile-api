@@ -1009,6 +1009,38 @@ the page's own `if/else if` chain and every one was empty on the only account
 readable here, so their populated shape is unknown and no parser is written
 against it. `raw` carries the page.
 
+### What the 할인 survey found that is NOT implemented
+
+Three discount surfaces exist and are deliberately absent, each for a different
+reason. The full write-up, with the evidence for each, is in
+`docs/IMPLEMENTATION_PROGRESS.md` under "할인 / 쿠폰 / 공공할인 — the survey".
+
+- **`POST /arb/selectListArb02A01_n.do`, 할인쿠폰 등록.** A mutation, and it
+  belongs to no member of `SRT_LIVE_MUTATION_CATEGORIES` — which is
+  `{reserve, cancel, payment, refund}` and pinned by a canary. Registered in
+  neither allowlist.
+- **`/ara/selectListAra10131_n.do`, the 할인 승차권 search.** Exists (a bare live
+  GET answered `200` where a nonexistent sibling answered `404`), but every
+  `PBL_DISC_*` value it needs would be a guess without an approved 공공할인,
+  which no account here holds. Unverifiable in principle, not merely unverified.
+- **`/ata/selectListAta01032_n.do`, the bundle's only discount route.** Its
+  single caller (`arc0102c.js:34`) sends the literal, unsubstituted
+  `pnrNo=${commandMap.pnrNo}` — a JSP expression stranded in a static asset — so
+  it can never have worked from the offline bundle. The live server says the
+  route is **mapped but throws**: it answers `500` where two control routes
+  answer `404`, with the identical body, so the status code is the whole signal.
+  Reaching it needs a real owned PNR, and this survey created nothing.
+
+**And one gap in what this library can express.** `PassengerCounts` carries five
+passenger types; the live app carries seven. 유아 is `passenger6` on the
+승차인원선택 popup and travels as `infantCnt` *and* folded into the 어린이 count;
+청소년 is `passenger7`, revealed only under 공공할인 `04`, and travels as
+`psgTpCd` **6** — a code in neither copy of `commCode.js`. Nothing was changed
+in `PassengerCounts` or any payload, because both would change what `reserve()`
+transmits and 청소년 needs an approval nobody here holds. Five is now recorded
+as this library's deliberate boundary rather than as a fact about SRT; see
+"공공할인 is a passenger vocabulary, not just a price".
+
 ### Mutual verification
 
 `get_mutual_verification()` manually performs the evidenced empty-form mutual

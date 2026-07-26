@@ -63,11 +63,22 @@ class SrtSession:
 
 @dataclass(frozen=True)
 class PassengerCounts:
-    # SRT has exactly five passenger types (psgTpCd 1..5, commCode.js:55-88); there is
-    # NO infant type (`infantCnt` appears nowhere in the app). Every head-count field
+    # Five passenger types (psgTpCd 1..5, commCode.js:55-88). Every head-count field
     # (totPrnb/totalPessnger/psgNum) must equal sum(psgInfoPerPrnb1..5), the invariant
     # getPsgTotCnt() guarantees (ara0101v.js:35), so no field outside the five types may
     # feed `total`.
+    #
+    # This used to add "there is NO infant type (`infantCnt` appears nowhere in the
+    # app)". That was true of the v2.0.41 bundle and false of the live server, and was
+    # corrected on 2026-07-26: the live 승차인원선택 popup renders 유아 (`passenger6`)
+    # and 청소년 (`passenger7`, revealed only under 공공할인 "04"), the live booking
+    # page transmits `infantCnt`, and the 할인 승차권 page transmits `psgTpCd6`.
+    #
+    # Five is therefore a deliberate BOUNDARY, not an inventory of SRT. Widening it
+    # would change what reserve() sends, and 청소년 is unreachable without a 공공할인
+    # approval no account here holds. See payloads.PASSENGER_TYPE_CODES,
+    # srt_mobile_api.discounts, and docs/IMPLEMENTATION_PROGRESS.md
+    # ("공공할인 is a passenger vocabulary, not just a price").
     adult: int = 1
     child: int = 0
     senior: int = 0

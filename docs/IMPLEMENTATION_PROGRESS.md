@@ -1452,3 +1452,161 @@ None of this is impossible. It is a second payment implementation plus an
 external redirect flow, for a booking type with a ten-person minimum — which is
 why it is out of scope.
 
+
+## 할인 / 쿠폰 / 공공할인 — the survey (2026-07-26)
+
+The starting premise was `/ata/selectListAta01032_n.do`, the offline bundle's
+only discount route. That premise did not survive contact, and the surface that
+replaced it is larger and reachable. Everything below says where it came from:
+**[bundle]** = the committed v2.0.41 offline bundle, **[page]** = a live
+read-only GET of a server-rendered page, both dated 2026-07-26.
+
+### What was already there
+
+`PassengerCounts` carries the five `psgTpCd` types and nothing else, and the
+bundle's `commCode.js` agrees with it exactly (`psgTpCd` 1..5, no more) — as
+does the LIVE `/js/commCode.js`, fetched the same day, which still stops at 5.
+Nothing about the ordinary booking path was wrong.
+
+### What exists and is now implemented
+
+| surface | route | evidence |
+| --- | --- | --- |
+| 할인종류코드 (`dcntKndCd`), 173 codes | — (data) | [bundle] `commCode.js:416-848` |
+| 공공할인코드 (`PBL_DISC_CD`) `01`–`06` | — (data) | [page] `ARA0901P` popup's own comment block |
+| 할인쿠폰 list | `GET /apa/selectListApa03020_n.do` | [page] the MY SRT menu on `/ara/ara0101v.do` |
+| 공공할인 entitlements | `GET /common/ARA/ARA0301V/view.do` | [page] the same menu |
+
+### What exists and is deliberately NOT implemented
+
+**`POST /arb/selectListArb02A01_n.do` — 할인쿠폰 등록.** [page] The coupon page's
+own `couponReg()` serialises `#couponInfo` (`dscp_no`, `dscp_pwd`) and posts it,
+reading `resultMap[0].RTNCD` / `.MSG` back as JSON. It registers a coupon
+against the account, so it is a mutation, and it belongs to no member of
+`SRT_LIVE_MUTATION_CATEGORIES` — which is `{reserve, cancel, payment, refund}`
+and pinned by a canary. Implementing it would mean adding a fifth category. It
+is registered in neither allowlist and a test asserts that.
+
+**`/ara/selectListAra10131_n.do` — the 할인 승차권 search.** [page] `goSubmit()`
+on `ARA0301V` retargets `#rsvForm` here and submits it behind NetFunnel
+`act_10`. The form is the booking form plus four fields (`PBL_DISC_CD`,
+`PBL_DISC_NM`, `PBL_DISC_MG_NO`, `TGT_DTRM_YN`). **The route exists**: a bare
+live GET answered `200` with a 조회결과 shell, where `/ara/selectListAra99999_n.do`
+answered `404`. It is not implemented because exercising it needs an approved
+공공할인, and nothing on this project has one — so every field this library
+would put in `PBL_DISC_*` would be a guess, and the result would be unverifiable
+in principle rather than merely unverified.
+
+**`/ata/selectListAta01032_n.do` — the premise, and why it is dead.** [bundle]
+`arc0102c.js:34` is its only caller anywhere in 21,673 files:
+
+```js
+$("#btn_dcnt").click(function() {
+    $.mobile.changePage( contextPath + "/ata/selectListAta01032_n.do", {
+        data: "pnrNo=${commandMap.pnrNo}"
+    });
+});
+```
+
+`${commandMap.pnrNo}` is a JSP expression sitting in a STATIC asset. The offline
+bundle is never processed by a JSP engine, so that string goes on the wire
+verbatim — this handler cannot ever have sent a real PNR from this file. It is a
+fragment of a server-rendered page that was copied into the offline bundle and
+left there. `btn_dcnt` and `arc0102c` are 0-hit everywhere else.
+
+The live server agrees, and says so in a way worth recording because it is a
+technique: **`404` and `500` are different answers.**
+
+| request | status |
+| --- | --- |
+| `GET /ata/selectListAta99999_n.do` (control) | `404` |
+| `GET /arc/selectListArc0102c_n.do` (control) | `404` |
+| `GET /ata/selectListAta01032_n.do?pnrNo=` | `500` |
+| `GET /ata/selectListAta01032_n.do?pnrNo=000000000000` | `500` |
+
+All four render the identical "페이지가 존재하지 않습니다" body, so the body is
+worthless and the status code is the whole signal. A 404 is the dispatcher
+finding no controller; a 500 is a controller that ran and threw. So `Ata01032`
+is **mapped but not exercisable without a real, owned PNR** — which would
+require making a reservation, which this survey may not do. It is left
+unimplemented, and `tests/test_safety.py` already refuses the route by name.
+
+**What would settle it:** one `GET /ata/selectListAta01032_n.do?pnrNo=<a real
+PNR the account holds>`, with `Referer` set to the reservation list. That is a
+read; the reservation that has to exist first is not.
+
+### The gap, stated plainly
+
+`PassengerCounts` and the reservation payload can express five passenger types.
+The live app can express **seven**, and both extras are invisible to the bundle.
+See the next section — it is the most consequential thing this survey found.
+
+## 공공할인 is a passenger vocabulary, not just a price
+
+The repository stated, in five places, that SRT has no infant type and that
+`infantCnt` and `psgTpCd` 6 do not exist. Every one of those statements was
+true of the v2.0.41 offline bundle and false of the live server, and the error
+was the same each time: reading "absent from the bundle" as "absent from the
+protocol". They were corrected on 2026-07-26 rather than deleted.
+
+**유아 (infant).** The live 승차인원선택 popup — fetched through this library's own
+already-allowlisted `get_passenger_selector` — renders a SIXTH counter,
+`passenger6`, labelled "유아 (만 6세미만)". The live booking page reads it and
+does two things with it at once:
+
+```js
+var passenger6 = parseInt($('#passenger6').val()); // 유아
+...
+if(i==5){
+    passenger = passenger + passenger6;   // folded into the 어린이 slot COUNT
+    $('#infantCnt').val(passenger6);      // and sent separately as infantCnt
+}
+```
+
+So an infant is counted inside `psgInfoPerPrnb` for 어린이 *and* declared again
+in `infantCnt`. Both fields are on the live `#rsvForm`.
+
+**청소년 (youth), as `psgTpCd` 6.** The same popup renders a SEVENTH counter,
+`passenger7`, labelled 청소년 — `style="display: none;"` unless the 공공할인 code
+is `"04"`, at which point the page reveals it and decrements the adult count.
+`setTotalPassenger` sums `i=1..7`, and `returnPassenger` returns all seven. The
+할인 승차권 page then maps `passenger7` into `psgTpCd6`/`psgInfoPerPrnb6`.
+
+**`psgTpCd` 6 is in neither copy of `commCode.js`** — not v2.0.41 and not the
+live `/js/commCode.js` fetched the same day, both of which stop at 5. It exists
+only in what the server renders on the 공공할인 path.
+
+**Nothing was changed in `PassengerCounts` or in any payload, and that is the
+point.** Adding either type would change what `reserve()` transmits; 청소년 is
+unreachable without a 공공할인 approval no account here holds; and the infant
+folding is a two-place rule (`psgInfoPerPrnb5` *and* `infantCnt`) that cannot be
+verified without booking with an infant. What changed is the justification: five
+passenger types is now recorded as this library's deliberate boundary rather
+than as a fact about SRT. `discounts.YOUTH_PASSENGER_TYPE_CODE` records the code
+so the knowledge is not lost again.
+
+**What implementing it would take:** `PassengerCounts` gains `infant` and
+`youth`; `total` and the `getPsgTotCnt` invariant have to decide whether an
+infant is a head (the app says yes for `psgInfoPerPrnb5` and separately declares
+it); `_passenger_fields` grows a sixth slot; `passenger_selector_payload` grows
+`passenger6`/`passenger7`; and every one of those changes lands in the
+reservation payload, so it needs a live reserve→cancel round trip to verify —
+which is exactly the class of change this survey was told not to make on the
+side.
+
+### Live reads this survey performed
+
+All GET, all read-only, paced ~2s apart, on 2026-07-26. Nothing was reserved,
+paid, refunded or cancelled.
+
+| page | bytes | what it settled |
+| --- | --- | --- |
+| `/ara/ara0101v.do` | 156,478 | the MY SRT menu → both new routes; `infantCnt`, `psgTpCd6` |
+| `/atc/selectListAtc14017_n.do` | 91,412 | the same menu, corroborating |
+| `/apa/selectListApa03020_n.do` | 77,056 | 할인쿠폰: empty state, row template, `couponReg` |
+| `/common/ARA/ARA0301V/view.do` | 206,268 | 공공할인: eight flags, four extra form fields, `Ara10131` |
+| `/common/ARA/ARA0901P/view.do` | 12,231 | `PBL_DISC_CD` 01–06 by name; `passenger6`/`passenger7` |
+| `/js/commCode.js` | 41,673 | `psgTpCd` still 1..5 live; four `dcntKndCd` renames |
+| `/js/common/messages.js` | 30,086 | `rsv071`, `notice006` verbatim |
+| `/ata/selectListAta01032_n.do` | — | `500` vs the controls' `404` |
+| `/ara/selectListAra10131_n.do` | 136,326 | `200` vs the control's `404` |

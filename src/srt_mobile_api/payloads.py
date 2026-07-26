@@ -221,8 +221,30 @@ TRAIN_GROUP_OPTIONS = {
 }
 # The five SRT passenger types in positional psgTpCd order (commCode.js:55-88 lists
 # psgTpCd 1..5 only; the picker object seeds psgTpCd1..5 = "1".."5" at
-# ara0101v.js:795-804). There is NO infant / psgTpCd "6": SRT has no infant type and
-# the string `infantCnt` appears nowhere in the app.
+# ara0101v.js:795-804).
+#
+# THE COMMENT HERE USED TO SAY "there is NO infant / psgTpCd 6: SRT has no infant
+# type and the string infantCnt appears nowhere in the app". The first half of that
+# is true of the v2.0.41 offline bundle and FALSE of the live server, and it was
+# corrected on 2026-07-26 rather than deleted, because the mistake is instructive:
+# it read "absent from the bundle" as "absent from the protocol".
+#
+# What the live pages actually carry, all of it 0-hit in v2.0.41:
+#
+#   * 유아 (infant). The 승차인원선택 popup renders a SIXTH counter, `passenger6`,
+#     labelled "유아 (만 6세미만)", and the live booking page folds it into the
+#     어린이 slot count while ALSO sending it separately:
+#     `passenger = passenger + passenger6; $('#infantCnt').val(passenger6)`.
+#   * 청소년 (youth) as psgTpCd "6". The popup renders a SEVENTH counter,
+#     `passenger7`, hidden unless the 공공할인 code is "04", and the 할인 승차권 page
+#     sends it as psgTpCd6/psgInfoPerPrnb6. psgTpCd 6 is in NEITHER copy of
+#     commCode.js -- not v2.0.41, not the live copy fetched the same day.
+#
+# This tuple is still exactly five, and that is now a CHOICE rather than a fact
+# about SRT: adding either type changes the reservation payload, and 청소년 is
+# unreachable without a 공공할인 approval nobody on this project holds. The
+# constants that record the vocabulary live in discounts.py; see
+# docs/IMPLEMENTATION_PROGRESS.md, "공공할인 is a passenger vocabulary".
 PASSENGER_TYPE_CODES = (
     ("adult", "1"),
     ("disability_1_to_3", "2"),
@@ -303,8 +325,21 @@ def reservation_list_payload(page_no: int = 0) -> dict[str, str]:
 def passenger_selector_payload(passengers: PassengerCounts) -> dict[str, str]:
     # passengerN is keyed by SRT passenger type code N (commCode.js psgTpCd:
     # 1=adult, 2=disability_1_to_3, 3=disability_4_to_6, 4=senior, 5=child).
-    # See ara0101v.js:213-238 (request) and :795-804 (callback). There is no
-    # passenger6 slot; infant is not a picker type.
+    # See ara0101v.js:213-238 (request) and :795-804 (callback).
+    #
+    # "There is no passenger6 slot; infant is not a picker type" is what this
+    # comment used to say, and the live popup this very payload fetches
+    # disproves it: fetched 2026-07-26, it renders `passenger6` ("유아 (만
+    # 6세미만)") and `passenger7` ("청소년", hidden unless the 공공할인 code is
+    # "04"), sums i=1..7 in setTotalPassenger, and returns all seven to its
+    # callback.
+    #
+    # Five are still SENT, deliberately. The popup defaults 6 and 7 to zero when
+    # they are absent from the request -- our live read got a page whose own
+    # commandMap echo was `{reqCode=6, isOrg=2, passenger1=1, ...,
+    # passenger5=0, totalPessnger=1, sNowSel=1}` and which rendered correctly --
+    # and adding them here would mean adding them to PassengerCounts, which the
+    # reservation payload also reads. See PASSENGER_TYPE_CODES above.
     return {
         "reqCode": "6",
         "isOrg": "2",
@@ -365,8 +400,9 @@ def _passenger_fields(
     # Emit the COMPACTED psgTpCd1..N / psgInfoPerPrnb1..N, then leave the trailing slots
     # empty over exactly 5 slots. The app seeds all five as psgTpCd="" / psgInfoPerPrnb="0"
     # and overwrites only the first N filled ones (ara0101v.js:808-836), so the trailing
-    # slots are SENT (psgTpCd="", psgInfoPerPrnb="0"), not omitted. No psgTpCd6 / infantCnt
-    # (SRT has no infant type; commCode.js psgTpCd is 1..5 only).
+    # slots are SENT (psgTpCd="", psgInfoPerPrnb="0"), not omitted. No psgTpCd6 and no
+    # infantCnt -- both of which the live server DOES carry, and neither of which this
+    # library emits; see PASSENGER_TYPE_CODES for what changed and why the five stayed.
     hydrated_fields = hydrated_fields or {}
     slots = _compact_passenger_slots(passengers)
     fields: dict[str, str] = {}

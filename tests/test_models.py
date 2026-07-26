@@ -126,10 +126,16 @@ def test_passenger_counts_reject_empty_or_negative_totals():
         PassengerCounts(adult=-1)
 
 
-def test_passenger_counts_has_no_infant_type():
-    # B2: SRT has exactly five passenger types (psgTpCd 1..5); there is no infant type
-    # (`infantCnt` appears nowhere in the app). `.total` must equal the sum of the five
-    # types so totPrnb == sum(psgInfoPerPrnb1..5) holds everywhere.
+def test_passenger_counts_deliberately_carries_no_infant_or_youth_type():
+    # B2: five passenger types (psgTpCd 1..5). `.total` must equal the sum of the five
+    # so totPrnb == sum(psgInfoPerPrnb1..5) holds everywhere.
+    #
+    # This test was named ..._has_no_infant_type and its comment said `infantCnt`
+    # appears nowhere in the app. That was true of the v2.0.41 bundle and false of the
+    # live server, which carries 유아 (`passenger6`/`infantCnt`) and 청소년
+    # (`passenger7`/`psgTpCd6`). What it pins is unchanged and its meaning is not: the
+    # five are this library's boundary, not SRT's inventory. See
+    # payloads.PASSENGER_TYPE_CODES.
     with pytest.raises(TypeError):
         PassengerCounts(adult=1, infant=1)  # type: ignore[call-arg]
     counts = PassengerCounts(

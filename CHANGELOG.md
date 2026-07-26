@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **CORRECTED, in five places: SRT does have an infant type and a `psgTpCd` 6.**
+  The repository stated flatly that "`infantCnt` appears nowhere in the app" and
+  that "there is NO infant / psgTpCd 6". Both were true of the v2.0.41 offline
+  bundle and false of the live server, and the error was the same each time:
+  reading "absent from the bundle" as "absent from the protocol".
+  The live 승차인원선택 popup — fetched through this library's own already
+  allowlisted `get_passenger_selector` — renders a sixth counter `passenger6`
+  ("유아 (만 6세미만)") and a seventh `passenger7` ("청소년", hidden unless the
+  공공할인 code is `04`), sums `i=1..7`, and returns all seven. The live booking
+  page folds 유아 into the 어린이 slot count AND sends it again as `infantCnt`;
+  the 할인 승차권 page sends 청소년 as `psgTpCd6`. `psgTpCd` 6 is in NEITHER copy
+  of `commCode.js`.
+  **No behaviour changed and no assertion was weakened.** `PassengerCounts` is
+  still five types and the payload builders still emit no `psgTpCd6` and no
+  `infantCnt`; the tests that pin that are unchanged. What changed is the
+  JUSTIFICATION: five is now recorded as this library's deliberate boundary
+  rather than as a fact about SRT. Widening it would change what `reserve()`
+  transmits, and 청소년 is unreachable without a 공공할인 approval no account
+  here holds. `discounts.YOUTH_PASSENGER_TYPE_CODE` records the code so the
+  knowledge cannot be lost again, and
+  `docs/IMPLEMENTATION_PROGRESS.md` ("공공할인 is a passenger vocabulary, not
+  just a price") records what implementing it would take.
+  Also recorded there: the 할인 survey's three NOT-implemented surfaces —
+  coupon registration (`/arb/selectListArb02A01_n.do`, a mutation with no
+  category), the 할인 승차권 search (`/ara/selectListAra10131_n.do`, exists but
+  needs an approval nobody here has), and `/ata/selectListAta01032_n.do`, whose
+  only caller in the bundle sends a literal unsubstituted
+  `pnrNo=${commandMap.pnrNo}` and whose live route is mapped-but-throwing
+  (`500`, where two control routes answer `404` with the identical body).
+  Offline gate: `1497 passed, 1 deselected` (unchanged — comments and one test
+  name).
+
 - **공공할인 (welfare discount) entitlement READ — `get_public_discounts()`,
   live-verified unapproved 2026-07-26.** One parameterless
   `GET /common/ARA/ARA0301V/view.do` (할인 승차권) returning `PublicDiscountPage`
