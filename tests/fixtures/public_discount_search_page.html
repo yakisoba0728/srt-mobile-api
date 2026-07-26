@@ -1,0 +1,150 @@
+<!--
+  REDACTED excerpt of a REAL response, live-read 2026-07-26 from
+  GET /ara/selectListAra10131_n.do (할인 승차권 조회결과) for an account approved
+  for no 공공할인. The live body was 142,594 bytes; this keeps the two parts the
+  builder and the parser rest on and drops the shared chrome. The member number
+  and the two JSESSIONID echoes the page prints in its own user map are removed.
+
+  THIS PAGE IS THE ONLY EVIDENCE FOR THE 할인 승차권 SEARCH REQUEST, and both
+  halves of it are here:
+
+    * #seatSearchForm is the ajax body, verbatim. Twenty-three fields, nine of
+      them server-rendered constants. Note what is ABSENT: no netfunnelKey (the
+      queue gate on this route is on the page navigation, not on the request),
+      and no psgTpCd/psgInfoPerPrnb at all -- the ajax carries psgNum, the head
+      count, and nothing else about the party;
+    * searchList() is what actually fetches the rows: a POST back to the SAME
+      path with dataType:"json", reading data.resultMap[0].strResult,
+      data.trainListMap and data.dsCmdMap.gdNo. Paging is the gdNo CURSOR fed
+      back in, not the dptTm bump the ordinary search uses, and the more-pages
+      flag rides the FIRST ROW (trainListMap[0].fllwPgExt) rather than the
+      metadata row;
+    * innerHtml() is kept only for its two discount columns, gnrmBkclDcntRt and
+      sprmBkclDcntRt -- 0-hit in the v2.0.41 bundle and absent from every
+      ordinary-search row captured here. A rate below 1 means "no discount on
+      this train"; otherwise the page prints parseInt(rate) + "% 할인". Note that
+      the renderer's parameter is still called dsOutputTemp, which is the
+      clearest statement available that these are the ordinary search's rows in
+      a differently-named container.
+
+  WHAT THIS PAGE DOES NOT SHOW, and no page here can: a reply. Every var s*
+  hydration slot below and all three pblDisc* inputs came back EMPTY, and
+  identical, across four live GET probes with wildly different query strings
+  (a full 146-field journey, that journey with PBL_DISC_CD="04", a bare `?type=`,
+  and a de-duplicated journey). The four bodies differed only in the session id.
+  That is why the GET half of this route is registered nowhere.
+-->
+<div data-role="page" class="jqm-demos" id="page">
+	<div data-role="header" class="type2 ui-header" role="banner">
+		<h1 id="fn_setTitle" class="ui-title" role="heading" aria-level="1">조회결과</h1>
+	</div>
+
+	<form id="seatSearchForm" name="seatSearchForm">
+        <!-- 133 DATA -->
+        <input type="hidden" name="menuId" 						id="menuId" 				value="41"/>
+	    <input type="hidden" name="owayRtrpCrclDvCd" 		id="owayRtrpCrclDvCd" 	value="01"/>
+	    <input type="hidden" name="psgNum1" 					id="psgNum1" 				value="0"/>
+	    <input type="hidden" name="psgNum2" 					id="psgNum2" 				value="0"/>
+	    <input type="hidden" name="dirtChtnDvCd" 				id="dirtChtnDvCd" 		value="1"/>
+	    <input type="hidden" name="cgPsId" 						id="cgPsId" 					value="korail"/>
+	    <input type="hidden" name="medDvCd" 					id="medDvCd" 				value="03"/>
+	    <input type="hidden" name="subCnt" 						id="subCnt" 				value="0"/>
+	    <input type="hidden" name="gdNo" 							id="gdNo" 					value=""/>
+
+        <input type="hidden" id="chtnDvCd" name="chtnDvCd"/>
+        <input type="hidden" id="dptDt" name="dptDt" value=""/>
+        <input type="hidden" id="dptTm" name="dptTm" value=""/>
+        <input type="hidden" id="dptRsStnCd" name="dptRsStnCd"/>
+        <input type="hidden" id="arvRsStnCd" name="arvRsStnCd"/>
+        <input type="hidden" id="stlbTrnClsfCd" name="stlbTrnClsfCd"/>
+        <input type="hidden" id="trnGpCd" name="trnGpCd"/>
+        <input type="hidden" id="trnNo" name="trnNo"/>
+        <input type="hidden" id="psgNum" name="psgNum"/>
+        <input type="hidden" id="seatAttCd" name="seatAttCd"/>
+        <input type="hidden" id="arriveTime" name="arriveTime" value="N"/>
+
+        <input type="hidden" name="pblDiscCd" id="pblDiscCd" value=""/>
+	    <input type="hidden" name="pblDiscMgNo" id="pblDiscMgNo" value=""/>
+	    <input type="hidden" name="tgtDtrmYn" id="tgtDtrmYn" value=""/>
+    </form>
+
+	<script>
+        function onload() {
+            NetFunnel_Complete();
+            var sChtnDvCd = "" == "11" ? "1" : "2"; //직통:1, 환승:2
+            $("#chtnDvCd").val(sChtnDvCd);
+            var sDptDt = "";
+            if (sDptDt != document.seatSearchForm.dptDt.value) {
+                sDptDt = document.seatSearchForm.dptDt.value;
+            }
+            $("#dptDt").val(sDptDt);
+            var sDptRsStnCd = "";
+            $("#dptRsStnCd").val(sDptRsStnCd);
+            var sArvRsStnCd = "";
+            $("#arvRsStnCd").val(sArvRsStnCd);
+            var sStlbTrnClsfCd = "";  //역무차종별코드(05:전체, 17:SRT)
+            $("#stlbTrnClsfCd").val(sStlbTrnClsfCd);
+            var sPsgNum = "";
+            $("#psgNum").val(sPsgNum);
+            var sSeatAttCd = ""; //좌석속성코드는  "요구좌석속성코드1"를 입력함
+            $("#seatAttCd").val(sSeatAttCd);
+            var sTrnGpCd = ""; //열차그룹코드
+            $("#trnGpCd").val(sTrnGpCd);
+            var temp = "1";
+            searchList(temp);
+        }
+
+        function searchList(temp) {
+            var params = $("#seatSearchForm").serialize();
+            $.ajax({
+                type: "POST",
+                url: contextPath + "/ara/selectListAra10131_n.do",
+                data: params,
+                dataType: "json",
+                success: function (data) {
+                    var resultMap = data.resultMap[0];
+                    if(resultMap.strResult == "FAIL"){
+                            loadEndFlag = 'Y';
+                    }else{
+                    	var trainListMap = data.trainListMap;
+                    	 if (trainListMap[0].fllwPgExt != 'Y') {
+                            loadEndFlag = 'Y';
+                        }
+                    	for (var i = 0; i < data.trainListMap.length; i++) {
+							ds_list.push(data.trainListMap[i]);
+						}
+						$("#gdNo").val(data.dsCmdMap.gdNo);
+						innerHtml(trainListMap, trainListMap[0].fllwPgExt, temp);
+                    }
+                },
+                error: function (e) {
+                    return;
+                }
+            });
+        }
+
+        function innerHtml(dsOutputTemp, fllwPgExt, temp) {
+            for (var i = 0; i < dsOutputTemp.length; i++) {
+                dataDt = dsOutputTemp[i].dptDt.trim();
+                dptTm = dsOutputTemp[i].dptTm.trim();
+                var trnNo = Number(dsOutputTemp[i].trnNo);
+                if (dsOutputTemp[i].trnGpCd == "300") {
+                    /* 특실 */
+                    if (toNumber(dsOutputTemp[i].sprmBkclDcntRt, 0) < 1) {
+                        //할인율이 0인경우에는 처리하지 않음.
+                        innerHtmlTemp += getCommend("3",null, dsOutputTemp[i], dsOutputTemp[i].sprmRsvPsbCd,2);
+                    } else {
+                        //할인율 / 영수운임
+                        innerHtmlTemp += getCommend("3","sale", dsOutputTemp[i], parseInt(dsOutputTemp[i].sprmBkclDcntRt) + "% 할인", 2);
+                    }
+                    /* 일반실 */
+                    if (toNumber(dsOutputTemp[i].gnrmBkclDcntRt, 0) < 1) {
+                        innerHtmlTemp += getCommend("4",null, dsOutputTemp[i], dsOutputTemp[i].gnrmRsvPsbCd,6);
+                    } else {
+                        innerHtmlTemp += getCommend("4","sale", dsOutputTemp[i], parseInt(dsOutputTemp[i].gnrmBkclDcntRt) + "% 할인",7);
+                    }
+                }
+            }
+        }
+	</script>
+</div>

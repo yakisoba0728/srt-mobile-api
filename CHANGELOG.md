@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+- **할인 승차권 검색 (`Ara10131`) — the request is evidenced, the effect is not.**
+  `SrtClient.search_public_discount_trains(query, discount, *, page_cursor="")`
+  → `TrainSearchResult`, a `POST /ara/selectListAra10131_n.do`. A READ:
+  `READ_ONLY_ROUTES` 25 → 26, registered POST-only with its own exact 23-field
+  form contract, alongside the seat page and the seat grid.
+  **The survey's reason for leaving this out did not survive re-reading the
+  pages.** It said every `PBL_DISC_*` value would be a guess; the specific
+  mistake was reading the form it could see (the 할인 승차권 page's `#rsvForm`)
+  and never reading the form the search actually posts. Three of the four are
+  established — `pblDiscCd` has a known domain (`01`–`08`), `tgtDtrmYn` is the
+  literal `"Y"` on every branch, and `PBL_DISC_NM` **has no field at all** on
+  the ajax form — and only `pblDiscMgNo` is caller-supplied and opaque.
+  **The route has two legs and only one searches.** `goSubmit()` retargets a
+  `method="get"` form at it and NAVIGATES; the 조회결과 page that comes back
+  POSTs `#seatSearchForm` to the *same path* and renders rows from the JSON. Only
+  the second is implemented, and the first was **measured, not assumed**: four
+  live read-only GET probes (a full 146-field journey, that journey with
+  `PBL_DISC_CD="04"`, a bare `?type=`, a de-duplicated journey) returned 142,594
+  bytes each, byte-identical apart from the session id, with all eight `var s*`
+  hydration slots and all three `pblDisc*` inputs empty every time.
+  **Differences from the ordinary search, all from the live page**: three
+  discount fields in camelCase (the page form uses `PBL_DISC_*`); **no
+  `netfunnelKey`** on either form, though the app still waits behind `act_10` and
+  the client takes and releases a slot; **no passenger type mix** — `psgNum`
+  only, where the ordinary ajax carries `psgTpCd1..N`; paging by a `gdNo` cursor
+  rather than by bumping `dptTm`; `fllwPgExt` on the first ROW rather than on the
+  metadata row; and `resultMap`/`trainListMap`/`dsCmdMap` rather than
+  `outDataSets`.
+  **Two new row columns, and they are the point of the search**:
+  `gnrmBkclDcntRt` and `sprmBkclDcntRt`, the 공공할인 rate for 일반실 and 특실 as
+  whole-number percentages — 0-hit in the v2.0.41 bundle and absent from every
+  ordinary-search row captured here. Appended to `TrainSummary` as
+  `general_class_discount_rate` / `.special_class_discount_rate` and defaulted to
+  `None`, so an ordinary row is unchanged. A rate below 1 is the page's own way
+  of saying "this train carries no discount for you".
+  **The row parser was EXTRACTED, not copied.** The columns are the ordinary
+  search's and the page's own renderer still calls its parameter `dsOutputTemp`;
+  `_parse_search_train_rows` is now the single implementation both parsers use,
+  with only the container handling kept separate. The discount parser refuses the
+  ordinary `outDataSets` container rather than tolerating it.
+  **NEVER EXERCISED, and it says so everywhere.** No reply on this route has ever
+  been seen — not the envelope, not a populated discount rate, not a `gdNo`
+  round trip — so there is deliberately **no pager**: the stopping condition has
+  never been observed. What an entitled account would settle is enumerated in
+  `docs/IMPLEMENTATION_PROGRESS.md`; one search answers all seven at once, and
+  unlike the coupon registration a search spends nothing.
+  Offline gate: `1607 passed, 1 deselected` (was `1553`).
+
 - **할인쿠폰 등록 — a FIFTH consent category, and the first one that cannot be
   sent.** `SrtClient.register_discount_coupon(coupon_number, coupon_password, *,
   consent)` builds `POST /arb/selectListArb02A01_n.do` with exactly two fields,

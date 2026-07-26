@@ -19,6 +19,7 @@ from srt_mobile_api.consent import MUTATION_CATEGORIES
 from srt_mobile_api.safety import (
     COUPON_LIST_PATH,
     PUBLIC_DISCOUNT_PAGE_PATH,
+    PUBLIC_DISCOUNT_SEARCH_PATH,
     READ_ONLY_ROUTES,
     MutationRoute,
     ReadOnlyRoute,
@@ -280,17 +281,20 @@ def test_public_discount_page_is_registered_as_a_read_and_only_as_GET():
     )
 
 
-def test_the_discount_search_target_is_registered_nowhere():
-    """`/ara/selectListAra10131_n.do` is the 할인 승차권 search, and is not implemented.
+def test_the_discount_search_is_a_read_and_only_as_POST():
+    """`/ara/selectListAra10131_n.do` is a SEARCH: a read, and never a mutation.
 
-    It exists — a bare live GET answered 200 with a 조회결과 shell on 2026-07-26,
-    where a nonexistent sibling answered 404 — but exercising it needs an
-    approved 공공할인 nobody here holds, so no builder, route or method exists.
+    POST only. The GET half of this route is the app's page NAVIGATION
+    (`goSubmit()` retargets a `method="get"` form at it), and four live probes on
+    2026-07-26 showed it returns a byte-identical shell whatever the query
+    carries — so registering it would allow an arbitrary ~146-field query string
+    on a read route in exchange for a response nothing here would use.
     """
-    for method in ("GET", "POST"):
-        assert (
-            ReadOnlyRoute(method, "app", DISCOUNT_SEARCH_ROUTE) not in READ_ONLY_ROUTES
-        )
+    assert DISCOUNT_SEARCH_ROUTE == PUBLIC_DISCOUNT_SEARCH_PATH
+    assert ReadOnlyRoute("POST", "app", DISCOUNT_SEARCH_ROUTE) in READ_ONLY_ROUTES
+    assert ReadOnlyRoute("GET", "app", DISCOUNT_SEARCH_ROUTE) not in READ_ONLY_ROUTES
+    # A search creates nothing, so it must never be reachable as a mutation --
+    # which is also what keeps it out of any consent category.
     assert all(route.path != DISCOUNT_SEARCH_ROUTE for route in SRT_MUTATION_ROUTES)
     assert DISCOUNT_SEARCH_ROUTE not in SRT_MUTATION_ROUTE_CATEGORIES
     with pytest.raises(SrtProtocolError):

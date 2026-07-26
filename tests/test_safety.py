@@ -159,7 +159,11 @@ def test_route_registry_has_exact_expanded_size():
     # its own exact form contract, like the seat page.
     # The 22nd is the refund's step-1 read (/atc/getListAtc14087.do), which is
     # classified as a read by inference, not by proof; see safety.py.
-    assert len(READ_ONLY_ROUTES) == 25
+    # The 26th is the 할인 승차권 SEARCH (POST /ara/selectListAra10131_n.do): a
+    # search, so a read, with its own exact 23-field form contract. Only POST --
+    # the GET half of that route is the app's page navigation, and four live
+    # probes showed it conveys nothing back, so it is registered nowhere.
+    assert len(READ_ONLY_ROUTES) == 26
 
 
 @pytest.mark.parametrize(

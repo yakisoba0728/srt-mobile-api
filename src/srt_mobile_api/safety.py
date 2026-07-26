@@ -113,13 +113,117 @@ COUPON_REGISTRATION_PATH = "/arb/selectListArb02A01_n.do"
 # GET only, and this one has a sharper reason than the coupon page. The page it
 # returns is a SEARCH FORM: #rsvForm, the same ~140-field form the booking page
 # carries, plus PBL_DISC_CD / PBL_DISC_NM / PBL_DISC_MG_NO / TGT_DTRM_YN. Its
-# submit goes to /ara/selectListAra10131_n.do, which this library does not
-# implement and which is registered nowhere. Reading the page is a read;
-# nothing here can turn it into a search, let alone a reservation.
+# submit goes to PUBLIC_DISCOUNT_SEARCH_PATH, which is registered separately and
+# POST-only. Reading the page is a read; nothing here can turn it into a
+# reservation, and the search it names is a read of its own.
 #
 # 0-hit in the v2.0.41 bundle in every part: the route, PBL_DISC_CD, and every
 # one of its values.
 PUBLIC_DISCOUNT_PAGE_PATH = "/common/ARA/ARA0301V/view.do"
+# 할인 승차권 검색 (the 공공할인 search). A READ, registered as POST only, with an
+# exact form contract -- the same treatment the seat page and the seat grid get,
+# and for the same reason: this is a POST read whose body is a fixed, small set
+# of fields, so it can be pinned rather than trusted.
+#
+# THE ROUTE HAS TWO LEGS AND ONLY ONE OF THEM IS THE SEARCH. The 할인 승차권
+# page's goSubmit() retargets #rsvForm here and NAVIGATES (the form is
+# method="get"); the 조회결과 page that comes back then POSTs #seatSearchForm to
+# the SAME path and gets the rows as JSON. The GET is deliberately NOT
+# registered:
+#
+#   * it conveys nothing back. Four live GET probes on 2026-07-26 -- a full
+#     146-field journey, that journey with PBL_DISC_CD="04", a bare `?type=`,
+#     and a de-duplicated journey -- returned bodies that were byte-identical
+#     apart from the JSESSIONID echoed in the page's own user map. Every one of
+#     the eight `var s*` hydration slots and all three pblDisc* inputs came back
+#     empty regardless of what was sent;
+#   * so registering it would mean allowing an arbitrary ~146-field query string
+#     on a read route in exchange for a response we would discard, and the ~120
+#     fields a caller does not control would be transcribed from one account's
+#     rendering rather than evidenced.
+#
+# The POST leg's field set below is the live 조회결과 page's #seatSearchForm,
+# verbatim (2026-07-26). Note what is NOT in it: no netfunnelKey (neither form on
+# this route carries one, unlike Ara10007), and no psgTpCd/psgInfoPerPrnb at all
+# -- the ajax transmits the HEAD COUNT (psgNum) and no passenger type mix.
+#
+# 0-hit in the v2.0.41 bundle: the route and all three pblDisc* fields.
+PUBLIC_DISCOUNT_SEARCH_PATH = "/ara/selectListAra10131_n.do"
+PUBLIC_DISCOUNT_SEARCH_FIELDS = frozenset(
+    {
+        # The nine the page server-renders as constants and never touches.
+        "menuId",
+        "owayRtrpCrclDvCd",
+        "psgNum1",
+        "psgNum2",
+        "dirtChtnDvCd",
+        "cgPsId",
+        "medDvCd",
+        "subCnt",
+        # Empty on the first page; the paging cursor thereafter (the result
+        # page's own success handler does $("#gdNo").val(data.dsCmdMap.gdNo)).
+        "gdNo",
+        # The journey.
+        "chtnDvCd",
+        "dptDt",
+        "dptTm",
+        "dptRsStnCd",
+        "arvRsStnCd",
+        "stlbTrnClsfCd",
+        "trnGpCd",
+        "trnNo",
+        "psgNum",
+        "seatAttCd",
+        "arriveTime",
+        # The three that make this the 할인 승차권 search rather than the ordinary
+        # one. NOTE the spelling: camelCase here, where the PAGE form carries
+        # PBL_DISC_CD / PBL_DISC_MG_NO / TGT_DTRM_YN. Note also that
+        # PBL_DISC_NM has NO counterpart -- the discount's display name is never
+        # transmitted on the search.
+        "pblDiscCd",
+        "pblDiscMgNo",
+        "tgtDtrmYn",
+    }
+)
+PUBLIC_DISCOUNT_SEARCH_FIXED_VALUES = {
+    "menuId": "41",
+    "owayRtrpCrclDvCd": "01",
+    "psgNum1": "0",
+    "psgNum2": "0",
+    "dirtChtnDvCd": "1",
+    "cgPsId": "korail",
+    "medDvCd": "03",
+    "subCnt": "0",
+    "arriveTime": "N",
+    # 직통. The 할인 승차권 page has no 환승 toggle at all -- its rsvForm renders
+    # jrnyTpCd="11" and the result page derives chtnDvCd from it as
+    # `"" == "11" ? "1" : "2"`. A transfer cannot be expressed here, so "2" is
+    # not accepted rather than silently allowed.
+    "chtnDvCd": "1",
+    # Always empty on this route: onload() never assigns it, and paging is
+    # driven by gdNo rather than by bumping trnNo/dptTm.
+    "trnNo": "",
+}
+PUBLIC_DISCOUNT_SEARCH_VALUE_PATTERNS = {
+    "dptDt": r"[0-9]{8}",
+    "dptTm": r"[0-9]{6}",
+    "dptRsStnCd": r"[0-9]{4}",
+    "arvRsStnCd": r"[0-9]{4}",
+    # 역무차종별코드. The result page names two: 05 전체, 17 SRT. 00 is the
+    # KTX+SRT pairing this library's TRAIN_GROUP_OPTIONS already carries.
+    "stlbTrnClsfCd": r"(?:00|05|17)",
+    "trnGpCd": r"(?:109|300|900)",
+    "seatAttCd": r"[0-9]{3}",
+    "psgNum": r"[1-9][0-9]*",
+    # 공공할인코드 01..08. The page branches on all eight; discounts.py names six.
+    "pblDiscCd": r"0[1-8]",
+    # Server-issued approval number, opaque. Bounded and charset-restricted so
+    # this cannot become a free-text field, and allowed to be EMPTY because no
+    # account readable here has ever had one rendered.
+    "pblDiscMgNo": r"[A-Za-z0-9-]{0,32}",
+    "tgtDtrmYn": r"Y",
+    "gdNo": r"[A-Za-z0-9-]{0,32}",
+}
 SEAT_GRID_FIELDS = frozenset(
     {
         "trnGpCd",
@@ -243,9 +347,13 @@ READ_ONLY_ROUTES = frozenset(
         # registered anywhere in this module. See COUPON_LIST_PATH.
         ReadOnlyRoute("GET", "app", COUPON_LIST_PATH),
         # 할인 승차권 (공공할인 entitlements). GET, and only GET: the page IS a
-        # search form, and its submit target /ara/selectListAra10131_n.do is
-        # registered nowhere. See PUBLIC_DISCOUNT_PAGE_PATH.
+        # search form. See PUBLIC_DISCOUNT_PAGE_PATH.
         ReadOnlyRoute("GET", "app", PUBLIC_DISCOUNT_PAGE_PATH),
+        # 할인 승차권 검색. POST, and only POST -- a search, on the same footing
+        # as the ordinary Ara10007 ajax, with its own exact form contract. The
+        # GET half of this route is the app's page NAVIGATION and is
+        # deliberately not registered; see PUBLIC_DISCOUNT_SEARCH_PATH.
+        ReadOnlyRoute("POST", "app", PUBLIC_DISCOUNT_SEARCH_PATH),
         ReadOnlyRoute("GET", "netfunnel", "/ts.wseq"),
     }
 )
@@ -540,6 +648,16 @@ def _assert_seat_grid_request(request: httpx.Request) -> None:
     )
 
 
+def _assert_public_discount_search_request(request: httpx.Request) -> None:
+    _assert_exact_form_contract(
+        request,
+        context="public discount search",
+        fields=PUBLIC_DISCOUNT_SEARCH_FIELDS,
+        fixed_values=PUBLIC_DISCOUNT_SEARCH_FIXED_VALUES,
+        value_patterns=PUBLIC_DISCOUNT_SEARCH_VALUE_PATTERNS,
+    )
+
+
 # The NetFunnel queue protocol, one exact query contract per opcode.
 #
 # This is deliberately three named contracts rather than one loosened contract:
@@ -778,6 +896,9 @@ def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
         return
     if route == ReadOnlyRoute("POST", "app", SEAT_GRID_PATH):
         _assert_seat_grid_request(request)
+        return
+    if route == ReadOnlyRoute("POST", "app", PUBLIC_DISCOUNT_SEARCH_PATH):
+        _assert_public_discount_search_request(request)
         return
     if route == ReadOnlyRoute("POST", "app", REFUND_TICKET_INFO_PATH):
         _assert_empty_body_request(request)

@@ -319,6 +319,20 @@ class TrainSummary:
     # 열차종별코드 (trnClsfCd) from the dsOutput1 search row — the app's trnSort
     # value for timetable/fare; distinct from service_class_code (stlbTrnClsfCd).
     train_class_code: str | None = None
+    # The 할인 승차권 search's two extra columns: the 공공할인 rate this train
+    # actually carries, per cabin class, as a whole-number percentage
+    # ("30" -> "30% 할인"). APPENDED, so every existing positional construction
+    # keeps its meaning, and defaulted to None because the ORDINARY search does
+    # not send them — `gnrmBkclDcntRt` and `sprmBkclDcntRt` are 0-hit in the
+    # v2.0.41 bundle AND absent from every live ordinary-search row captured
+    # here, and appear only in the 조회결과 page the 할인 승차권 route renders.
+    #
+    # They are the point of that search: its result page treats a rate below 1
+    # as "this train has no discount for you" and falls back to the plain
+    # availability text, and only shows "NN% 할인" above it. NEVER OBSERVED
+    # POPULATED — see parse_public_discount_search_response.
+    general_class_discount_rate: str | None = None
+    special_class_discount_rate: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1110,6 +1124,48 @@ class PublicDiscountPage(HtmlPage):
         form when any of the eight flags is ``"Y"`` and refuses otherwise.
         """
         return bool(self.approved)
+
+
+@dataclass(frozen=True)
+class PublicDiscountSelection:
+    """The 공공할인 a caller is searching UNDER: a code and its approval number.
+
+    This is the caller's half of the 할인 승차권 search — the two values the ajax
+    form carries as ``pblDiscCd`` and ``pblDiscMgNo`` (plus ``tgtDtrmYn``, which
+    the page always sets to ``"Y"`` and which is therefore not modelled as a
+    choice). It is a separate type from
+    :class:`PublicDiscountEntitlement` because they answer different questions:
+    an entitlement is *what the account holds*, read off the page; a selection is
+    *what this search is for*, supplied by the caller.
+
+    :attr:`code` is a ``PBL_DISC_CD`` in ``"01"``..``"08"``.
+    :meth:`~srt_mobile_api.discounts.public_discount_name` names six of them.
+
+    **:attr:`management_no` is the one value in this whole surface that nobody
+    here has ever seen.** ``PBL_DISC_MG_NO`` is a server-issued approval number,
+    rendered by the 할인 승차권 page into the branch body for whichever discount
+    the account is approved for — and every one of those branch bodies is EMPTY
+    for an unapproved account, which is the only kind of account readable here.
+    It therefore defaults to ``""``: an approved caller reads it off their own
+    :attr:`PublicDiscountPage.raw` and passes it in, and a caller who has none
+    can still build and inspect the request. Whether the server requires it, or
+    derives it from the session, is unknown and is exactly what an entitled
+    account would settle.
+
+    The party-size rule is NOT enforced here, because it is a fact about the
+    (code, passenger count) PAIR rather than about either alone; see
+    :func:`~srt_mobile_api.payloads.public_discount_search_payload`.
+    """
+
+    code: str
+    management_no: str = ""
+
+    @property
+    def name(self) -> str:
+        """The 공공할인's Korean name, or ``""`` for ``07``/``08``."""
+        from .discounts import public_discount_name
+
+        return public_discount_name(self.code)
 
 
 @dataclass(frozen=True)

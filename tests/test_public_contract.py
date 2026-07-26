@@ -29,8 +29,9 @@ def test_client_public_method_set_is_stable():
         "get_typed_notice_list",
         "get_passenger_selector",
         # 공공할인 entitlements, read from the 할인 승차권 page. It reads which
-        # discounts the ACCOUNT holds; it does not run the 할인 승차권 search,
-        # whose target (Ara10131) is registered nowhere and has no builder.
+        # discounts the ACCOUNT holds; running the search itself is the separate
+        # search_public_discount_trains below, which takes the code and approval
+        # number this read is how a caller learns.
         "get_public_discounts",
         "get_refund_ticket_info",
         "get_reservations",
@@ -77,6 +78,12 @@ def test_client_public_method_set_is_stable():
         # half an itinerary cannot be booked by accident. Not live-verified.
         "reserve_transfer",
         "search_group_trains",
+        # 할인 승차권 검색 (Ara10131). A READ -- it returns train rows and creates
+        # nothing -- registered POST-only with its own exact 23-field contract.
+        # NEVER EXERCISED: the request shape is the live 조회결과 page's own
+        # #seatSearchForm, but running one usefully needs an approved 공공할인 and
+        # no account here holds one.
+        "search_public_discount_trains",
         # 환승 search: same endpoint as search_trains with chtnDvCd="2", kept
         # separate because its ROWS are half-itineraries that reserve() would
         # happily book on their own.

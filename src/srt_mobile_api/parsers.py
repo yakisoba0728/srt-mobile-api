@@ -638,9 +638,11 @@ def parse_discount_coupon_page(html: str) -> DiscountCouponList:
       half of a contradiction to believe.
 
     The registration half of this page is NOT touched here. The page carries a
-    ``dscp_no``/``dscp_pwd`` form, its submit is a POST to a different route
-    (``/arb/selectListArb02A01_n.do``) that this library does not implement, and
-    nothing in this parser reads those inputs.
+    ``dscp_no``/``dscp_pwd`` form whose submit is a POST to a different route
+    (``/arb/selectListArb02A01_n.do``); that is
+    :meth:`~srt_mobile_api.client.SrtClient.register_discount_coupon`'s job, and
+    nothing in this parser reads those inputs. It matters that it does not: both
+    values are credentials, and this parser's output is not redacted.
     """
     page = parse_html_page(
         html,
@@ -2417,6 +2419,33 @@ def parse_train_search_response(
     rows = out.get("dsOutput1")
     if not isinstance(rows, list):
         raise SrtProtocolError("SRT search response missing dsOutput1 list")
+    return TrainSearchResult(
+        trains=_parse_search_train_rows(rows, request_context),
+        result=result,
+        raw=data,
+        metadata=metadata,
+    )
+
+
+def _parse_search_train_rows(
+    rows: list[Any],
+    request_context: Mapping[str, str] | None = None,
+) -> list[TrainSummary]:
+    """Turn a list of search train rows into :class:`TrainSummary` objects.
+
+    EXTRACTED so the two search routes that return this row shape cannot drift
+    apart. ``Ara10007`` (the ordinary/group/환승 search) delivers these rows as
+    ``outDataSets.dsOutput1``; ``Ara10131`` (the 할인 승차권 search) delivers the
+    same columns under a different container name, ``trainListMap`` — its own
+    result page even keeps the ordinary page's variable name for them
+    (``function innerHtml(dsOutputTemp, ...)``), which is the clearest statement
+    available that it is the same row. Reading the columns twice, in two places,
+    is how the second copy would quietly stop parsing a field the first learned
+    about.
+
+    The CONTAINER handling deliberately stays with each caller, because that is
+    where the two genuinely differ.
+    """
     trains: list[TrainSummary] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -2533,14 +2562,120 @@ def parse_train_search_response(
                     "trnCpsCd4",
                     "trnCpsCd5",
                 ),
+                # The 할인 승차권 search's two extra columns, read here rather
+                # than in a second row parser precisely so this list stays one
+                # list. Absent from every ordinary row -- 0-hit in the v2.0.41
+                # bundle and in every live dsOutput1 captured here -- so they
+                # resolve to None there, which is what _optional_row_string
+                # already does for a key the row does not carry.
+                general_class_discount_rate=_optional_row_string(
+                    row,
+                    "gnrmBkclDcntRt",
+                ),
+                special_class_discount_rate=_optional_row_string(
+                    row,
+                    "sprmBkclDcntRt",
+                ),
                 raw=row,
             )
         )
+    return trains
+
+
+def parse_public_discount_search_response(
+    data: dict[str, Any],
+    request_context: Mapping[str, str] | None = None,
+) -> TrainSearchResult:
+    """Parse the 할인 승차권 search reply (``/ara/selectListAra10131_n.do``).
+
+    **NEVER OBSERVED. Written from the result page's own handler.** No 할인
+    승차권 search has been run from this library — running one needs an approved
+    공공할인, and no account here holds one — so everything below is read off the
+    live 조회결과 page fetched 2026-07-26 and nothing below is read off a reply::
+
+        var resultMap = data.resultMap[0];
+        if(resultMap.strResult == "FAIL"){ ...stop paging... }
+        else{
+            var trainListMap = data.trainListMap;
+            if (trainListMap[0].fllwPgExt != 'Y') { ...last page... }
+            for (var i = 0; i < data.trainListMap.length; i++) { ds_list.push(...) }
+            $("#gdNo").val(data.dsCmdMap.gdNo);
+            innerHtml(trainListMap, trainListMap[0].fllwPgExt, temp);
+        }
+
+    **The CONTAINER differs from the ordinary search and the ROWS do not**, which
+    is why this function exists and why it delegates. ``Ara10007`` answers with
+    ``outDataSets.dsOutput0``/``dsOutput1`` inside an ``ErrorCode``/``ErrorMsg``
+    wrapper; this answers with a bare ``resultMap`` and ``trainListMap``. The row
+    columns the page then reads — ``trnNo``, ``dptDt``, ``dptTm``, ``trnGpCd``,
+    ``stlbTrnClsfCd``, ``dptRsStnCd``, ``arvRsStnCd``, ``arvTm``, ``runTm``,
+    ``gnrmRsvPsbCd``, ``sprmRsvPsbCd``, ``rsvWaitPsbCd`` — are the ordinary
+    search's columns, and the page's own renderer still calls its parameter
+    ``dsOutputTemp``. So the rows go through
+    :func:`_parse_search_train_rows`, unchanged and shared.
+
+    **Two columns are new**, and they are the point of this search:
+    ``gnrmBkclDcntRt`` and ``sprmBkclDcntRt``, the 공공할인 rate for 일반실 and
+    특실 as whole-number percentages. Both are 0-hit in the v2.0.41 bundle and
+    absent from every ordinary-search row captured here. The page treats a rate
+    below 1 as "no discount on this train" and otherwise prints
+    ``parseInt(rate) + "% 할인"``. They surface as
+    :attr:`~srt_mobile_api.models.TrainSummary.general_class_discount_rate` and
+    ``.special_class_discount_rate``.
+
+    **Paging is a cursor, not a clock.** ``dsCmdMap.gdNo`` is what the page feeds
+    back into the next request, and ``trainListMap[0].fllwPgExt`` is the
+    more-pages flag — carried on the FIRST ROW rather than on the metadata row,
+    which is where the ordinary search keeps it. Neither is normalised into
+    :class:`~srt_mobile_api.models.TrainSearchMetadata` here, because doing so
+    would mean asserting they mean the same thing as their ``dsOutput0``
+    namesakes; both stay reachable through
+    :attr:`~srt_mobile_api.models.TrainSearchResult.raw`.
+
+    ``strResult == "FAIL"`` raises through :func:`classify_app_error`, exactly as
+    the ordinary search does, so an empty result window still arrives as
+    :class:`~srt_mobile_api.errors.SrtNoResultsError`. What the server actually
+    answers for an UNENTITLED account is unknown — a refusal envelope and an
+    empty window are indistinguishable from here.
+    """
+    if not isinstance(data, dict) or not data:
+        raise SrtProtocolError(
+            "SRT public discount search response must be a non-empty JSON object",
+            raw=data,
+        )
+    # Kept even though the page never checks it: every other JSON route on this
+    # server may carry the wrapper, and validating it costs nothing when absent.
+    _validate_error_code_wrapper(data, context="public discount search")
+    result = _first_row(data.get("resultMap"))
+    if not result:
+        raise SrtProtocolError(
+            "SRT public discount search response missing resultMap result row",
+            raw=data,
+        )
+    status = _required_row_string(
+        result, "strResult", context="public discount search metadata"
+    )
+    # msgCd is OPTIONAL here, unlike the ordinary search which requires it. The
+    # page reads strResult and nothing else on this route, and refusing a
+    # response over a field its own client never looks at would turn a real
+    # search outcome into a parse error.
+    code = _optional_row_string(result, "msgCd") or ""
+    message = _optional_message(result)
+    if code == "NET000001":
+        raise SrtNetFunnelKeyError(code, message or "NetFunnel key required", raw=data)
+    if status == "FAIL":
+        raise classify_app_error(code or None, message or status or None, raw=data)
+    rows = data.get("trainListMap")
+    if not isinstance(rows, list):
+        raise SrtProtocolError(
+            "SRT public discount search response missing trainListMap list",
+            raw=data,
+        )
     return TrainSearchResult(
-        trains=trains,
+        trains=_parse_search_train_rows(rows, request_context),
         result=result,
         raw=data,
-        metadata=metadata,
+        metadata=None,
     )
 
 

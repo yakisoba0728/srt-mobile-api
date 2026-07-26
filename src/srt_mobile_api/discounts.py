@@ -253,10 +253,21 @@ PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE: dict[str, int] = {"01": 3, "06": 3}
 #
 # ``psgTpCd`` 6 is NOT in ``commCode.js`` -- not in the v2.0.41 bundle and not in
 # the live copy fetched 2026-07-26, both of which stop at 5. It exists only in
-# what the server renders on this one path. It is recorded here, and NOT wired
-# into :class:`~srt_mobile_api.models.PassengerCounts`, because emitting it would
-# change the reservation payload for a discount no account in this project can
-# hold. See docs/IMPLEMENTATION_PROGRESS.md, "공공할인 is a passenger vocabulary".
+# what the server renders on this one path.
+#
+# CORRECTION (2026-07-26): this comment used to end "and NOT wired into
+# PassengerCounts, because emitting it would change the reservation payload for a
+# discount no account in this project can hold". It IS wired in now --
+# ``PassengerCounts.youth`` -- and the reason the old caveat gave was answered
+# rather than ignored: with ``youth=0`` every builder emits exactly what it
+# emitted before, so nothing changed for a caller who does not ask for it.
+#
+# A second correction belongs here too, and it cuts the other way: the 할인
+# 승차권 SEARCH does not transmit ``psgTpCd6`` either. Its ajax form
+# (``#seatSearchForm``) carries ``psgNum``, the head count, and no passenger type
+# mix at all -- only the PAGE form carries the six slots. So the one route that
+# can express a 청소년 in a search is the navigation, not the query. See
+# :func:`~srt_mobile_api.payloads.public_discount_search_payload`.
 PUBLIC_DISCOUNT_YOUTH_CODE = "04"
 YOUTH_PASSENGER_TYPE_CODE = "6"
 

@@ -2,6 +2,7 @@ import re
 
 from .models import (
     PassengerCounts,
+    PublicDiscountSelection,
     SeatDesignation,
     SeatType,
     SrtCouponRegistrationRequest,
@@ -13,7 +14,21 @@ from .models import (
     TrainSummary,
     TransferItinerary,
 )
+from .discounts import (
+    PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE,
+    PUBLIC_DISCOUNT_NAMES_BY_CODE,
+)
 from .stations import station_name_by_code
+
+
+# 공공할인코드 the 할인 승차권 page has a branch for. discounts.py NAMES six of
+# them; the page's own if/else chain runs 01..08, so 07 and 08 are ACCEPTED here
+# and merely nameless -- refusing a code the server branches on would be this
+# library deciding a discount does not exist because nobody has written its name
+# down where we can read it.
+PUBLIC_DISCOUNT_CODES = frozenset(
+    set(PUBLIC_DISCOUNT_NAMES_BY_CODE) | {"07", "08"}
+)
 
 
 # The three 조정구분코드 (jobId) values, documented by the app itself in a single
@@ -2285,3 +2300,128 @@ def coupon_registration_payload(
         COUPON_NUMBER_FIELD: number,
         COUPON_PASSWORD_FIELD: password,
     }
+
+
+# 할인 승차권 검색. The nine constants the 조회결과 page server-renders into
+# #seatSearchForm and never touches, in the order the form declares them.
+PUBLIC_DISCOUNT_SEARCH_CONSTANTS = {
+    "menuId": "41",
+    "owayRtrpCrclDvCd": "01",
+    "psgNum1": "0",
+    "psgNum2": "0",
+    "dirtChtnDvCd": "1",
+    "cgPsId": "korail",
+    "medDvCd": "03",
+    "subCnt": "0",
+}
+# 대상판정여부. The 할인 승차권 page sets it to "Y" on EVERY branch it can reach
+# -- both the multi-approval branch and the single-approval one end with
+# $("#TGT_DTRM_YN").val("Y") -- so it is a constant here rather than an option.
+PUBLIC_DISCOUNT_TARGET_DETERMINED = "Y"
+
+
+def public_discount_search_payload(
+    query: TrainSearchQuery,
+    discount: PublicDiscountSelection,
+    *,
+    page_cursor: str = "",
+) -> dict[str, str]:
+    """Build the 할인 승차권 search POST for ``/ara/selectListAra10131_n.do``.
+
+    **This is the ajax leg, and the ajax leg is the search.** The route has two:
+    the 할인 승차권 page's ``goSubmit()`` retargets ``#rsvForm`` here and
+    NAVIGATES (that form is ``method="get"``), and the 조회결과 page it returns
+    then POSTs ``#seatSearchForm`` to the same path with ``dataType:"json"`` and
+    renders the rows from the reply. Only the second one fetches anything.
+
+    Every field below is ``#seatSearchForm`` verbatim, from a live read of the
+    조회결과 page on 2026-07-26. The route and all three ``pblDisc*`` fields are
+    0-hit across the 21,673 files of the v2.0.41 offline bundle.
+
+    **How this differs from the ordinary search**, which is the whole reason it
+    is a separate builder:
+
+    * three extra fields — ``pblDiscCd``, ``pblDiscMgNo``, ``tgtDtrmYn``. Note
+      the spelling: the PAGE form carries ``PBL_DISC_CD``/``PBL_DISC_MG_NO``/
+      ``TGT_DTRM_YN`` and the AJAX form carries the camelCase pair. There is no
+      ``pblDiscNm``: the discount's display name is never transmitted.
+    * **no ``netfunnelKey``.** Neither form on this route has the field at all,
+      although ``goSubmit()`` still waits behind ``NetFunnel_Action`` and the
+      result page calls ``NetFunnel_Complete()``. The queue gate is on the
+      NAVIGATION, not on the request.
+    * **no passenger type mix.** The ordinary ajax carries ``psgTpCd1..N`` and
+      ``psgInfoPerPrnb1..N``; this one carries ``psgNum`` — the head count — and
+      nothing else about the party. So a 청소년 or a 유아 in ``query.passengers``
+      affects the total here and nothing more, even though the 할인 승차권 PAGE
+      form is the one place in the whole app that can express ``psgTpCd6``.
+      Whether the server needs the mix, or takes it from the navigation, is
+      unknown; see the client method.
+    * **paging is by cursor, not by clock.** The ordinary search advances by
+      bumping ``dptTm``; here the result page's own handler does
+      ``$("#gdNo").val(data.dsCmdMap.gdNo)`` and re-posts the otherwise identical
+      body. ``page_cursor`` is that value, empty for the first page.
+    * ``chtnDvCd`` is fixed at ``"1"`` (직통). The page has no 환승 toggle: its
+      ``#rsvForm`` renders ``jrnyTpCd="11"`` and the result page derives
+      ``chtnDvCd`` from it as ``"" == "11" ? "1" : "2"``.
+    * ``trnNo`` is always empty. ``onload()`` never assigns it.
+
+    **The party-size rule is the page's and is enforced here.** Both the 할인
+    승차권 page and the 승차인원선택 popup refuse 다자녀 (``01``) and 3세대
+    동행할인 (``06``) below three passengers, in identical words —
+    ``if((pblDiscCd == "01" || pblDiscCd == "06") && totalPessnger < 3)`` →
+    ``rsv071`` "승객인원 3명이상 선택하십시오." Mirroring it follows
+    :func:`group_search_ajax_payload`, which mirrors the app's own ten-person
+    group guard rather than silently sending a body the app would never send.
+
+    ``stlbTrnClsfCd`` and ``trnGpCd`` are derived from ``query.train_group_code``
+    through :data:`TRAIN_GROUP_OPTIONS`, exactly as
+    :func:`search_ajax_payload` derives them. **The page's own default disagrees
+    with that pairing** — it server-renders ``trnGpCd1="109"`` (전체) beside
+    ``stlbTrnClsfCd1="17"`` (SRT), which is not a pair this table produces — and
+    that discrepancy is recorded rather than reproduced: which of the two the
+    server honours is unknown, and following the library's existing derivation
+    at least keeps the caller in control of both.
+    """
+    if type(query) is not TrainSearchQuery:
+        raise ValueError("public discount search requires a TrainSearchQuery")
+    if type(discount) is not PublicDiscountSelection:
+        raise ValueError(
+            "public discount search requires a PublicDiscountSelection"
+        )
+    if discount.code not in PUBLIC_DISCOUNT_CODES:
+        raise ValueError(
+            "public discount code must be one of "
+            + ", ".join(sorted(PUBLIC_DISCOUNT_CODES))
+        )
+    minimum = PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE.get(discount.code)
+    if minimum is not None and query.passengers.total < minimum:
+        raise ValueError(
+            f"공공할인 {discount.code} requires at least {minimum} passengers "
+            f"(the page's own rsv071 guard); got {query.passengers.total}"
+        )
+    management_no = discount.management_no
+    if not isinstance(management_no, str):
+        raise ValueError("public discount management number must be a string")
+    group_name, service_class = TRAIN_GROUP_OPTIONS[query.train_group_code]
+    del group_name  # not transmitted on this form, unlike the ordinary search
+    payload = dict(PUBLIC_DISCOUNT_SEARCH_CONSTANTS)
+    payload.update(
+        {
+            "gdNo": page_cursor,
+            "chtnDvCd": SEARCH_CONNECTION_DIRECT,
+            "dptDt": query.departure_date,
+            "dptTm": query.departure_time,
+            "dptRsStnCd": query.departure_station_code,
+            "arvRsStnCd": query.arrival_station_code,
+            "stlbTrnClsfCd": service_class,
+            "trnGpCd": query.train_group_code,
+            "trnNo": "",
+            "psgNum": str(query.passengers.total),
+            "seatAttCd": query.seat_attr_code,
+            "arriveTime": "N",
+            "pblDiscCd": discount.code,
+            "pblDiscMgNo": management_no,
+            "tgtDtrmYn": PUBLIC_DISCOUNT_TARGET_DETERMINED,
+        }
+    )
+    return payload

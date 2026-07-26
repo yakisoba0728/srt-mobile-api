@@ -70,7 +70,7 @@ reversal, verified as one round trip so nothing could be stranded paid. Adding a
 is the only thing membership in that set has ever meant. The retained APK
 specification and smoke tooling remain the evidence context for that package.
 
-The reviewed safety boundary contains 25 routes on the read side, plus 5
+The reviewed safety boundary contains 26 routes on the read side, plus 5
 mutation routes, one per consent category — **four of which may actually be
 sent.** The fifth is 할인쿠폰 등록 (`arb/selectListArb02A01_n.do`, the `coupon`
 category), registered because a client method can reach it and deliberately
@@ -93,9 +93,10 @@ search and reservation, the 좌석배치도 (seat grid) read and the 좌석지�
 (seat-designated) reservation
 landed — and after 단체 (group) booking was removed again, and after the
 할인 (discount) code tables, the 할인쿠폰 read, the 공공할인 read and the
-seven-type `PassengerCounts` and the consent-gated 할인쿠폰 등록 —
+seven-type `PassengerCounts`, the consent-gated 할인쿠폰 등록 and the
+할인 승차권 search —
 the current offline suite at HEAD is
-`1553 passed, 1 deselected`. The deselected case is the
+`1607 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -1076,13 +1077,11 @@ on `var` because the same identifiers appear nine more times as `!= "Y"` /
 `== "Y"` comparisons — an unanchored match would read the unapproved page as
 approved.
 
-**This does not run the 할인 승차권 search and cannot.** The page it reads *is*
-that search's form: `#rsvForm`, the booking page's ~140 fields plus
-`PBL_DISC_CD` / `PBL_DISC_NM` / `PBL_DISC_MG_NO` / `TGT_DTRM_YN`, submitting to
-`/ara/selectListAra10131_n.do` behind a NetFunnel `act_10` gate. That route
-exists — a bare live GET answered `200` where a nonexistent sibling answered
-`404` — and is registered nowhere here, has no builder and no method. Exercising
-it needs an approved 공공할인 that nobody on this project holds.
+**This does not run the 할인 승차권 search** — `search_public_discount_trains`
+does, and this read is how a caller learns the two values it needs. The page
+read here *is* that search's form: `#rsvForm`, the booking page's ~140 fields
+plus `PBL_DISC_CD` / `PBL_DISC_NM` / `PBL_DISC_MG_NO` / `TGT_DTRM_YN`,
+submitting to `/ara/selectListAra10131_n.do` behind a NetFunnel `act_10` gate.
 
 Also not carried: the approved discount's `PBL_DISC_MG_NO` and its
 confirmation/expiry dates. They are server-rendered into the branch bodies of
@@ -1090,10 +1089,117 @@ the page's own `if/else if` chain and every one was empty on the only account
 readable here, so their populated shape is unknown and no parser is written
 against it. `raw` carries the page.
 
+### 할인 승차권 검색 — the request is evidenced, the effect is not
+
+`SrtClient.search_public_discount_trains(query, discount, *, page_cursor="")`
+→ `TrainSearchResult`, a `POST /ara/selectListAra10131_n.do` carrying exactly
+the 23 fields of the 조회결과 page's own `#seatSearchForm`.
+`READ_ONLY_ROUTES` 25 → 26. **It is a read**: a search returns train rows and
+creates nothing, and it is registered on the same footing as the ordinary
+search's ajax, with its own exact form contract.
+
+**NEVER EXERCISED, and that is the first thing to know.** Every field name,
+value and response key below came off pages the live server rendered to this
+project's own session on 2026-07-26. Not one came off a reply to this request,
+because sending it usefully needs an approved 공공할인 and `get_public_discounts`
+returns all eight flags empty here. The REQUEST shape is evidenced; the EFFECT
+is not, and those are different claims.
+
+**The route has two legs, and the one the app navigates to is not the one that
+searches.** `goSubmit()` on the 할인 승차권 page retargets `#rsvForm` here and
+NAVIGATES — that form is `method="get"` — and the 조회결과 page it returns then
+POSTs `#seatSearchForm` back to the *same path* with `dataType:"json"` and
+renders rows from the reply. Only the second fetches anything, so only the
+second is implemented. The GET was **measured, not assumed**: four live probes
+(a full 146-field journey; that journey with `PBL_DISC_CD="04"`; a bare
+`?type=`; a de-duplicated journey) returned bodies byte-identical apart from the
+session id the page echoes in its own user map, with all eight `var s*`
+hydration slots and all three `pblDisc*` inputs empty every time. It conveys
+nothing back, so registering it would mean allowing an arbitrary ~146-field
+query string on a read route in exchange for a response nothing here would use.
+
+**How the request differs from the ordinary search**, all of it from the live
+page:
+
+| | ordinary (`Ara10007`) | 할인 승차권 (`Ara10131`) |
+| --- | --- | --- |
+| discount fields | none | `pblDiscCd`, `pblDiscMgNo`, `tgtDtrmYn` |
+| `netfunnelKey` in the body | yes | **no field on either form** |
+| passenger detail | `psgTpCd1..N` + `psgInfoPerPrnb1..N` | **`psgNum` only** |
+| paging | bump `dptTm` | `gdNo` cursor from `dsCmdMap` |
+| more-pages flag | `dsOutput0.fllwPgExt` | `trainListMap[0].fllwPgExt` |
+| row container | `outDataSets.dsOutput1` | `trainListMap` |
+| result envelope | `outDataSets.dsOutput0` | `resultMap[0]` |
+
+Note the **spelling change**: the PAGE form carries `PBL_DISC_CD` /
+`PBL_DISC_NM` / `PBL_DISC_MG_NO` / `TGT_DTRM_YN`, and the AJAX form carries the
+camelCase trio — with **no counterpart for `PBL_DISC_NM` at all**. The
+discount's display name is never transmitted.
+
+**The passenger type mix does not reach this request**, and it is worth stating
+plainly because it cuts against the natural reading of the 청소년 story: the 할인
+승차권 *page* form is the one place in the whole app that can express
+`psgTpCd6`, and the *search* carries only a head count. If the server needs the
+mix it must be taking it from the navigation this method skips.
+
+**Two new columns come back, and they are the point of the search.**
+`gnrmBkclDcntRt` and `sprmBkclDcntRt` — the 공공할인 rate for 일반실 and 특실 as
+whole-number percentages, surfaced as `TrainSummary.general_class_discount_rate`
+and `.special_class_discount_rate`. Both are **0-hit in the v2.0.41 bundle and
+absent from every ordinary-search row captured here**; the result page treats a
+rate below 1 as "no discount on this train" and otherwise prints
+`parseInt(rate) + "% 할인"`. The fields were appended to `TrainSummary` and
+default to `None`, so an ordinary row is unchanged.
+
+**The rows are the ordinary rows.** The columns the result page reads — `trnNo`,
+`dptDt`, `dptTm`, `trnGpCd`, `stlbTrnClsfCd`, `dptRsStnCd`, `arvRsStnCd`,
+`arvTm`, `runTm`, `gnrmRsvPsbCd`, `sprmRsvPsbCd`, `rsvWaitPsbCd` — are the
+ordinary search's, and its renderer still calls its own parameter
+`dsOutputTemp`. So the row loop was **extracted** into one shared function
+rather than copied; only the container handling differs, because only the
+container differs.
+
+**What the caller must supply that nobody here can read: `PBL_DISC_MG_NO`.** It
+is a server-issued approval number, rendered by the 할인 승차권 page into the
+branch body for whichever discount the account holds — and every one of those
+branch bodies is empty for an unapproved account. `PublicDiscountSelection`
+takes it, defaulted to `""`, so a caller without one can still build and inspect
+the request. Whether the server requires it or derives it from the session is
+unknown.
+
+**The page's own rules are enforced, not invented**: `pblDiscCd` must be
+`01`–`08` (the page branches on all eight; six have names), and 다자녀 (`01`) and
+3세대 동행할인 (`06`) refuse a party below three — the page's `rsv071` guard,
+mirrored the way `group_search_ajax_payload` mirrors the ten-person group guard.
+`chtnDvCd` is fixed at `1` (직통): this page has no 환승 toggle. An `act_10`
+queue slot is taken and released around the request, because the app waits
+behind `NetFunnel_Action` for this flow — but no key is transmitted, because
+neither form has the field.
+
+**One discrepancy is recorded rather than reproduced.** The page server-renders
+`trnGpCd1="109"` (전체) beside `stlbTrnClsfCd1="17"` (SRT), which is not a pair
+this library's `TRAIN_GROUP_OPTIONS` produces. The builder derives both from
+`query.train_group_code` exactly as the ordinary search does, keeping the caller
+in control; which of the two the server honours is unknown.
+
+**No pager.** There is no `iter_train_search_pages` equivalent, because the
+stopping condition (`trainListMap[0].fllwPgExt`) has never been observed and a
+loop built on an unobserved flag is how a client ends up not stopping.
+`page_cursor` is exposed instead and `raw` carries `dsCmdMap.gdNo`.
+
+**What an entitled account would settle** — the whole list, since none of it can
+be settled here: whether `pblDiscMgNo` is required or session-derived; whether
+the navigation GET must precede the POST; whether the head count alone is enough
+or the type mix is needed; what an *unentitled* account gets back (a refusal
+envelope and an empty window are indistinguishable from here); whether the reply
+really is `resultMap`/`trainListMap`/`dsCmdMap`; and what `gnrmBkclDcntRt`
+actually looks like populated. One search from an approved account, with the raw
+reply captured, answers all seven.
+
 ### What the 할인 survey found that is NOT implemented
 
 Three discount surfaces were found and left out, each for a different reason.
-The first has since been implemented and is struck through below. The full write-up, with the evidence for each, is in
+Two have since been implemented and are struck through below; the third stands. The full write-up, with the evidence for each, is in
 `docs/IMPLEMENTATION_PROGRESS.md` under "할인 / 쿠폰 / 공공할인 — the survey".
 
 - ~~**`POST /arb/selectListArb02A01_n.do`, 할인쿠폰 등록.**~~ **IMPLEMENTED
@@ -1103,10 +1209,12 @@ The first has since been implemented and is struck through below. The full write
   the CATEGORY is a modelling decision, and adding it to
   `SRT_LIVE_MUTATION_CATEGORIES` is an evidence decision. The first was taken;
   the second was not, so the kill switch is unchanged.
-- **`/ara/selectListAra10131_n.do`, the 할인 승차권 search.** Exists (a bare live
-  GET answered `200` where a nonexistent sibling answered `404`), but every
-  `PBL_DISC_*` value it needs would be a guess without an approved 공공할인,
-  which no account here holds. Unverifiable in principle, not merely unverified.
+- ~~**`/ara/selectListAra10131_n.do`, the 할인 승차권 search.**~~ **IMPLEMENTED
+  2026-07-26** — see "할인 승차권 검색" above. The survey's reason ("every
+  `PBL_DISC_*` value would be a guess") did not survive re-reading the pages:
+  three of the four are established and the fourth is caller-supplied. What
+  remains unverifiable without an entitled account is the EFFECT, which is a
+  different claim and is labelled as one.
 - **`/ata/selectListAta01032_n.do`, the bundle's only discount route.** Its
   single caller (`arc0102c.js:34`) sends the literal, unsubstituted
   `pnrNo=${commandMap.pnrNo}` — a JSP expression stranded in a static asset — so

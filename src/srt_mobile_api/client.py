@@ -31,6 +31,7 @@ from .models import (
     NoticeListResult,
     PassengerCounts,
     PublicDiscountPage,
+    PublicDiscountSelection,
     SearchPageState,
     SeatDesignation,
     SeatGrid,
@@ -74,6 +75,7 @@ from .parsers import (
     parse_mutual_verification_response,
     parse_notice_list_response,
     parse_public_discount_page,
+    parse_public_discount_search_response,
     parse_refund_response,
     parse_refund_ticket_info_response,
     parse_reservation_hold_response,
@@ -95,6 +97,7 @@ from .payloads import (
     group_search_ajax_payload,
     passenger_selector_payload,
     personal_reservation_payload,
+    public_discount_search_payload,
     refund_payload,
     reservation_list_payload,
     search_ajax_payload,
@@ -114,6 +117,7 @@ from .safety import (
     COUPON_LIST_PATH,
     COUPON_REGISTRATION_PATH,
     PUBLIC_DISCOUNT_PAGE_PATH,
+    PUBLIC_DISCOUNT_SEARCH_PATH,
 )
 from .session import SrtSessionClient
 
@@ -220,14 +224,14 @@ class SrtClient:
         field names rest on.
 
         **This is a read, and only a read.** The page it returns is also the
-        coupon REGISTRATION form, and registering a coupon is a mutation that
-        this library does not implement: the registration posts
-        ``{dscp_no, dscp_pwd}`` to a different route
-        (``/arb/selectListArb02A01_n.do``) which is in neither allowlist, and it
-        would belong to no member of
+        coupon REGISTRATION form, and registering is a mutation on a DIFFERENT
+        route: the page's own ``couponReg()`` posts ``{dscp_no, dscp_pwd}`` to
+        ``/arb/selectListArb02A01_n.do``. That is
+        :meth:`register_discount_coupon`, gated by the ``"coupon"`` consent
+        category and outside
         :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`. Only ``GET``
-        is registered for this path, so a coupon number and its password cannot
-        travel here under a read either.
+        is registered for THIS path, so a coupon number and its password can
+        never travel here under a read.
         """
         with self._session_guard():
             return parse_discount_coupon_page(
@@ -608,6 +612,135 @@ class SrtClient:
     def search_group_trains(self, query: TrainSearchQuery) -> TrainSearchResult:
         with self._session_guard():
             return self._search_with_retry(query, group=True)
+
+    def search_public_discount_trains(
+        self,
+        query: TrainSearchQuery,
+        discount: PublicDiscountSelection,
+        *,
+        page_cursor: str = "",
+    ) -> TrainSearchResult:
+        """Search 할인 승차권 — trains carrying a 공공할인 this account holds.
+
+        ``POST /ara/selectListAra10131_n.do``. A READ: it returns train rows and
+        creates nothing, and it is registered in
+        :data:`~srt_mobile_api.safety.READ_ONLY_ROUTES` on the same footing as the
+        ordinary search's ajax, with its own exact 23-field contract.
+
+        **NEVER EXERCISED. Read this before believing any of it.** Every field
+        name, value and response key below was read off pages the live server
+        rendered to this project's own session on 2026-07-26; not one was read
+        off a reply to this request, because sending it usefully requires an
+        approved 공공할인 and :meth:`get_public_discounts` returns all eight
+        flags empty for the only account here. The REQUEST shape is evidenced;
+        the EFFECT is not, and those are different claims.
+
+        **What the previous survey got wrong, and what it got right.** It left
+        this route out because "every ``PBL_DISC_*`` value would be a guess".
+        Three of the four are not: ``PBL_DISC_CD`` has a known domain (``01``
+        다자녀 … ``06`` 3세대 동행할인, plus branches for ``07``/``08``),
+        ``TGT_DTRM_YN`` is the literal ``"Y"`` on every branch of the page, and
+        ``PBL_DISC_NM`` turns out not to be transmitted at all — the ajax form
+        has no field for it. The fourth, ``PBL_DISC_MG_NO``, genuinely is
+        unknowable here: it is a server-issued approval number rendered into a
+        branch body that is empty for an unapproved account. It is
+        caller-supplied and defaults to ``""``.
+
+        **The route has two legs and this method sends only one.** The 할인
+        승차권 page's ``goSubmit()`` retargets ``#rsvForm`` here and NAVIGATES
+        (that form is ``method="get"``); the 조회결과 page it returns then POSTs
+        ``#seatSearchForm`` to the same path and renders the rows from the JSON
+        reply. Only the second fetches anything, so only the second is
+        implemented — and the GET was measured rather than assumed: four live
+        probes on 2026-07-26 (a full 146-field journey, that journey with
+        ``PBL_DISC_CD="04"``, a bare ``?type=``, and a de-duplicated journey) all
+        returned bodies byte-identical apart from the session id echoed in the
+        page's own user map, with all eight ``var s*`` hydration slots and all
+        three ``pblDisc*`` inputs empty. It conveys nothing back.
+
+        **The consequence, stated plainly: the passenger TYPE MIX is not
+        transmitted.** ``#seatSearchForm`` carries ``psgNum`` — the head count —
+        and no ``psgTpCd``/``psgInfoPerPrnb`` at all, where the ordinary ajax
+        carries the whole breakdown. So a 청소년 or 유아 in ``query.passengers``
+        changes the total here and nothing else, even though the 할인 승차권
+        PAGE form is the one place in the app that can express ``psgTpCd6``. If
+        the server needs the mix, it must be taking it from the navigation this
+        method skips — which is one of the things an entitled account would
+        settle, and which is why ``page_cursor`` and the raw response are both
+        left reachable rather than smoothed over.
+
+        **NetFunnel is honoured even though no key is transmitted.** Neither form
+        on this route has a ``netfunnelKey`` field — unlike ``Ara10007``, where
+        this library puts the key in the body — but ``goSubmit()`` still waits
+        behind ``NetFunnel_Action({action_id:"act_10"})`` and the result page
+        calls ``NetFunnel_Complete()``. So an ``act_10`` slot is taken and
+        released around the request, exactly as the app does for this flow, and
+        the key itself goes nowhere.
+
+        ``page_cursor`` is ``gdNo``, empty for the first page. Paging on this
+        route is a CURSOR, not a clock: the result page reads
+        ``data.dsCmdMap.gdNo`` out of one reply and posts the otherwise identical
+        body again, where the ordinary search advances by bumping ``dptTm``. This
+        method does not loop — there is no
+        :meth:`iter_train_search_pages` equivalent — because the stopping
+        condition (``trainListMap[0].fllwPgExt``) has never been seen, and a
+        pager built on an unobserved flag is how a client ends up looping.
+
+        Raises :class:`ValueError` before any I/O for a 공공할인 the page's own
+        rules refuse: an unknown code, or 다자녀/3세대 동행할인 with fewer than
+        three passengers (``rsv071``).
+        """
+        with self._session_guard():
+            return self._search_public_discount_with_retry(
+                query, discount, page_cursor=page_cursor
+            )
+
+    def _search_public_discount_with_retry(
+        self,
+        query: TrainSearchQuery,
+        discount: PublicDiscountSelection,
+        *,
+        page_cursor: str,
+    ) -> TrainSearchResult:
+        # The same single bounded NetFunnel retry the ordinary search gets, and
+        # for the same reason: NET000001 means the key was stale, not that the
+        # query was wrong.
+        for attempt in range(2):
+            try:
+                return self._search_public_discount_once(
+                    query, discount, page_cursor=page_cursor
+                )
+            except SrtNetFunnelError as exc:
+                if exc.code != "NET000001" or attempt == 1:
+                    raise
+        raise AssertionError("unreachable NetFunnel retry state")
+
+    def _search_public_discount_once(
+        self,
+        query: TrainSearchQuery,
+        discount: PublicDiscountSelection,
+        *,
+        page_cursor: str,
+    ) -> TrainSearchResult:
+        referer = f"{self.config.base_url}{PUBLIC_DISCOUNT_PAGE_PATH}"
+        # Built BEFORE the queue slot is taken, so a request the page's own rules
+        # would refuse never costs a place in line.
+        payload = public_discount_search_payload(
+            query, discount, page_cursor=page_cursor
+        )
+        try:
+            self._get_act10_key(referer)
+            data = self.http.post_form(
+                PUBLIC_DISCOUNT_SEARCH_PATH,
+                payload,
+                accept="application/json, text/javascript, */*; q=0.01",
+                referer=referer,
+            )
+            return parse_public_discount_search_response(
+                data, request_context=payload
+            )
+        finally:
+            self._release_netfunnel_slots(referer)
 
     def search_transfer_trains(self, query: TrainSearchQuery) -> TransferSearchResult:
         """Search 환승 (transfer) itineraries — trains that need a connection.
