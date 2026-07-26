@@ -848,7 +848,7 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     # whenever the suite grows. (The README also cites the historical 0.2.0
     # figure; that one is labelled as historical and is not asserted here,
     # because a frozen number can never fail.)
-    assert "1090 passed" in readme and "1 deselected" in readme
+    assert "1126 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in readme.casefold()
     assert "personal and group each returned two pages" in readme.casefold()

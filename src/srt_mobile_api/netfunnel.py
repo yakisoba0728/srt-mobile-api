@@ -1,7 +1,7 @@
 import re
 from urllib.parse import quote
 
-from .errors import SrtNetFunnelError
+from .errors import SrtNetFunnelError, SrtQueueRejectedError
 from .models import NetFunnelToken
 
 
@@ -62,6 +62,20 @@ BYPASS_CODE = "300"
 SUCCESS_CODES = frozenset({SUCCESS_CODE, BYPASS_CODE})
 CONTINUE_CODES = frozenset({"201", "202"})
 ALREADY_COMPLETE_CODE = "502"
+
+# kTsBlock=301 and kTsIpBlock=302, netfunnel.js:84. The app does NOT fold these
+# into its generic error path: _showResultChkEnter gives each its own event
+# ("onBlock", "onIpBlock") beside "onError", which is the bundle's own statement
+# that "the waiting room refused you" is a different fact from "the waiting room
+# malfunctioned". Both still raise here -- neither is a wait, and a wait is the
+# only non-failure that is not a pass -- but they raise SrtQueueRejectedError so
+# a caller can tell them apart without reading the numeric code.
+#
+# 303 kTsExpressNumber also has its own event ("onExpressnumber") and is
+# deliberately NOT mapped: it is an admission, not a refusal (the app stores the
+# pass cookie and proceeds), we have never observed one, and guessing it into
+# either bucket would be worse than leaving it in the generic error path.
+QUEUE_REJECTED_CODES = frozenset({"301", "302"})
 
 # netfunnel.js TS_MAX_TTL = 5 ("Default max ttl (second) 5~30"), applied in
 # _showResultChkEnter as `if (ttl > max_ttl) ttl = max_ttl` before the retry
@@ -210,6 +224,20 @@ def build_set_complete_url(
     )
 
 
+def _queue_failure(
+    token: NetFunnelToken,
+    message: str,
+    body: str,
+) -> SrtNetFunnelError:
+    """The right NetFunnel exception for a non-pass, non-wait status code."""
+    subclass = (
+        SrtQueueRejectedError
+        if token.code in QUEUE_REJECTED_CODES
+        else SrtNetFunnelError
+    )
+    return subclass(token.code or None, message, raw=body)
+
+
 def _parse_result_token(body: str, *, action: str) -> NetFunnelToken:
     """Split the wire token into type/code/params WITHOUT judging the code.
 
@@ -254,10 +282,10 @@ def parse_netfunnel_response(body: str, *, action: str) -> NetFunnelToken:
     """
     token = _parse_result_token(body, action=action)
     if token.code not in SUCCESS_CODES:
-        raise SrtNetFunnelError(
-            token.code or None,
+        raise _queue_failure(
+            token,
             "NetFunnel response did not report success",
-            raw=body,
+            body,
         )
     _require_pass_key(token, body)
     return token
@@ -320,10 +348,10 @@ def parse_queue_response(body: str, *, action: str) -> NetFunnelToken:
     if token.code in CONTINUE_CODES:
         return token
     if token.code not in SUCCESS_CODES:
-        raise SrtNetFunnelError(
-            token.code or None,
+        raise _queue_failure(
+            token,
             "NetFunnel response did not report success",
-            raw=body,
+            body,
         )
     _require_pass_key(token, body)
     return token
@@ -341,10 +369,10 @@ def parse_set_complete_response(body: str, *, action: str) -> NetFunnelToken:
     """
     token = _parse_result_token(body, action=action)
     if token.code not in {SUCCESS_CODE, ALREADY_COMPLETE_CODE}:
-        raise SrtNetFunnelError(
-            token.code or None,
+        raise _queue_failure(
+            token,
             "NetFunnel setComplete did not release the queue slot",
-            raw=body,
+            body,
         )
     return token
 

@@ -7,7 +7,15 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from .config import APP_ORIGIN
-from .errors import SrtAppError, SrtNetFunnelError, SrtProtocolError, SrtSessionExpiredError
+from .errors import (
+    SrtAppError,
+    SrtNetFunnelError,
+    SrtNetFunnelKeyError,
+    SrtProtocolError,
+    SrtSeatUnavailableError,
+    SrtSessionExpiredError,
+    classify_app_error,
+)
 from .models import (
     FareItem,
     FarePage,
@@ -378,7 +386,11 @@ def parse_seat_selection_page(html: str) -> SeatSelectionPage:
     car_parser.feed(html)
     car_parser.close()
     if car_parser.error_message_key is not None and not car_parser.cars:
-        raise SrtAppError(
+        # SrtSeatUnavailableError, a SrtAppError subclass, so an existing
+        # `except SrtAppError` around get_seat_page keeps its meaning. `code`
+        # stays the messages.js alert KEY (error001), which is all this HTML
+        # response carries -- there is no msgCd on this route.
+        raise SrtSeatUnavailableError(
             car_parser.error_message_key,
             "SRT seat selection page returned an error instead of a seat map "
             "(no car is selectable; the train is typically sold out)",
@@ -815,7 +827,7 @@ def parse_mutual_verification_response(
             "SRT mutual verification message must be a string"
         )
     if status == "FAIL":
-        raise SrtAppError(
+        raise classify_app_error(
             message_code,
             "SRT mutual verification failed",
             raw=data,
@@ -953,7 +965,7 @@ def parse_reservation_attempt_response(
     # a server that reports the rejection only in msgCd is still not read as a
     # hold.
     if code_hint == "WRP011002" or declared_failure:
-        raise SrtAppError(code_hint, message_hint or status, raw=data)
+        raise classify_app_error(code_hint, message_hint or status, raw=data)
 
     # Only a DECLARED SUCCESS reaches the strict reads: there the fields are
     # load-bearing, a malformed one means we cannot trust the parse, and the
@@ -1377,7 +1389,13 @@ def parse_reservation_list_response(
         # Gated on == "FAIL" rather than != "SUCC", matching the app's own habit
         # everywhere else in this file: an unrecognised third status is not a
         # declared failure, and treating it as one would hide a list that exists.
-        raise SrtAppError(code or None, message or status, raw=data)
+        #
+        # Reached only when resultMap ITSELF fails. The verified empty response
+        # does not come here at all: its resultMap says SUCC / IRZ000005, and the
+        # rsMap that says FAIL / WRT300005 on the very same response is never
+        # read. So classification cannot turn "you have no reservations" into an
+        # exception -- the empty account still returns an empty list.
+        raise classify_app_error(code or None, message or status, raw=data)
 
     train_rows = _reservation_list_container(data, "trainListMap")
     pay_rows = _reservation_list_container(data, "payListMap")
@@ -1688,13 +1706,19 @@ def parse_train_search_response(
     status = _required_row_string(result, "strResult", context="search metadata")
     message = _optional_message(result)
     if code == "NET000001":
-        raise SrtNetFunnelError(code, message or "NetFunnel key required", raw=data)
+        # SrtNetFunnelKeyError subclasses SrtNetFunnelError and keeps code
+        # "NET000001", so _search_with_retry's `exc.code != "NET000001"` gate --
+        # the single bounded retry, and the only self-directed retry in this
+        # library -- behaves exactly as it did.
+        raise SrtNetFunnelKeyError(code, message or "NetFunnel key required", raw=data)
     # The app classifies a search purely on dsOutput0.strResult (== "FAIL" fails, anything
     # else succeeds) and never inspects msgCd (ara1001l.js:206); srtgo agrees (srt.py:391-401).
     # msgCd is kept as informational metadata (and drives the NET000001 NetFunnel-retry signal
-    # above) but is NOT required to equal "IRG000000".
+    # above) but is NOT required to equal "IRG000000". The FAIL below is where an empty window
+    # lands: live 2026-07-26 the server answered WRG000000 "조회 결과가 없습니다." there, which
+    # classify_app_error refines to SrtNoResultsError.
     if status == "FAIL":
-        raise SrtAppError(code or None, message or status or None, raw=data)
+        raise classify_app_error(code or None, message or status or None, raw=data)
     metadata = _parse_search_metadata(result)
     rows = out.get("dsOutput1")
     if not isinstance(rows, list):

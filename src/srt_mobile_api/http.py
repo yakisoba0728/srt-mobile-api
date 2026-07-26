@@ -9,6 +9,7 @@ from .consent import MutationConsent, require_mutation_consent
 from .errors import (
     SrtAppError,
     SrtAuthError,
+    SrtIpBlockedError,
     SrtMutationNotAllowedError,
     SrtProtocolError,
     SrtSessionExpiredError,
@@ -94,11 +95,19 @@ class SrtHttpClient:
             # (srt.py:719-720: if "Your IP Address Blocked" in r.text -> SRTLoginError).
             # Classify it as an auth error -- not a generic protocol error -- so callers
             # catching SrtAuthError from login() see it, with the block reason preserved.
+            #
+            # SrtIpBlockedError refines that: it SUBCLASSES SrtAuthError, so every
+            # existing `except SrtAuthError` around login() is unaffected, while a
+            # caller that wants to tell "this network is banned" (waiting or changing
+            # egress is the only fix) from "these credentials are wrong" (re-prompt the
+            # user) no longer has to substring-match an English infrastructure message.
+            # This is the one place in the taxonomy that classifies on text, because the
+            # response is not an app response at all: no msgCd, no JSON, no envelope.
             if (
                 response.request.url.path == LOGIN_API_PATH
                 and "Your IP Address Blocked" in response.text
             ):
-                raise SrtAuthError(response.text.strip()) from None
+                raise SrtIpBlockedError(response.text.strip()) from None
             raise SrtProtocolError("Expected JSON object but response body was not valid JSON") from None
         if not isinstance(payload, dict):
             raise SrtProtocolError("Expected JSON object but received a non-object JSON payload")

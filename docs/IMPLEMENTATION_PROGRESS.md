@@ -398,9 +398,10 @@ car/seat response or availability contract.
   run showed the front door releases the slot anyway.
 - Current full offline gate (`pytest -q -m "not live"`), after the
   consent-gated mutation port, the transport-layer live-mutation gate, the
-  consent-gated cancel surface, the reservation-list read and the NetFunnel
-  queue protocol: `1090 passed, 1 deselected`; the deselected case
-  remains the explicit live-service opt-in. No live mutation was ever run.
+  consent-gated cancel surface, the reservation-list read, the NetFunnel
+  queue protocol and the error taxonomy: `1126 passed, 1 deselected`; the
+  deselected case remains the explicit live-service opt-in. No live mutation
+  was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.
 - Prior full offline gate at `955de306`, including the additive
