@@ -4,6 +4,7 @@ from .models import (
     PassengerCounts,
     SeatDesignation,
     SeatType,
+    SrtCouponRegistrationRequest,
     SrtPaymentCard,
     SrtRefundTicketInfo,
     SrtReservationHold,
@@ -2205,4 +2206,82 @@ def refund_payload(info: SrtRefundTicketInfo) -> dict[str, str]:
         # settled in srtgo's favour by the 2026-07-26 live refund. See docstring.
         "tkRetPwd": info.return_password.strip(),
         "psgNm": info.buyer_name.strip(),
+    }
+
+
+# 할인쿠폰 등록. The two fields of #couponInfo on the live coupon page
+# (/apa/selectListApa03020_n.do, 2026-07-26), in the order the page renders
+# them -- which is the order $.serialize() would emit.
+COUPON_NUMBER_FIELD = "dscp_no"
+COUPON_PASSWORD_FIELD = "dscp_pwd"
+# maxlength="10" on the number input, maxlength="4" on the password input.
+COUPON_NUMBER_MAX_LENGTH = 10
+COUPON_PASSWORD_MAX_LENGTH = 4
+
+
+def coupon_registration_payload(
+    request: SrtCouponRegistrationRequest,
+) -> dict[str, str]:
+    """Build the 할인쿠폰 등록 form for ``POST /arb/selectListArb02A01_n.do``.
+
+    **The whole body is two fields**, and that is not a simplification: the
+    page's own handler serialises exactly one form and that form holds exactly
+    two inputs::
+
+        var params = $("#couponInfo").serialize();
+        $.ajax({ type:"POST", url:"/arb/selectListArb02A01_n.do",
+                 data:params, dataType:"json", ... });
+
+    with
+
+        <form name="couponInfo" id="couponInfo">
+          <input type="number"   id="c_txt" name="dscp_no"  maxlength="10">
+          <input type="password" id="c_pw"  name="dscp_pwd" maxlength="4">
+        </form>
+
+    No PNR, no member number, no NetFunnel key: the session is the only thing
+    that says WHOSE account the coupon lands on. Read live on 2026-07-26 and
+    0-hit in the v2.0.41 offline bundle, which knows no ``/arb/`` route.
+
+    **Validation is the page's, restated.** ``dscp_no`` is digits only and at
+    most ten, because the page's ``keyup`` handler strips every non-digit and
+    truncates to ten and the input says ``maxlength="10"``; ``dscp_pwd`` is at
+    most four characters and is NOT constrained to digits, because the page
+    constrains only the number field. Both must be non-empty -- ``couponReg()``
+    refuses a blank one before it sends (``mysrt006``/``mysrt007``), and so does
+    this. Nothing here trims or pads: a value the page would not have produced
+    is refused rather than repaired, since the repair would be a guess about a
+    credential.
+
+    Exactly two keys come out, so ``assert_no_card_secrets`` and the mutation
+    route/category binding have nothing to disagree with, and a
+    :class:`~srt_mobile_api.consent.MutationPreview` of the result is two
+    ``[REDACTED]`` values -- both keys are in
+    :data:`~srt_mobile_api.redaction.SENSITIVE_KEYS`.
+    """
+    if type(request) is not SrtCouponRegistrationRequest:
+        raise ValueError(
+            "coupon registration requires an SrtCouponRegistrationRequest"
+        )
+    number = request.coupon_number
+    password = request.coupon_password
+    if not isinstance(number, str) or not number:
+        raise ValueError("coupon registration requires a non-empty coupon number")
+    if any(character < "0" or character > "9" for character in number):
+        raise ValueError("coupon number must contain only digits")
+    if len(number) > COUPON_NUMBER_MAX_LENGTH:
+        raise ValueError(
+            "coupon number must contain at most "
+            f"{COUPON_NUMBER_MAX_LENGTH} digits"
+        )
+    if not isinstance(password, str) or not password:
+        raise ValueError("coupon registration requires a non-empty coupon password")
+    if len(password) > COUPON_PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            "coupon password must be at most "
+            f"{COUPON_PASSWORD_MAX_LENGTH} characters"
+        )
+    return {
+        COUPON_NUMBER_FIELD: number,
+        COUPON_PASSWORD_FIELD: password,
     }

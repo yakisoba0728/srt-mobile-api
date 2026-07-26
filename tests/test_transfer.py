@@ -917,9 +917,17 @@ def test_transfer_adds_no_route_and_does_not_widen_the_kill_switch():
     # rides the EXISTING route and the EXISTING category. Nothing here may grow.
     assert SRT_LIVE_MUTATION_CATEGORIES == {"reserve", "cancel", "payment", "refund"}
     assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
-    # Four since 2026-07-26, when the 단체 endpoint arc06014 was unregistered
-    # along with the booking that reached it. One route per category again.
-    assert len(SRT_MUTATION_ROUTES) == 4
+    # FIVE since 2026-07-26: the four live-enabled routes plus the coupon
+    # registration, which has its own category and is NOT live-enabled. Still one
+    # route per category, and still none of them this feature's. Pinned as the
+    # exact set so the canary names the routes rather than counting them.
+    assert {route.path for route in SRT_MUTATION_ROUTES} == {
+        RESERVE_ROUTE,
+        "/ard/selectListArd02045_n.do",
+        "/ata/selectListAta09036_n.do",
+        "/atc/selectListAtc02063_n.do",
+        "/arb/selectListArb02A01_n.do",
+    }
     assert RESERVE_ROUTE in SRT_MUTATION_ROUTE_CATEGORIES
 
 

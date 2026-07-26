@@ -84,6 +84,23 @@ SENSITIVE_KEYS = frozenset(
         "card_password",
         "card_expire_date",
         "card_validation_number",
+        # 할인쿠폰: the wire fields the coupon page's own couponReg() serialises
+        # (`dscp_no`, `dscp_pwd` -- the live page, 2026-07-26) and the two
+        # attribute names SrtCouponRegistrationRequest carries them under.
+        #
+        # A COUPON NUMBER IS A BEARER CREDENTIAL. Whoever holds the pair can
+        # redeem the coupon against their own account, so it is masked on the
+        # same footing as a PAN, not on the footing of a PNR. Neither half was
+        # covered before: `dscp_pwd` is not the literal key `password`, and
+        # `dscp_no` is at most TEN digits (maxlength="10" on the page's own
+        # input), which CARD_RE -- a 13-to-19 digit run -- never matches. So a
+        # dry-run MutationPreview of a registration would have printed a usable
+        # coupon in full. This project has shipped that exact class of gap
+        # before; these four entries are what stop it here.
+        "dscp_no",
+        "dscp_pwd",
+        "coupon_number",
+        "coupon_password",
     }
 )
 # DELIBERATELY NOT REDACTED, and this is a decision rather than an oversight:

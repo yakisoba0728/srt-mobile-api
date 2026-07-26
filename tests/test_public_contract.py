@@ -17,10 +17,10 @@ def test_client_public_method_set_is_stable():
         "close",
         "get_booking_page",
         "get_date_selector",
-        # 할인쿠폰조회/등록, read half only. The page is also the coupon
-        # REGISTRATION form; registering posts to a different route that is in
-        # neither allowlist and would need a fifth consent category, so no
-        # method for it exists here and none should appear in this set.
+        # 할인쿠폰조회/등록, the read half. The write half is
+        # register_discount_coupon below, and they are separate methods because
+        # they are separate ROUTES: this one GETs the page, that one POSTs
+        # /arb/selectListArb02A01_n.do.
         "get_discount_coupons",
         "get_fare",
         "get_main",
@@ -56,6 +56,13 @@ def test_client_public_method_set_is_stable():
         # Same posture as pay_with_card, live-verified the same day
         # (SUCC / IRT200277): gated, previewable by default, and transmittable.
         "refund",
+        # 할인쿠폰 등록, the write half of the coupon page. The FIFTH consent
+        # category ("coupon"), and the only mutation method here that CANNOT
+        # send: "coupon" is deliberately outside
+        # safety.SRT_LIVE_MUTATION_CATEGORIES, so dry_run=False is refused at the
+        # transmit gate. Present, gated, previewable, shut -- the posture all
+        # four of the others held before their own live runs.
+        "register_discount_coupon",
         "reserve",
         # NOT present, deliberately: reserve_group. 단체 booking was removed on
         # 2026-07-26 because arc06014 answers with a server-rendered payment

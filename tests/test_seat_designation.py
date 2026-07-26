@@ -769,6 +769,16 @@ def test_seat_designation_adds_no_route_and_no_consent_category():
     assert SRT_LIVE_MUTATION_CATEGORIES == {"reserve", "cancel", "payment", "refund"}
     assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
     assert MutationRoute("POST", "app", RESERVE_ROUTE) in SRT_MUTATION_ROUTES
-    # Four since 2026-07-26: the 단체 endpoint arc06014 was unregistered when
-    # group booking was removed.
-    assert len(SRT_MUTATION_ROUTES) == 4
+    # FIVE since 2026-07-26: four live-enabled routes plus the coupon
+    # registration, which is registered and categorised ("coupon") and is
+    # deliberately NOT in SRT_LIVE_MUTATION_CATEGORIES above. Pinned as the exact
+    # set rather than as a count, so this canary keeps saying which routes exist
+    # rather than merely how many -- the count moved once and the seat-designation
+    # claim it guards ("this feature adds no route") did not.
+    assert {route.path for route in SRT_MUTATION_ROUTES} == {
+        RESERVE_ROUTE,
+        "/ard/selectListArd02045_n.do",
+        "/ata/selectListAta09036_n.do",
+        "/atc/selectListAtc02063_n.do",
+        "/arb/selectListArb02A01_n.do",
+    }

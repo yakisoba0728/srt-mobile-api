@@ -37,6 +37,8 @@ from .models import (
     SeatSelectionPage,
     SeatType,
     SrtCancelResult,
+    SrtCouponRegistrationRequest,
+    SrtCouponRegistrationResult,
     SrtPaymentCard,
     SrtPaymentResult,
     SrtRefundResult,
@@ -65,6 +67,7 @@ from .netfunnel import (
 )
 from .parsers import (
     parse_card_payment_response,
+    parse_coupon_registration_response,
     parse_discount_coupon_page,
     parse_fare_page,
     parse_html_page,
@@ -86,6 +89,7 @@ from .parsers import (
 )
 from .payloads import (
     card_payment_payload,
+    coupon_registration_payload,
     date_selector_payload,
     fare_payload,
     group_search_ajax_payload,
@@ -106,7 +110,11 @@ from .payloads import (
     transfer_reservation_payload,
     unpaid_reservation_cancel_payload,
 )
-from .safety import COUPON_LIST_PATH, PUBLIC_DISCOUNT_PAGE_PATH
+from .safety import (
+    COUPON_LIST_PATH,
+    COUPON_REGISTRATION_PATH,
+    PUBLIC_DISCOUNT_PAGE_PATH,
+)
 from .session import SrtSessionClient
 
 
@@ -1354,6 +1362,107 @@ class SrtClient:
                 category="cancel",
             )
             return parse_unpaid_cancel_response(response)
+
+    def register_discount_coupon(
+        self,
+        coupon_number: str,
+        coupon_password: str,
+        *,
+        consent: MutationConsent,
+    ) -> MutationPreview | SrtCouponRegistrationResult:
+        """Register a 할인쿠폰 against the account (할인쿠폰 등록) under consent.
+
+        ``POST /arb/selectListArb02A01_n.do`` with the body
+        ``{dscp_no, dscp_pwd}``. The other half of the page
+        :meth:`get_discount_coupons` reads: that page is BOTH the coupon list and
+        the registration form, and its ``등록하기`` button calls ``couponReg()``,
+        which serialises ``#couponInfo`` and posts it here as JSON, reading
+        ``resultMap[0].RTNCD`` / ``.MSG`` back. All of that is the live page
+        (2026-07-26); the route, both field names and both response keys are
+        0-hit across the 21,673 files of the v2.0.41 offline bundle, which knows
+        no ``/arb/`` route at all. What the bundle DOES corroborate is the
+        vocabulary either side of the wire — ``js/common/messages.js:111-113``
+        carries this flow's two validation refusals and its success text, and
+        ``sub/main.html:475`` carries the member flag ``DSCP_YN``.
+
+        **A FIFTH consent category, ``"coupon"``, and it exists because the four
+        that were here did not fit.** A coupon registration changes account state
+        — it redeems a bearer credential — but it books nothing and it moves no
+        money, so folding it into ``reserve`` or ``payment`` would have meant a
+        consent granted for one of those silently also authorising the spending
+        of a coupon. The sibling KORAIL port drew the same line for 할인카드 구매.
+        Gated by ``require_mutation_consent(consent, "coupon")``, so a default
+        :class:`~srt_mobile_api.consent.MutationConsent` (``allow_coupon=False``)
+        or ``None`` is denied before the form is built, and by an authenticated
+        session, because the session is the ONLY thing on this request that says
+        whose account the coupon lands on.
+
+        **THIS CANNOT SEND, and the refusal is deliberate rather than
+        incidental.** ``"coupon"`` is NOT in
+        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, which stays
+        ``{"reserve", "cancel", "payment", "refund"}`` and is pinned there by its
+        own canary. With the default ``dry_run=True`` this returns a
+        :class:`~srt_mobile_api.consent.MutationPreview` of the exact form that
+        WOULD be posted and performs no network I/O; with ``dry_run=False`` it
+        reaches
+        :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form`, which
+        refuses the category with
+        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` and sends
+        nothing. That is the exact posture reserve, cancel, payment and refund
+        each held before their own live runs: implemented, previewable, and shut.
+        Opening it needs a live run, and a live run needs a real unredeemed
+        coupon — nobody on this project holds one, and one cannot be
+        manufactured, which is why the switch is still closed rather than
+        merely untested.
+
+        **The preview leaks neither half.** ``dscp_no`` and ``dscp_pwd`` are both
+        in :data:`~srt_mobile_api.redaction.SENSITIVE_KEYS`, so the preview's
+        payload is two ``[REDACTED]`` values. Neither was covered before this
+        method existed: ``dscp_pwd`` is not the literal key ``password``, and a
+        coupon number is at most ten digits, which ``CARD_RE`` (13-19) never
+        matches — so a preview would have printed a redeemable coupon in full.
+
+        Validation is the page's own and lives in
+        :func:`~srt_mobile_api.payloads.coupon_registration_payload`: digits only
+        and at most ten for the number, at most four characters for the password,
+        neither empty.
+
+        **Success here means the REQUEST was accepted, not that the coupon is
+        visible.** The page's own success text says as much (쿠폰등록 요청을
+        완료하였습니다 … 바로 조회 되지 않을 수 있습니다), so a caller that
+        registers and immediately calls :meth:`get_discount_coupons` may
+        legitimately still see none.
+        """
+        require_mutation_consent(consent, "coupon")
+        if self.session.current is None:
+            raise SrtAuthError(
+                "SRT coupon registration requires an authenticated session"
+            )
+        # Built before the dry-run branch so a preview validates exactly what a
+        # send would transmit -- and, here, so a malformed coupon is rejected by
+        # the same builder whether or not anything could ever be sent.
+        form = coupon_registration_payload(
+            SrtCouponRegistrationRequest(
+                coupon_number=coupon_number,
+                coupon_password=coupon_password,
+            )
+        )
+        if consent.dry_run:
+            return MutationPreview(
+                category="coupon",
+                method="POST",
+                route=COUPON_REGISTRATION_PATH,
+                payload=form,
+            )
+        with self._session_guard():
+            response = self.http.post_mutation_form(
+                COUPON_REGISTRATION_PATH,
+                form,
+                consent=consent,
+                category="coupon",
+                referer=f"{self.config.base_url}{COUPON_LIST_PATH}",
+            )
+            return parse_coupon_registration_response(response)
 
     def pay_with_card(
         self,

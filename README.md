@@ -70,11 +70,16 @@ reversal, verified as one round trip so nothing could be stranded paid. Adding a
 is the only thing membership in that set has ever meant. The retained APK
 specification and smoke tooling remain the evidence context for that package.
 
-The reviewed safety boundary contains 25 routes on the read side, plus 4
-mutation routes, one per consent category. It was 5 until 2026-07-26: the 단체
-reservation endpoint `arc/selectListArc06014_n.do` was **unregistered** when
-group booking was removed, because a route no client method can reach must not
-stay transmittable. The 23rd read is the 좌석배치도
+The reviewed safety boundary contains 25 routes on the read side, plus 5
+mutation routes, one per consent category — **four of which may actually be
+sent.** The fifth is 할인쿠폰 등록 (`arb/selectListArb02A01_n.do`, the `coupon`
+category), registered because a client method can reach it and deliberately
+absent from `SRT_LIVE_MUTATION_CATEGORIES`, which stays
+`{reserve, cancel, payment, refund}` and is pinned there by a canary. The 단체
+reservation endpoint `arc/selectListArc06014_n.do` was **unregistered** on
+2026-07-26 when group booking was removed, because a route no client method can
+reach must not stay transmittable; the coupon route is registered on the same
+principle read forwards. The 23rd read is the 좌석배치도
 `arc/selectListArc02011_n.do`, live-confirmed 2026-07-26. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated reserve mutation
@@ -88,9 +93,9 @@ search and reservation, the 좌석배치도 (seat grid) read and the 좌석지�
 (seat-designated) reservation
 landed — and after 단체 (group) booking was removed again, and after the
 할인 (discount) code tables, the 할인쿠폰 read, the 공공할인 read and the
-seven-type `PassengerCounts` —
+seven-type `PassengerCounts` and the consent-gated 할인쿠폰 등록 —
 the current offline suite at HEAD is
-`1520 passed, 1 deselected`. The deselected case is the
+`1553 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -957,12 +962,87 @@ holds none. The fixture keeps the template verbatim so the property is tested.
 parser refuses a page with no `ul.coupList` (not the coupon page), a list that
 neither lists coupons nor carries the marker, and a page that does both.
 
-**Registering a coupon is not implemented and is not reachable.** The same page
-carries a `dscp_no`/`dscp_pwd` form, but its submit is a POST to a *different*
-route (`/arb/selectListArb02A01_n.do`) which is in neither allowlist and would
-need a fifth entry in `SRT_LIVE_MUTATION_CATEGORIES` — pinned to four by its own
-canary. Only `GET` is registered for the coupon path, so a coupon number and its
-password cannot travel there under a read either.
+**Registering a coupon is implemented, consent-gated, and cannot be sent.**
+See the next section. Only `GET` is registered for the coupon LIST path, so a
+coupon number and its password can never travel there under a read; the
+registration is a mutation route of its own.
+
+### 할인쿠폰 등록 — the fifth consent category, and the one that cannot send
+
+`SrtClient.register_discount_coupon(coupon_number, coupon_password, *, consent)`
+→ `MutationPreview | SrtCouponRegistrationResult`, a
+`POST /arb/selectListArb02A01_n.do` carrying exactly two fields,
+`dscp_no` and `dscp_pwd`.
+
+**Where the shape comes from: the live page, and only the live page.** The
+coupon page's own `등록하기` button calls `couponReg()`, which serialises
+`#couponInfo` — two inputs, no PNR, no member number, no NetFunnel key — posts
+it as JSON, and reads `resultMap[0].RTNCD` / `.MSG` back. The route, both field
+names and both response keys are **0-hit** across the 21,673 files of the
+v2.0.41 offline bundle, which knows no `/arb/` route at all. What the bundle
+*does* corroborate is the vocabulary either side of the wire: `messages.js`
+carries this flow's two validation refusals and its success text
+(`mysrt006`/`007`/`008`), and `sub/main.html` carries the member flag `DSCP_YN`
+that the live session's own user map also returns. So `dscp` is 할인쿠폰 in the
+app's own words; only the route is new. The handler is committed verbatim in
+`tests/fixtures/discount_coupons_empty.html`.
+
+**A FIFTH consent category, `coupon`, because the four that existed did not
+fit.** Registering a coupon changes account state, but it books nothing and
+moves no money — folding it into `reserve` or `payment` would have meant a
+consent granted for one of those silently also authorising the spending of a
+coupon. The sibling KORAIL port drew the same line for 할인카드 구매.
+`MutationConsent.allow_coupon` was **appended**, after
+`real_card_acknowledged`, so every consent written before it existed means
+exactly what it meant.
+
+**It cannot send, and that is the point.** `coupon` is deliberately NOT in
+`SRT_LIVE_MUTATION_CATEGORIES`, which stays `{reserve, cancel, payment, refund}`
+and is pinned by its own canary. `dry_run=True` (the default) returns a
+`MutationPreview` of the exact form; `dry_run=False` is refused with
+`SrtMutationNotAllowedError` at the transmit gate, and again independently at
+`_send_mutation_request`. That is the exact posture reserve, cancel, payment and
+refund each held before their own live runs. Opening it needs a live run, and a
+live run needs a real unredeemed coupon — nobody here holds one and one cannot
+be manufactured, so the switch is closed rather than merely untested.
+
+**A coupon is a BEARER credential, and the redaction gap is closed.** Whoever
+holds the number and password can redeem it. Neither half was masked before:
+`dscp_pwd` is not the literal key `password`, and a coupon number is at most ten
+digits, which `CARD_RE` (a 13-to-19 digit run) never matches — so a dry-run
+preview would have printed a redeemable coupon in full. All four spellings
+(`dscp_no`, `dscp_pwd`, `coupon_number`, `coupon_password`) are now in
+`SENSITIVE_KEYS`, both request fields are `repr=False`, and a preview's payload
+is two `[REDACTED]` values.
+
+**Validation is the page's own, restated rather than invented**: `dscp_no` is
+digits only and at most ten (`type="number"`, `maxlength="10"`, plus a `keyup`
+handler that strips non-digits and truncates); `dscp_pwd` is at most four
+characters and is **not** restricted to digits, because the page restricts only
+the number field. Both must be non-empty — `couponReg()` refuses a blank one
+before it sends, and so does the builder.
+
+**Never observed: the response.** `SrtCouponRegistrationResult` is written from
+the caller, not from a reply. It keeps the page's own polarity exactly —
+`RTNCD == "N"` is the failure and anything else is success — and is *stricter*
+in one place: an empty or missing `RTNCD` is a `SrtProtocolError`, because under
+the page's rule a missing code would otherwise read as a success, which is the
+wrong direction to be wrong in when the question is "did my coupon get spent?".
+It deliberately does not reuse the shared `strResult`/`msgCd`/`msgTxt` envelope
+helper: this route answers in uppercase `RTNCD`/`MSG` with no `strResult`, and
+mapping one onto the other would assert a correspondence nobody has seen.
+
+**A success means the REQUEST was accepted, not that the coupon is visible.**
+The page's own success text says so (`mysrt008`: "쿠폰등록 요청을 완료하였습니다
+… 쿠폰등록이 지연 될 경우 … 바로 조회 되지 않을 수 있습니다"), so registering and
+immediately calling `get_discount_coupons()` may legitimately still show none.
+
+**What an operator must live-verify** before `coupon` could join
+`SRT_LIVE_MUTATION_CATEGORIES`: one real unredeemed coupon, registered once,
+with the raw response captured — specifically whether `resultMap[0]` really is
+the container, whether `RTNCD` is `"Y"` on success, and what `MSG` says on a
+wrong password. Nothing short of that is evidence, and the shape of the
+*request* being solid is not the same claim.
 
 ### 공공할인 (welfare discounts) — live-verified unapproved, 2026-07-26
 
@@ -1012,14 +1092,17 @@ against it. `raw` carries the page.
 
 ### What the 할인 survey found that is NOT implemented
 
-Three discount surfaces exist and are deliberately absent, each for a different
-reason. The full write-up, with the evidence for each, is in
+Three discount surfaces were found and left out, each for a different reason.
+The first has since been implemented and is struck through below. The full write-up, with the evidence for each, is in
 `docs/IMPLEMENTATION_PROGRESS.md` under "할인 / 쿠폰 / 공공할인 — the survey".
 
-- **`POST /arb/selectListArb02A01_n.do`, 할인쿠폰 등록.** A mutation, and it
-  belongs to no member of `SRT_LIVE_MUTATION_CATEGORIES` — which is
-  `{reserve, cancel, payment, refund}` and pinned by a canary. Registered in
-  neither allowlist.
+- ~~**`POST /arb/selectListArb02A01_n.do`, 할인쿠폰 등록.**~~ **IMPLEMENTED
+  2026-07-26** as the `coupon` consent category — see "할인쿠폰 등록" above. The
+  survey's reason for leaving it out (it needs a fifth category, and the kill
+  switch is pinned to four) turned out to name two different decisions: adding
+  the CATEGORY is a modelling decision, and adding it to
+  `SRT_LIVE_MUTATION_CATEGORIES` is an evidence decision. The first was taken;
+  the second was not, so the kill switch is unchanged.
 - **`/ara/selectListAra10131_n.do`, the 할인 승차권 search.** Exists (a bare live
   GET answered `200` where a nonexistent sibling answered `404`), but every
   `PBL_DISC_*` value it needs would be a guess without an approved 공공할인,

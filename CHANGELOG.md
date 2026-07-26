@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+- **할인쿠폰 등록 — a FIFTH consent category, and the first one that cannot be
+  sent.** `SrtClient.register_discount_coupon(coupon_number, coupon_password, *,
+  consent)` builds `POST /arb/selectListArb02A01_n.do` with exactly two fields,
+  `dscp_no` and `dscp_pwd`.
+  **The shape is the live coupon page's own `couponReg()` and nothing else**: it
+  serialises `#couponInfo` — two inputs, no PNR, no member number, no NetFunnel
+  key — posts it as JSON and reads `resultMap[0].RTNCD` / `.MSG` back. Route,
+  field names and response keys are all **0-hit** across the 21,673 files of the
+  v2.0.41 bundle, which knows no `/arb/` route at all. The bundle does
+  corroborate the vocabulary either side of the wire: `messages.js:111-113`
+  carries this flow's two validation refusals and its success text
+  (`mysrt006`/`007`/`008`) and `sub/main.html:475` carries the member flag
+  `DSCP_YN`, which the live user map also returns. The handler is committed
+  verbatim in `tests/fixtures/discount_coupons_empty.html`.
+  **Why a fifth category rather than a reuse:** a coupon registration changes
+  account state but books nothing and moves no money, so folding it into
+  `reserve` or `payment` would have made a consent for one of those silently
+  authorise the spending of a coupon. The sibling KORAIL port drew the same line
+  for 할인카드 구매. `MutationConsent.allow_coupon` was **appended**, after
+  `real_card_acknowledged`, so every consent written before it existed means
+  exactly what it meant.
+  **`SRT_LIVE_MUTATION_CATEGORIES` IS UNCHANGED** at
+  `{reserve, cancel, payment, refund}`, and its canary still pins it. `coupon`
+  is outside it, so `dry_run=False` is refused at the transmit gate and again
+  independently at `_send_mutation_request`; nothing has ever been sent to this
+  route from this library. Adding the category was a modelling decision; adding
+  it to the kill switch would be an evidence decision, and there is no evidence
+  — a live run needs a real unredeemed coupon, which cannot be manufactured.
+  **A redaction gap is closed, and it was a real one.** A coupon number plus its
+  password is a bearer credential, and neither half was masked: `dscp_pwd` is not
+  the literal key `password`, and a coupon number is at most ten digits, which
+  `CARD_RE` (13-19) never matches — so a dry-run preview would have printed a
+  redeemable coupon in full. `dscp_no`, `dscp_pwd`, `coupon_number` and
+  `coupon_password` are now in `SENSITIVE_KEYS`, both request fields are
+  `repr=False`, and a preview's payload is two `[REDACTED]` values.
+  **Never observed: the response.** `SrtCouponRegistrationResult` keeps the
+  page's own polarity (`RTNCD == "N"` fails, anything else succeeds) and is
+  stricter in exactly one place — an empty or missing `RTNCD` is a
+  `SrtProtocolError`, because under that polarity a missing code would read as a
+  SUCCESS. It does not reuse the shared `strResult`/`msgCd`/`msgTxt` envelope
+  helper: this route answers in uppercase `RTNCD`/`MSG` with no `strResult`, and
+  mapping one onto the other would assert a correspondence nobody has seen.
+  A success is a REQUEST accepted, not a coupon visible — the page's own
+  `mysrt008` says so.
+  **Three route canaries were updated, not weakened**: `SRT_MUTATION_ROUTES` is
+  five, and the tests that said "this feature adds no route" now pin the exact
+  route SET rather than its size, so they name which routes are transmittable
+  instead of counting them.
+  Offline gate: `1553 passed, 1 deselected` (was `1520`).
+
 - **`PassengerCounts` now carries the app's SEVEN passenger types.** `infant`
   (유아) and `youth` (청소년) were APPENDED, so every existing positional
   construction keeps its meaning, and both default to zero.

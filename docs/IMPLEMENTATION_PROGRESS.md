@@ -868,10 +868,13 @@ car/seat response or availability contract.
   (transfer) search and reservation, the 좌석배치도 (seat grid) read and the
   좌석지정 (seat-designated) reservation — and after 단체 (group) booking was
   removed again, and after the 할인 code tables, the 할인쿠폰 read, the 공공할인
-  read and the seven-type `PassengerCounts` landed:
-  `1520 passed, 1 deselected`; the deselected case remains the
+  read, the seven-type `PassengerCounts` and the consent-gated 할인쿠폰 등록
+  landed:
+  `1553 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
-  `httpx.MockTransport`; the live runs are the operator scripts' job.
+  `httpx.MockTransport`; the live runs are the operator scripts' job — and the
+  coupon registration has no live run at all, by construction.
+- Prior offline gate before the 할인쿠폰 등록 mutation: `1520 passed, 1 deselected`.
 - Prior offline gate before the seven passenger types: `1497 passed, 1 deselected`.
 - Prior offline gate before the 공공할인 read: `1485 passed, 1 deselected`.
 - Prior offline gate before the 할인쿠폰 read: `1471 passed, 1 deselected`.
@@ -1480,13 +1483,19 @@ Nothing about the ordinary booking path was wrong.
 
 ### What exists and is deliberately NOT implemented
 
-**`POST /arb/selectListArb02A01_n.do` — 할인쿠폰 등록.** [page] The coupon page's
-own `couponReg()` serialises `#couponInfo` (`dscp_no`, `dscp_pwd`) and posts it,
-reading `resultMap[0].RTNCD` / `.MSG` back as JSON. It registers a coupon
-against the account, so it is a mutation, and it belongs to no member of
+**`POST /arb/selectListArb02A01_n.do` — 할인쿠폰 등록. IMPLEMENTED 2026-07-26;
+see "할인쿠폰 등록 — implemented, and unsendable" below.** [page] The coupon
+page's own `couponReg()` serialises `#couponInfo` (`dscp_no`, `dscp_pwd`) and
+posts it, reading `resultMap[0].RTNCD` / `.MSG` back as JSON. It registers a
+coupon against the account, so it is a mutation, and it belongs to no member of
 `SRT_LIVE_MUTATION_CATEGORIES` — which is `{reserve, cancel, payment, refund}`
-and pinned by a canary. Implementing it would mean adding a fifth category. It
-is registered in neither allowlist and a test asserts that.
+and pinned by a canary.
+
+The survey stopped there, and the sentence it stopped on — "implementing it
+would mean adding a fifth category" — turned out to conflate two decisions. A
+fifth CONSENT category was needed and was a modelling question; a fifth entry in
+`SRT_LIVE_MUTATION_CATEGORIES` was not needed and is an evidence question. The
+first has been taken and the second has not.
 
 **`/ara/selectListAra10131_n.do` — the 할인 승차권 search.** [page] `goSubmit()`
 on `ARA0301V` retargets `#rsvForm` here and submits it behind NetFunnel
@@ -1706,3 +1715,145 @@ seeding branch writes only `passenger1..5`), and it keeps the 청소년 row
 what this work may do — the first is an entitlement, the second is a mutation.
 For 유아 the remaining question is smaller and also needs a mutation: whether the
 server issues a 유아 a seat, since `choiceSeatCount` counts it.
+
+
+## 할인쿠폰 등록 — implemented, and unsendable (2026-07-26)
+
+`SrtClient.register_discount_coupon(coupon_number, coupon_password, *, consent)`
+→ `MutationPreview | SrtCouponRegistrationResult`.
+
+### The evidence, and where every piece of it came from
+
+**[page] `/apa/selectListApa03020_n.do`, live-read 2026-07-26 (81,493 bytes).**
+The registration handler, verbatim, and it is the whole of the request evidence:
+
+```js
+function couponReg() {
+    var txt = $("#c_txt").val();
+    var pw  = $("#c_pw").val();
+    if(txt == '') { srtAlertBoxDivShow("알림", Sr.msgs.mysrt006, null); ... return; }
+    if(pw  == '') { srtAlertBoxDivShow("알림", Sr.msgs.mysrt007, null); ... return; }
+    var params = $("#couponInfo").serialize();
+    $.ajax({ type:"POST", url:"/arb/selectListArb02A01_n.do",
+             data:params, dataType:"json",
+             success:function(args){
+                 var msg   = args.resultMap[0].MSG;
+                 var rtncd = args.resultMap[0].RTNCD;
+                 if(rtncd == "N"){ srtAlertBoxDivShow("알림", msg, null); }
+                 else { srtAlertBoxDivShow("알림", Sr.msgs.mysrt008, null, "mvPage()"); }
+             }, error:function(e){} });
+}
+```
+
+`#couponInfo` is exactly two inputs: `<input type="number" id="c_txt"
+name="dscp_no" maxlength="10">` and `<input type="password" id="c_pw"
+name="dscp_pwd" maxlength="4">`, plus a `keyup` handler on the first that strips
+every non-digit and truncates to ten. **No PNR, no member number, no NetFunnel
+key** — the session is the only thing on this request that says whose account
+the coupon lands on. Committed verbatim to
+`tests/fixtures/discount_coupons_empty.html`.
+
+**[bundle] 0-hit, in every part.** `Arb02A01`, `dscp_no`, `dscp_pwd`,
+`couponReg` and `coupList` have zero hits across all 21,673 files of the v2.0.41
+decompile, which contains no `/arb/` route at all.
+
+**[bundle] and yet the vocabulary IS there**, which is worth recording because
+it is the only static corroboration this surface has:
+`analysis/raw/base/assets/offline/js/common/messages.js:111-113` carries
+`mysrt006` ("할인쿠폰번호를 입력하여 주십시오."), `mysrt007` ("할인쿠폰 비밀번호를
+입력하여 주십시오.") and `mysrt008` ("쿠폰등록 요청을 완료하였습니다…"), and
+`analysis/raw/base/assets/offline/sub/main.html:475` carries the member flag
+`DSCP_YN: "N"` — which the live session's own user map also returns. So `dscp`
+is 할인쿠폰 in the app's own words, the two client-side refusals this builder
+restates are the app's own, and only the ROUTE is new.
+
+### The consent category, and why it is a fifth one
+
+`coupon`. Not a reuse of `reserve` or `payment`, because a coupon registration
+is neither: it books nothing and moves no money, it redeems a **bearer
+credential** against the account. Folding it into either would have meant a
+consent granted for booking a seat, or for paying for one, silently also
+authorising the spending of a coupon — and a consent that grants something its
+caller did not name is the failure this whole module exists to prevent. The
+sibling KORAIL port reached the same conclusion for 할인카드 구매 and created
+`discount_card` there.
+
+`MutationConsent.allow_coupon` was **appended**, after `real_card_acknowledged`
+rather than beside the other `allow_*` flags, for the same reason
+`PassengerCounts.infant`/`.youth` were appended: every positional construction
+written before the field existed keeps its exact meaning.
+
+### `SRT_LIVE_MUTATION_CATEGORIES` did not move, and that is the point
+
+It is still `{reserve, cancel, payment, refund}` and its canary still pins it.
+`coupon` is registered in `SRT_MUTATION_ROUTES` and categorised in
+`SRT_MUTATION_ROUTE_CATEGORIES`, and it is **outside the kill switch**, so:
+
+* `dry_run=True` (the default) returns a `MutationPreview` and sends nothing;
+* `dry_run=False` is refused with `SrtMutationNotAllowedError` at
+  `post_mutation_form`, and again independently at `_send_mutation_request`;
+* nothing has ever been sent to this route from this library.
+
+That is precisely the posture reserve, cancel, payment and refund each held
+before their own live runs. The route is registered rather than left out because
+a client method can reach it — the converse of why `Arc06014` was UNregistered
+when group booking was removed — and because registration is what BINDS it to
+its category, so a `coupon` consent can never be pointed at the reserve route or
+vice versa.
+
+### The redaction gap, which was real
+
+A coupon number plus its password is a bearer credential: whoever holds the pair
+redeems it, and the account that registers it is simply the first to ask. Before
+this work **neither half was masked**:
+
+* `dscp_pwd` is not the literal key `password`, and `SENSITIVE_KEYS` matches
+  keys exactly;
+* `dscp_no` is at most TEN digits (the page's own `maxlength`), and `CARD_RE`
+  matches a 13-to-19 digit run, so it never saw it.
+
+So a dry-run `MutationPreview` of a registration — the exact artefact a caller
+is invited to print before deciding — would have printed a redeemable coupon in
+full. `dscp_no`, `dscp_pwd`, `coupon_number` and `coupon_password` are now in
+`SENSITIVE_KEYS`, both `SrtCouponRegistrationRequest` fields are `repr=False`,
+and dedicated tests pin the preview's payload to two `[REDACTED]` values.
+
+### The response is the weak half, and is modelled as such
+
+`SrtCouponRegistrationResult` is written from the CALLER, not from a reply.
+Three consequences, all deliberate:
+
+1. **It does not reuse `_parse_result_envelope`.** That helper reads
+   `strResult`/`msgCd`/`msgTxt` and is shared by cancel, payment and refund —
+   three routes whose envelope is known. This route answers in uppercase
+   `RTNCD`/`MSG` with no `strResult` at all. Loosening the shared helper would
+   weaken the check for three known routes to accommodate one unknown one;
+   mapping one vocabulary onto the other would assert a correspondence nobody
+   has seen.
+2. **The polarity is the page's, exactly**: `RTNCD == "N"` fails, anything else
+   succeeds. That asymmetry is not tidied.
+3. **And it is stricter than the page in one place**: an empty or missing
+   `RTNCD` is a `SrtProtocolError`. Under the page's own rule a missing code
+   would read as a SUCCESS, which is the wrong direction to be wrong in when the
+   question is "did my coupon get spent?".
+
+A success is a REQUEST accepted, not a coupon visible — `mysrt008` says so in
+the app's own words ("쿠폰등록이 지연 될 경우 입력하신 쿠폰이 바로 조회 되지 않을
+수 있습니다"), so registering and immediately calling `get_discount_coupons()`
+may legitimately still show none.
+
+### What the operator must live-verify
+
+One real, unredeemed coupon, registered once, with the raw response captured.
+Specifically:
+
+* is `resultMap[0]` really the container, or does this route answer in
+  `outDataSets.dsOutput0` like the payment does;
+* is `RTNCD` `"Y"` on success;
+* what does `MSG` carry on a wrong password, and on an already-used coupon;
+* does the coupon appear in `get_discount_coupons()` immediately, or after the
+  delay `mysrt008` warns about.
+
+Only that would justify adding `coupon` to `SRT_LIVE_MUTATION_CATEGORIES`, and
+the request shape being solid is emphatically not the same claim. Note that this
+verification cannot be rehearsed: a coupon is spent the first time it works.

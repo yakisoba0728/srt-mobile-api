@@ -37,6 +37,7 @@ from .models import (
     SeatGridSeat,
     SeatSelectionPage,
     SrtCancelResult,
+    SrtCouponRegistrationResult,
     SrtPaymentResult,
     SrtRefundResult,
     SrtRefundTicketInfo,
@@ -1618,6 +1619,68 @@ def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
         status=status,
         message_code=code,
         message=message,
+        raw=data,
+    )
+
+
+def parse_coupon_registration_response(
+    data: dict[str, Any],
+) -> SrtCouponRegistrationResult:
+    """Parse the response of a 할인쿠폰 등록 (``/arb/selectListArb02A01_n.do``).
+
+    **NEVER OBSERVED — this is written from the caller, not from a response.**
+    The whole of the evidence is the coupon page's own success handler, live-read
+    2026-07-26 and 0-hit in the v2.0.41 bundle::
+
+        var msg   = args.resultMap[0].MSG;
+        var rtncd = args.resultMap[0].RTNCD;
+        if(rtncd == "N"){ srtAlertBoxDivShow("알림", msg, null); }
+        else            { srtAlertBoxDivShow("알림", Sr.msgs.mysrt008, ...); }
+
+    **It deliberately does NOT reuse** :func:`_parse_result_envelope`, which the
+    cancel, payment and refund parsers share. That helper reads
+    ``strResult``/``msgCd``/``msgTxt`` out of ``outDataSets.dsOutput0`` or
+    ``resultMap``; this route answers with UPPERCASE ``RTNCD``/``MSG`` and no
+    ``strResult`` at all. Routing this through the shared helper would mean
+    either loosening it to accept a second field vocabulary — weakening the
+    check for three routes whose envelope IS known — or silently mapping one
+    onto the other, which asserts a correspondence nobody has seen. The page
+    reads two keys out of one container, and so does this.
+
+    ``RTNCD`` is REQUIRED to be a non-empty string, and that is the one place
+    this parser is stricter than the page. The page treats only ``"N"`` as a
+    failure, so under its rule a missing code would come back as a SUCCESS —
+    which is precisely the wrong direction to be wrong in when the question is
+    "did my coupon get spent?". A response that does not say is a
+    :class:`SrtProtocolError`.
+
+    A stated failure is RETURNED, not raised, on the same principle as the
+    cancel parser: ``RTNCD="N"`` with the server's ``MSG`` is an answer
+    (a wrong password, an already-used coupon), and pushing it into an exception
+    path would hide the message that says which.
+    """
+    if not isinstance(data, dict) or not data:
+        raise SrtProtocolError(
+            "SRT coupon registration response must be a non-empty JSON object",
+            raw=data,
+        )
+    _validate_error_code_wrapper(data, context="coupon registration")
+    row = _first_row(data.get("resultMap"))
+    if not row:
+        raise SrtProtocolError(
+            "SRT coupon registration response must contain a resultMap result row",
+            raw=data,
+        )
+    status = row.get("RTNCD")
+    if not isinstance(status, str) or not status:
+        raise SrtProtocolError(
+            "SRT coupon registration RTNCD must be a non-empty string",
+            raw=data,
+        )
+    message = row.get("MSG")
+    return SrtCouponRegistrationResult(
+        status=status,
+        message=message if isinstance(message, str) else "",
         raw=data,
     )
 

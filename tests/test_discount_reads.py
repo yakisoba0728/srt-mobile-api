@@ -15,14 +15,18 @@ from srt_mobile_api.parsers import (
     parse_discount_coupon_page,
     parse_public_discount_page,
 )
+from srt_mobile_api.consent import MUTATION_CATEGORIES
 from srt_mobile_api.safety import (
     COUPON_LIST_PATH,
     PUBLIC_DISCOUNT_PAGE_PATH,
     READ_ONLY_ROUTES,
+    MutationRoute,
     ReadOnlyRoute,
+    SRT_LIVE_MUTATION_CATEGORIES,
     SRT_MUTATION_ROUTE_CATEGORIES,
     SRT_MUTATION_ROUTES,
     assert_mutation_route,
+    assert_mutation_route_category,
 )
 
 
@@ -55,24 +59,57 @@ def test_coupon_list_is_not_a_mutation_route():
         assert_mutation_route("POST", COUPON_LIST_PATH)
 
 
-def test_coupon_registration_route_is_in_neither_allowlist():
-    """Registering a coupon changes account state and is not implemented.
+def test_coupon_registration_route_is_a_mutation_and_never_a_read():
+    """Registering a coupon changes account state: it is a MUTATION route only.
 
-    It would need a fifth consent category, and SRT_LIVE_MUTATION_CATEGORIES is
-    pinned to four by its own canary. So the route it posts to is absent from
-    the read allowlist, absent from the mutation allowlist, and uncategorised.
+    It got the fifth consent category ("coupon") on 2026-07-26 and is registered
+    and categorised accordingly. What must never happen is the other thing: the
+    read-only path must not reach it under any method, because a coupon number
+    and its password travelling under a read is precisely the leak the GET-only
+    registration of COUPON_LIST_PATH exists to prevent.
     """
     for method in ("GET", "POST"):
         assert (
             ReadOnlyRoute(method, "app", COUPON_REGISTRATION_ROUTE)
             not in READ_ONLY_ROUTES
         )
-    assert all(
-        route.path != COUPON_REGISTRATION_ROUTE for route in SRT_MUTATION_ROUTES
+    assert (
+        MutationRoute("POST", "app", COUPON_REGISTRATION_ROUTE)
+        in SRT_MUTATION_ROUTES
     )
-    assert COUPON_REGISTRATION_ROUTE not in SRT_MUTATION_ROUTE_CATEGORIES
+    assert SRT_MUTATION_ROUTE_CATEGORIES[COUPON_REGISTRATION_ROUTE] == "coupon"
+    # Registered means the route gate passes; it does NOT mean transmittable.
+    assert_mutation_route("POST", COUPON_REGISTRATION_ROUTE)
+    # GET is not registered: the app posts, and a mutation performed with the
+    # wrong verb is not a mutation this library will make.
     with pytest.raises(SrtProtocolError):
-        assert_mutation_route("POST", COUPON_REGISTRATION_ROUTE)
+        assert_mutation_route("GET", COUPON_REGISTRATION_ROUTE)
+
+
+def test_coupon_category_is_bound_to_its_own_route_only():
+    # The route/category cross-check is what stops a "coupon" consent being
+    # pointed at the reserve route, and a "reserve" consent at this one.
+    assert_mutation_route_category(COUPON_REGISTRATION_ROUTE, "coupon")
+    with pytest.raises(SrtProtocolError):
+        assert_mutation_route_category(COUPON_REGISTRATION_ROUTE, "reserve")
+    with pytest.raises(SrtProtocolError):
+        assert_mutation_route_category("/arc/selectListArc05013_n.do", "coupon")
+
+
+def test_the_coupon_category_is_not_live_enabled():
+    """The fifth category exists and the kill switch did not widen for it.
+
+    This is the whole safety claim of the coupon half: a caller can name the
+    category, build the form and read a preview, and nothing can put it on the
+    wire. No coupon registration has ever been sent from this library, and
+    membership of SRT_LIVE_MUTATION_CATEGORIES is granted on a live response and
+    on nothing else.
+    """
+    assert "coupon" in MUTATION_CATEGORIES
+    assert "coupon" not in SRT_LIVE_MUTATION_CATEGORIES
+    assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
+        {"reserve", "cancel", "payment", "refund"}
+    )
 
 
 # --------------------------------------------------------------------------

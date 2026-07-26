@@ -71,12 +71,41 @@ SEAT_GRID_PATH = "/arc/selectListArc02011_n.do"
 # Registered as a READ and as GET ONLY, and the distinction is load-bearing
 # rather than stylistic: this page is BOTH a coupon list and a coupon
 # REGISTRATION form. The registration is not a POST to this path -- the page's
-# own couponReg() posts {dscp_no, dscp_pwd} to /arb/selectListArb02A01_n.do --
-# so refusing everything but GET here is what keeps a coupon number and its
-# password from ever travelling under a read. That other route is deliberately
-# absent from BOTH allowlists in this module: registering a coupon changes
-# account state, and it belongs to no member of SRT_LIVE_MUTATION_CATEGORIES.
+# own couponReg() posts {dscp_no, dscp_pwd} to COUPON_REGISTRATION_PATH -- so
+# refusing everything but GET here is what keeps a coupon number and its
+# password from ever travelling under a read. That other route is a MUTATION
+# route (below), reachable only through post_mutation_form and only under a
+# "coupon" consent, and it is not live-enabled.
 COUPON_LIST_PATH = "/apa/selectListApa03020_n.do"
+# 할인쿠폰 등록. The coupon page's own registration submit, and a MUTATION: it
+# redeems a coupon against the account.
+#
+# Provenance is the live page and only the live page -- the route, the two
+# fields and the response keys are all 0-hit across the 21,673 files of the
+# v2.0.41 offline bundle. From couponReg() on /apa/selectListApa03020_n.do,
+# fetched 2026-07-26:
+#
+#     var params = $("#couponInfo").serialize();
+#     $.ajax({ type:"POST", url:"/arb/selectListArb02A01_n.do",
+#              data:params, dataType:"json",
+#              success:function(args){
+#                  var msg   = args.resultMap[0].MSG;
+#                  var rtncd = args.resultMap[0].RTNCD;
+#                  ...
+#
+# #couponInfo is exactly two inputs, dscp_no and dscp_pwd.
+#
+# What the BUNDLE does corroborate is the vocabulary either side of the wire:
+# js/common/messages.js:111-113 carries mysrt006/007/008 -- the two client-side
+# validation refusals and the success text -- and sub/main.html:475 carries the
+# member flag DSCP_YN, which the live session's own userMap also returns. So
+# `dscp` is 할인쿠폰 in the app's own words; only the route is new.
+#
+# It is registered here and categorised as "coupon" below, and it is NOT in
+# SRT_LIVE_MUTATION_CATEGORIES. That combination is deliberate and is the exact
+# posture reserve/cancel/payment/refund each held before their own live run: a
+# client method exists, a consent can preview it, and the send path refuses.
+COUPON_REGISTRATION_PATH = "/arb/selectListArb02A01_n.do"
 # 할인 승차권 (공공할인). Found the same way as COUPON_LIST_PATH and on the same
 # menu -- pageMove('/common/ARA/ARA0301V/view.do') -- so a plain GET, and
 # live-read 2026-07-26 (206,268 bytes).
@@ -223,30 +252,36 @@ READ_ONLY_ROUTES = frozenset(
 
 
 # Documentation-level tiering of the state-changing routes: the four core SRT
-# mutation endpoints from srtgo API_ENDPOINTS (srt.py:89-103), one per consent
-# category. The 단체 reservation endpoint /arc/selectListArc06014_n.do was a
-# fifth entry here until 2026-07-26; it was UNREGISTERED when group booking was
-# removed, because a route that no client method can reach has no business being
-# transmittable (docs/IMPLEMENTATION_PROGRESS.md, "단체 (group) booking:
-# removed"). Route COUNT and category COUNT may still differ if a category ever
+# mutation endpoints from srtgo API_ENDPOINTS (srt.py:89-103), plus the coupon
+# registration the live coupon page names -- one per consent category. The 단체
+# reservation endpoint /arc/selectListArc06014_n.do was here until 2026-07-26;
+# it was UNREGISTERED when group booking was removed, because a route that no
+# client method can reach has no business being transmittable
+# (docs/IMPLEMENTATION_PROGRESS.md, "단체 (group) booking: removed"), and the
+# coupon route is registered on the same principle read forwards. Route COUNT and
+# category COUNT may still differ if a category ever
 # grows a second endpoint; the category is what gates transmission. They are
 # deliberately kept OUT of READ_ONLY_ROUTES so the read-only allowlist and its
 # guarantee stay fully intact:
 # ``assert_read_only_request`` rejects every one of these (none is reachable via
 # a read path). This is a classification only.
 #
-# Three separate things are true here and must not be conflated:
-#   * "has a ``SrtClient`` method" — all four do now: ``SrtClient.reserve``,
-#     ``SrtClient.cancel``, ``SrtClient.pay_with_card``, ``SrtClient.refund``.
+# Three separate things are true here and must not be conflated, and the FIFTH
+# route added on 2026-07-26 -- the coupon registration -- is the clearest
+# illustration of why, because it satisfies the first and not the other two:
+#   * "has a ``SrtClient`` method" — all five do: ``SrtClient.reserve``,
+#     ``SrtClient.cancel``, ``SrtClient.pay_with_card``, ``SrtClient.refund``,
+#     ``SrtClient.register_discount_coupon``.
 #     This is the axis that says the LEAST, which is exactly why it is listed
 #     first: having a method is not permission to send and is not evidence.
-#   * "can be transmitted" — all four can, as of the 2026-07-26 opening of
+#   * "can be transmitted" — FOUR can, as of the 2026-07-26 opening of
 #     :data:`SRT_LIVE_MUTATION_CATEGORIES` below, and ONLY under an explicit
 #     per-category ``MutationConsent`` with ``dry_run=False``. The send path
 #     (``SrtHttpClient.post_mutation_form``) still refuses every category
 #     outside that set, at both the ``post_mutation_form`` gate and again at the
 #     ``_send_mutation_request`` send boundary, and a payment additionally needs
-#     an unambiguous card-kind claim.
+#     an unambiguous card-kind claim. ``coupon`` is outside it, so a coupon
+#     registration can be previewed and cannot be sent.
 #   * "the shape is confirmed" — a method existing, and a category being
 #     transmittable, still say nothing about the form being the one the server
 #     accepts. That question was answered by two live round trips: reserve and
@@ -254,13 +289,15 @@ READ_ONLY_ROUTES = frozenset(
 #     refund on 2026-07-26 (SUCC / IRT000000 and SUCC / IRT200277). Each covered
 #     the single-journey one-adult case ONLY, and the two payment/refund routes
 #     remain 0-hit in the offline bundle — the run is live-server evidence, not
-#     static corroboration.
+#     static corroboration. The coupon route has had NO such run: its shape is
+#     the live page's own couponReg(), which is strong evidence about the
+#     REQUEST and none at all about the response.
 #
-# So the current invariant is: each of the four categories may leave the process
-# only under its own explicit consent, only onto its own route (the
+# So the current invariant is: each of the four live-enabled categories may leave
+# the process only under its own explicit consent, only onto its own route (the
 # route/category binding below is re-asserted at the send boundary), only with
-# ``dry_run=False`` — and every one of these four routes remains unreachable
-# through the read-only path.
+# ``dry_run=False``; the fifth may not leave at all — and every one of these five
+# routes remains unreachable through the read-only path.
 #
 # Each host is "app" (POST). The trailing comment names the consent category the
 # route gates.
@@ -281,6 +318,14 @@ SRT_MUTATION_ROUTES = frozenset(
         # single-source srtgo shape with no upstream at all, 0-hit in v2.0.41;
         # live-verified 2026-07-26, SUCC / IRT200277)
         MutationRoute("POST", "app", "/atc/selectListAtc02063_n.do"),
+        # coupon (client method exists, preview ONLY; NOT live-enabled; the
+        # shape is the live coupon page's own couponReg(), 0-hit in v2.0.41;
+        # never sent, by anyone, from here). Registered because a client method
+        # can reach it -- the converse of why the 단체 route was UNregistered
+        # when group booking was removed -- and because registration is what
+        # binds it to its category, so a "coupon" consent can never be pointed
+        # at the reserve route or vice versa. See COUPON_REGISTRATION_PATH.
+        MutationRoute("POST", "app", COUPON_REGISTRATION_PATH),
     }
 )
 
@@ -344,10 +389,23 @@ SRT_MUTATION_ROUTES = frozenset(
 # :data:`CARD_SECRET_FIELDS` is enforced on the BODY rather than on the route:
 # opening this gate makes the body-shaped guard matter MORE, not less.
 #
-# Adding a FIFTH category to this set is a safety decision of the same weight,
-# and must rest on the same kind of evidence; ``test_mutation_live_paths``
-# carries a canary that pins this set to exactly these four and so fails loudly
-# on any addition or removal.
+# A FIFTH CONSENT CATEGORY NOW EXISTS AND IS DELIBERATELY NOT IN THIS SET.
+# "coupon" (할인쿠폰 등록, COUPON_REGISTRATION_PATH) was added on 2026-07-26 with
+# a builder, a parser and a client method, and none of that admits it here:
+# membership is granted on the strength of a response from app.srail.or.kr, and
+# no coupon registration has ever been sent from this library. So
+# SrtClient.register_discount_coupon can build and preview the exact request and
+# cannot transmit it -- post_mutation_form and _send_mutation_request both
+# refuse the category outright, exactly as they refused all four of the above
+# before their own live runs.
+#
+# That is the whole point of keeping consent and live-enablement as two separate
+# questions: adding the category was a MODELLING decision (a coupon redemption
+# is not a booking and is not a payment, so it needed its own opt-in), while
+# adding it HERE would be an evidence decision of the same weight as opening
+# payment was. ``test_mutation_live_paths`` carries a canary that pins this set
+# to exactly these four and so fails loudly on any addition or removal --
+# including on "coupon".
 #
 # Kept as pure data in this module (no imports) so http.py can enforce it
 # without creating an import cycle.
@@ -364,6 +422,7 @@ SRT_MUTATION_ROUTE_CATEGORIES = {
     "/ard/selectListArd02045_n.do": "cancel",
     "/ata/selectListAta09036_n.do": "payment",
     "/atc/selectListAtc02063_n.do": "refund",
+    COUPON_REGISTRATION_PATH: "coupon",
 }
 
 

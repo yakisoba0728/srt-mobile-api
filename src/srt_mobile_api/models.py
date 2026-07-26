@@ -1167,6 +1167,88 @@ class DiscountCouponList(HtmlPage):
 
 
 @dataclass(frozen=True)
+class SrtCouponRegistrationRequest:
+    """One 할인쿠폰 등록: the coupon number and the coupon's password.
+
+    **This pair is a BEARER CREDENTIAL.** A coupon is redeemed by whoever
+    presents its number and password; the account that registers it is simply
+    the first to ask. That is why both attribute names, and both wire spellings
+    (``dscp_no``/``dscp_pwd``), are in
+    :data:`~srt_mobile_api.redaction.SENSITIVE_KEYS`, and why
+    :attr:`coupon_number` is ``repr=False`` alongside the password rather than
+    treated as a harmless identifier the way a PNR's ticket-issuance siblings
+    are. Neither half was covered before this type existed: ``dscp_pwd`` is not
+    the literal key ``password``, and a ten-digit ``dscp_no`` is too short for
+    ``CARD_RE``.
+
+    Both constraints below are the page's own, taken from the live
+    ``/apa/selectListApa03020_n.do`` (2026-07-26) rather than invented:
+
+    * :attr:`coupon_number` — ``<input type="number" name="dscp_no"
+      maxlength="10">`` plus a ``keyup`` handler that strips every non-digit and
+      truncates to ten. So: digits only, 1..10 of them.
+    * :attr:`coupon_password` — ``<input type="password" name="dscp_pwd"
+      maxlength="4">``. Bounded at four characters and NOT restricted to digits,
+      because the page restricts only the number field; guessing a charset the
+      page does not enforce would refuse coupons the app would accept.
+
+    Empty values are refused here for the same reason the page refuses them
+    (``mysrt006``/``mysrt007``, both in the offline bundle at
+    ``js/common/messages.js:111-112``): a blank field is a caller mistake, and
+    sending it would spend a request to be told so.
+    """
+
+    coupon_number: str = field(repr=False)
+    coupon_password: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class SrtCouponRegistrationResult:
+    """The parsed envelope of a 할인쿠폰 등록.
+
+    **NEVER OBSERVED.** Every field here is read off the coupon page's own
+    success handler and nothing else — no coupon registration has been sent from
+    this library, and the route is 0-hit in the v2.0.41 offline bundle::
+
+        var msg   = args.resultMap[0].MSG;
+        var rtncd = args.resultMap[0].RTNCD;
+        if(rtncd == "N"){ ...show msg... } else { ...show mysrt008... }
+
+    So the envelope is ``resultMap[0]`` with UPPERCASE ``RTNCD``/``MSG``, not
+    the ``strResult``/``msgCd``/``msgTxt`` shape every other mutation here
+    returns. It is modelled as the page reads it rather than normalised into the
+    familiar shape, because normalising would be asserting a correspondence
+    nobody has seen.
+
+    :attr:`succeeded` follows the page's polarity EXACTLY: ``"N"`` is the
+    failure and anything else is success. That asymmetry is the page's, and it
+    is why the parser separately refuses an empty or missing ``RTNCD`` — under
+    this rule a missing code would otherwise read as a success.
+
+    **A success here is a REQUEST accepted, not a coupon visible.** The page's
+    own success text says so (``mysrt008``: "쿠폰등록 요청을 완료하였습니다 …
+    쿠폰등록이 지연 될 경우 입력하신 쿠폰이 바로 조회 되지 않을 수 있습니다"), so a
+    caller that registers and immediately calls
+    :meth:`~srt_mobile_api.client.SrtClient.get_discount_coupons` may legitimately
+    see nothing.
+
+    ``message`` and ``raw`` are excluded from ``repr``: the server's own message
+    text is the only place a rejected coupon number could be echoed back.
+    """
+
+    status: str
+    message: str = field(default="", repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    #: The one value the page treats as a failure.
+    FAILURE_CODE = "N"
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status != self.FAILURE_CODE
+
+
+@dataclass(frozen=True)
 class Notice:
     is_main: str
     page_id: str

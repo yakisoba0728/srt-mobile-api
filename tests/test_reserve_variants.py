@@ -647,7 +647,19 @@ def test_the_group_route_is_unregistered_and_the_kill_switch_is_unchanged():
     assert REMOVED_GROUP_RESERVE_ROUTE not in SRT_MUTATION_ROUTE_CATEGORIES
     assert MutationRoute("POST", "app", RESERVE_ROUTE) in SRT_MUTATION_ROUTES
     assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
-    assert len(SRT_MUTATION_ROUTES) == 4
+    # Arc06014 is gone; the coupon registration arrived later and is registered
+    # because a client method CAN reach it -- the same principle read forwards.
+    # Naming the set is what keeps this test about WHICH routes are
+    # transmittable rather than about how many.
+    assert {route.path for route in SRT_MUTATION_ROUTES} == {
+        RESERVE_ROUTE,
+        "/ard/selectListArd02045_n.do",
+        "/ata/selectListAta09036_n.do",
+        "/atc/selectListAtc02063_n.do",
+        "/arb/selectListArb02A01_n.do",
+    }
+    # And the kill switch did NOT widen with it: a registered, categorised route
+    # whose category is outside this set still cannot be sent.
     assert SRT_LIVE_MUTATION_CATEGORIES == frozenset(
         {"reserve", "cancel", "payment", "refund"}
     )

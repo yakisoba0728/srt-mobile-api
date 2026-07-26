@@ -19,6 +19,17 @@ The safety posture mirrors the KORAIL port:
 * :func:`require_mutation_consent` denies by default, raising
   :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` before any request
   is built unless the caller has explicitly opted into the exact category.
+
+There are FIVE categories and only FOUR of them can reach the wire. ``"coupon"``
+(할인쿠폰 등록) was added on 2026-07-26 because a coupon registration is a state
+change that fits none of the other four — it is not a booking and it moves no
+money — and squeezing it into one of them would have meant a consent for
+reserving a seat silently also authorising the spending of a coupon.
+:data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` is unchanged at
+``{"reserve", "cancel", "payment", "refund"}``, so ``allow_coupon`` buys a
+preview and nothing else. Consent and live-enablement are deliberately two
+different questions in this library: the first is the caller's, the second rests
+on a live run.
 """
 
 from __future__ import annotations
@@ -30,13 +41,14 @@ from .errors import SrtMutationNotAllowedError
 from .redaction import redact_payload
 
 
-MUTATION_CATEGORIES = ("reserve", "payment", "cancel", "refund")
+MUTATION_CATEGORIES = ("reserve", "payment", "cancel", "refund", "coupon")
 
 _CONSENT_FLAG_BY_CATEGORY = {
     "reserve": "allow_reserve",
     "payment": "allow_payment",
     "cancel": "allow_cancel",
     "refund": "allow_refund",
+    "coupon": "allow_coupon",
 }
 
 
@@ -81,6 +93,27 @@ class MutationConsent:
     #: in the clear and that money will actually move. Never inferred, never
     #: defaulted on; see the class docstring.
     real_card_acknowledged: bool = False
+    #: 할인쿠폰 등록 (``POST /arb/selectListArb02A01_n.do``). A FIFTH category
+    #: rather than a reuse of one of the four, because a coupon registration is
+    #: neither a booking nor a movement of money: it redeems a bearer credential
+    #: against the account, and nobody who opted into placing a reservation, or
+    #: into paying for one, opted into spending a coupon. The sibling KORAIL port
+    #: drew the same line for 할인카드 구매 (its ``discount_card`` category).
+    #:
+    #: APPENDED, after ``real_card_acknowledged`` rather than beside the other
+    #: ``allow_*`` flags, for the same reason ``PassengerCounts.infant`` and
+    #: ``.youth`` were appended: every positional construction written before
+    #: this field existed keeps its exact meaning.
+    #:
+    #: Granting it does NOT make a registration transmittable.
+    #: :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` stays
+    #: ``{"reserve", "cancel", "payment", "refund"}`` — pinned by its own canary
+    #: — so ``"coupon"`` can only ever produce a dry-run
+    #: :class:`MutationPreview`, and ``dry_run=False`` is refused at the
+    #: transmit gate. This flag is what lets a caller PREVIEW the exact request;
+    #: live enablement is a separate decision resting on a live run, which this
+    #: category has not had.
+    allow_coupon: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,7 +144,7 @@ def require_mutation_consent(
     """Deny a mutation unless ``consent`` explicitly opts into ``category``.
 
     ``category`` must be one of ``"reserve"``, ``"payment"``, ``"cancel"``,
-    ``"refund"``. Raises
+    ``"refund"``, ``"coupon"``. Raises
     :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` when ``consent``
     is ``None``, is not a :class:`MutationConsent`, names an unknown category,
     or when the matching ``allow_<category>`` flag is False. Returns ``None``

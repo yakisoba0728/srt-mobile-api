@@ -16,9 +16,19 @@
       real page. html.parser hands a comment to handle_comment as one opaque
       string and never parses markup inside it.
 
-  The registration form is kept because it is part of this page and the parser
-  must ignore it: its submit goes to POST /arb/selectListArb02A01_n.do, a
-  mutation this library does not implement.
+  The registration form AND its handler are kept, verbatim, because they are the
+  entire evidence for SrtClient.register_discount_coupon: the route, the two
+  field names, the JSON dataType and the response keys (resultMap[0].RTNCD /
+  .MSG) exist nowhere else -- all of it is 0-hit across the 21,673 files of the
+  v2.0.41 offline bundle, which knows no /arb/ route at all. The parser must
+  still ignore every bit of it, and a test asserts that reading this page issues
+  no POST.
+
+  What the bundle DOES corroborate is the vocabulary either side of the wire:
+  js/common/messages.js:111-113 carries mysrt006 ("할인쿠폰번호를 입력하여
+  주십시오."), mysrt007 ("할인쿠폰 비밀번호를 입력하여 주십시오.") and mysrt008
+  ("쿠폰등록 요청을 완료하였습니다..."), which is why the client-side validation
+  below is restated in coupon_registration_payload rather than invented.
 -->
 <div data-role="page" class="jqm-demos" id="page">
 	<div data-role="header" data-add-back-btn="true" class="type2 ui-header ui-bar-inherit" role="banner">
@@ -110,3 +120,52 @@
 		</div>
 	</div>
 </div>
+<script>
+$("#c_txt").keyup(function() {
+	$(this).val($(this).val().replace(/[^0-9]/g,""));
+	var str = $(this).val();
+	if ($(this).attr("name") == "c_txt") {
+		if (str.length > 10) str = str.substring(0, 10);
+	}
+	$(this).val( str );
+});
+function couponReg() {
+	var txt = $("#c_txt").val();
+	var pw = $("#c_pw").val();
+	if(txt == '') {
+		srtAlertBoxDivShow("알림", Sr.msgs.mysrt006, null);
+		$("#c_txt").focus();
+		return;
+	}
+	if(pw == '') {
+		srtAlertBoxDivShow("알림", Sr.msgs.mysrt007, null);
+		$("#c_pw").focus();
+		return;
+	}
+
+	var params = $("#couponInfo").serialize();
+    $.ajax({
+        type:"POST",
+        url:"/arb/selectListArb02A01_n.do",
+        data:params,
+        dataType:"json",
+        success:function(args){
+        	//console.log(args.resultMap);
+        	var msg = args.resultMap[0].MSG;
+        	var rtncd = args.resultMap[0].RTNCD;
+        	if(rtncd == "N"){
+        		srtAlertBoxDivShow("알림", msg, null);
+        	} else {
+        		srtAlertBoxDivShow("알림", Sr.msgs.mysrt008, null, "mvPage()");
+        	}
+        },
+        error:function(e){
+            //alert(e.responseText);
+        }
+    });
+}
+
+function mvPage() {
+	window.location.href = "/apa/selectListApa03020_n.do";
+}
+</script>
