@@ -146,10 +146,12 @@ def test_selector_policy_rejects_wrong_method_legacy_neighbor_and_seat_page(meth
 
 
 def test_route_registry_has_exact_expanded_size():
-    # 22 since the refund's step-1 read (/atc/getListAtc14087.do) was
-    # registered. That route is classified as a read by inference, not by
-    # proof -- see the comment on it in safety.py.
-    assert len(READ_ONLY_ROUTES) == 22
+    # 23 since the 좌석배치도 (/arc/selectListArc02011_n.do) was registered. That
+    # one is a read on the evidence of what it returns -- a seat map, live-read
+    # 2026-07-26 -- and it has its own exact form contract, like the seat page.
+    # The 22nd is the refund's step-1 read (/atc/getListAtc14087.do), which is
+    # classified as a read by inference, not by proof; see safety.py.
+    assert len(READ_ONLY_ROUTES) == 23
 
 
 @pytest.mark.parametrize(

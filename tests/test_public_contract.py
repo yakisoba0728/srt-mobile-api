@@ -26,6 +26,10 @@ def test_client_public_method_set_is_stable():
         "get_refund_ticket_info",
         "get_reservations",
         "get_seat_page",
+        # The seat page's follow-up read: one 호차's 좌석배치도, live-confirmed
+        # 2026-07-26. A read like the rest -- registered in READ_ONLY_ROUTES
+        # with its own exact form contract, and it creates nothing.
+        "get_seat_grid",
         "get_seat_option_selector",
         "get_station_map_selector",
         "get_station_selector",
@@ -178,6 +182,35 @@ def test_seat_page_method_type_and_export_are_stable():
     assert signature.parameters["seat_attr_code"].kind is inspect.Parameter.KEYWORD_ONLY
     assert get_type_hints(SrtClient.get_seat_page)["return"] is SeatSelectionPage
     assert srt_mobile_api.SeatSelectionPage is SeatSelectionPage
+
+
+def test_seat_grid_method_type_and_exports_are_stable():
+    from typing import get_type_hints
+
+    from srt_mobile_api import SeatDesignation, SeatGrid, SeatGridSeat
+
+    signature = inspect.signature(SrtClient.get_seat_grid)
+    # car_number is POSITIONAL and required: a seat grid is always a grid OF a
+    # car, and the page's own form leaves scarNo empty until one is picked.
+    assert list(signature.parameters) == [
+        "self",
+        "train",
+        "car_number",
+        "cabin_class",
+        "seat_count",
+        "passengers",
+        "seat_attr_code",
+    ]
+    assert signature.parameters["car_number"].default is inspect.Parameter.empty
+    assert signature.parameters["cabin_class"].default == "1"
+    assert signature.parameters["seat_count"].default is None
+    assert signature.parameters["passengers"].default is None
+    assert signature.parameters["passengers"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert signature.parameters["seat_attr_code"].default == "015"
+    assert signature.parameters["seat_attr_code"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert get_type_hints(SrtClient.get_seat_grid)["return"] is SeatGrid
+    for exported in (SeatGrid, SeatGridSeat, SeatDesignation):
+        assert getattr(srt_mobile_api, exported.__name__) is exported
 
 
 def test_cancel_method_signature_type_and_export_are_stable():

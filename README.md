@@ -70,10 +70,11 @@ reversal, verified as one round trip so nothing could be stranded paid. Adding a
 is the only thing membership in that set has ever meant. The retained APK
 specification and smoke tooling remain the evidence context for that package.
 
-The reviewed safety boundary contains 22 routes on the read side, plus 5
+The reviewed safety boundary contains 23 routes on the read side, plus 5
 mutation routes (the 단체 reservation endpoint `arc/selectListArc06014_n.do` is
 a second URL for the *existing* `reserve` category, not a fifth category). The
-integrated 0.2.0 gate
+23rd read is the 좌석배치도 `arc/selectListArc02011_n.do`, live-confirmed
+2026-07-26. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
@@ -81,10 +82,10 @@ surface, the two-category live enablement, the operator scripts, the
 reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
 real-card acknowledgement gate, the consent-gated card-payment and refund
 surfaces, the four-category live enablement, the three bundle-evidenced
-reservation variants (group, standby, round trip) and the 환승 (transfer)
-search and reservation
+reservation variants (group, standby, round trip), the 환승 (transfer)
+search and reservation and the 좌석배치도 (seat grid) read
 landed, the current offline suite at HEAD is
-`1404 passed, 1 deselected`. The deselected case is the
+`1448 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -721,8 +722,10 @@ only bounded booleans and never emits the page body.
 
 The internal SRT page was loaded, but the retained sanitized schema-v2 evidence
 proves only a bounded car/UI candidate and a static Ajax handoff. It does not
-prove a stable iterable physical-seat record or availability vocabulary, so
-individual physical seats remain untyped.
+prove a stable iterable physical-seat record or availability vocabulary — that
+came later and from elsewhere: the 2026-07-26 live read of the Ajax handoff's
+own target. Individual physical seats are typed as of that read; see "Seat grid
+(좌석배치도)" below.
 
 ### Bounded seat-layout evidence gate
 
@@ -764,10 +767,10 @@ simple key names; quoted object keys are ignored.
 
 Raw HTML, visible text, attribute/input values, element IDs, query strings,
 arbitrary URLs, train/car/seat values, credentials, cookies, tokens, and
-exception messages are never written. Typed cars and physical seats remain
-unimplemented until separately authorized response evidence identifies a stable
-iterable source and availability vocabulary. Schema-v2 evidence does not
-authorize another origin, route, or mutation.
+exception messages are never written. This evidence command still emits no
+typed car or seat of its own, and schema-v2 evidence still does not authorize
+another origin, route, or mutation — the seat grid below was authorized by a
+separate live read, not by this report.
 
 The exact sanitized offline-replay report is retained as
 `tests/fixtures/seat_page_schema_v2_evidence.json`. Its regression test locks
@@ -782,9 +785,17 @@ these 11 input names: `trnGpCd`, `runDt`, `trnNo`, `scarNo`, `psrmClCd`,
 `dptRsStnCd`, `arvRsStnCd`, `seatAttCd`, `dptStnRunOrdr`, `arvStnRunOrdr`, and
 `choiceSeatCount`. The retained fixture does not prove that the script
 serializes that form, the controls' input types, the response grammar, or the
-DOM sink. It exposes no iterable response schema. Arc02011 is not allowlisted,
-there is no closed response parser, and the client neither calls nor implements
-it.
+DOM sink. It exposes no iterable response schema.
+
+**That last sentence stood for a year and is now out of date, in the good
+direction.** On 2026-07-26 the route was read live and Arc02011 is implemented:
+it is registered in `READ_ONLY_ROUTES` with its own exact eleven-field contract,
+`get_seat_grid(train, car_number)` calls it, and `parse_seat_grid_response`
+closes its response. What changed was not the evidence policy but the evidence:
+the 2026-07-15 capture summarized the page's *structure* and could not say what
+the route answers, and a live read could. See "Seat grid (좌석배치도)" below,
+including the one fact the whole endpoint turned on — the train number must be
+**zero-padded to five characters**.
 
 The same bounded 2026-07-15 session loaded one seat page from the first
 complete personal-search row. The fixed live summary reported the visible
@@ -793,7 +804,52 @@ categories, and `sufficiency=inventory_source_candidate`; it emitted no raw
 HTML or identifiers. A later authorized offline replay produced only the
 sanitized fixture described above. Together they prove a candidate source and
 the static handoff, not an iterable car/seat response or availability
-vocabulary, so typed physical seats remain excluded.
+vocabulary.
+
+### Seat grid (좌석배치도)
+
+`get_seat_grid(train, car_number)` reads one 호차's seat map from
+`POST /arc/selectListArc02011_n.do` and returns a `SeatGrid` of `SeatGridSeat`
+rows. It is the second half of the seat-selection read: `get_seat_page` says
+which cars have seats left, this says which seats and whether they can be
+picked.
+
+**Live-confirmed 2026-07-26** (수서 → 동탄, 20260812, train 315): 25,930 bytes,
+74 seat cells. Both this route and the `trnScarSeatFrm` form it serializes are
+0-hit in the v2.0.41 offline bundle — they exist only in what the server renders
+— which is why this was believed for months to need a traffic capture. It did
+not. The pages are served to our own authenticated session, so the HTML and its
+inline JavaScript can simply be read.
+
+**The train number is zero-padded to five characters, and that is the whole
+gate.** The identical request with `trnNo=315` returns a 147-byte alert shell
+whose text ("출발 20분 전부터 좌석이 자동배정됩니다…") reads like a timing rule
+and is not one; with `trnNo=00315` it returns the seat grid. Referer and route
+length change nothing — all three were checked. The app pads the same way and
+says so in a comment: `lfn_getTrNoData`, *"열차번호를 5자리로 채워서 가져옴"*.
+The padding lives in `payloads.seat_grid_payload` and is re-checked at the
+safety boundary, so a hand-assembled unpadded body cannot leave the process.
+
+**A seat has two identifiers and they are not interchangeable.** Each cell is
+`choiceSeatNo('3', '1C', 'Y')`: the first argument is the car's *internal* seat
+number, the second is the *printed* label on the seat, the third is whether it
+can be selected. `SeatGridSeat` models both as `internal_seat_number` and
+`printed_seat_label` and never as one field, because conflating them is a
+mistake this project already made once on the sibling korail client. The
+element id and `aria-label` are built from the printed label; the class is
+`seatChoice<seatAttCd><Y|N>`, with `000`, `015`, `021` and `028` all present in
+the captured car.
+
+The route answers a refusal as `"0#<message>"` (the page's own handler is
+`tmp = args.trim().split("#"); if (tmp[0] == "0") alert(tmp[1])`). That is the
+server declining a request it understood, so it raises
+`SrtSeatUnavailableError` — a `SrtAppError`, catchable exactly like every other
+business refusal — rather than a protocol error. Its `code` is the envelope's
+own `"0"`: this route is HTML and carries no `msgCd` at all.
+
+Registering it moved the read allowlist from 22 routes to 23. It creates
+nothing, it is refused by `assert_mutation_route`, and
+`SRT_LIVE_MUTATION_CATEGORIES` is untouched.
 
 ### Mutual verification
 

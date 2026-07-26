@@ -30,6 +30,7 @@ from .models import (
     NoticeListResult,
     PassengerCounts,
     SearchPageState,
+    SeatGrid,
     SeatSelectionPage,
     SeatType,
     SrtCancelResult,
@@ -71,6 +72,7 @@ from .parsers import (
     parse_reservation_list_response,
     parse_search_has_following_page,
     parse_search_page_state,
+    parse_seat_grid_response,
     parse_seat_selection_page,
     pair_transfer_itineraries,
     parse_timetable_page,
@@ -90,6 +92,7 @@ from .payloads import (
     search_ajax_payload,
     search_continuation_payload,
     search_page_payload,
+    seat_grid_payload,
     seat_page_payload,
     seat_option_selector_payload,
     station_map_selector_payload,
@@ -753,6 +756,70 @@ class SrtClient:
                 referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
             )
             return parse_seat_selection_page(raw)
+
+    def get_seat_grid(
+        self,
+        train: TrainSummary,
+        car_number: str,
+        cabin_class: str = "1",
+        seat_count: str | None = None,
+        *,
+        passengers: PassengerCounts | None = None,
+        seat_attr_code: str = "015",
+    ) -> SeatGrid:
+        """Read one 호차's 좌석배치도 — the second half of the seat-selection read.
+
+        :meth:`get_seat_page` answers "which cars have seats"; this answers
+        "which seats, and are they pickable". Together they are what the app
+        does when a passenger opens 좌석선택 and taps a 호차: the page's inline
+        script sets ``scarNo``, serialises ``#trnScarSeatFrm`` and POSTs it to
+        ``/arc/selectListArc02011_n.do`` as HTML.
+
+        **LIVE-CONFIRMED 2026-07-26.** 수서 -> 동탄 (0551 -> 0552), 20260812,
+        train 315: the request below returned 25,930 bytes containing 74 seat
+        cells. Both this route and ``trnScarSeatFrm`` are 0-hit in the v2.0.41
+        offline bundle — they exist only in what the server renders — which is
+        why this was believed for months to need a traffic capture. It did not;
+        the pages are served to our own authenticated session.
+
+        ``car_number`` is a value from :attr:`SeatSelectionPage.cars`
+        (``SeatCarOption.car_number``), not a guess: asking for a car the train
+        does not have is a wasted request at best.
+
+        Pass the same ``passengers`` the search and :meth:`get_seat_page` used —
+        ``choiceSeatCount`` is the party size on this form too — and the same
+        ``cabin_class``. ``seat_count`` remains the explicit override, with
+        ``"1"`` as the fallback, exactly as on :meth:`get_seat_page`.
+
+        **The train number is zero-padded to five characters** and that is the
+        entire difference between a seat grid and a 147-byte alert shell; see
+        :data:`~srt_mobile_api.payloads.SEAT_TRAIN_NUMBER_LENGTH`. The shell's
+        text mentions seats being auto-assigned 20 minutes before departure,
+        which reads like a timing rule and is not one.
+
+        A refusal (``"0#<message>"``) raises
+        :class:`~srt_mobile_api.errors.SrtSeatUnavailableError`, not a protocol
+        error — see :func:`~srt_mobile_api.parsers.parse_seat_grid_response`.
+        """
+        if seat_count is None:
+            seat_count = str((passengers or PassengerCounts()).total)
+        with self._session_guard():
+            raw = self.http.post_html_form(
+                "/arc/selectListArc02011_n.do",
+                seat_grid_payload(
+                    train,
+                    car_number,
+                    cabin_class,
+                    seat_count,
+                    seat_attr_code=seat_attr_code,
+                ),
+                # The seat page is where this form lives, so it is the page the
+                # app would be on. The 2026-07-26 capture established that the
+                # server does not care -- the grid came back with and without a
+                # Referer -- so this is the app's flow rather than a requirement.
+                referer=f"{self.config.base_url}/arc/selectListArc02012_n.do",
+            )
+            return parse_seat_grid_response(raw, car_number=car_number)
 
     def get_timetable(self, train: TrainSummary) -> TimetablePage:
         with self._session_guard():

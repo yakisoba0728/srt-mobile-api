@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- **좌석배치도 (seat grid) read LIVE-CONFIRMED (2026-07-26), and it needed no
+  capture.** `SrtClient.get_seat_grid(train, car_number) -> SeatGrid` over
+  `POST /arc/selectListArc02011_n.do` — the seat page's own follow-up read,
+  0-hit in the v2.0.41 bundle along with the `trnScarSeatFrm` form it
+  serialises, because both exist only in what the server renders. Every prior
+  note said this needed a traffic capture; the pages are served to our own
+  authenticated session and can simply be read. Live: 수서 -> 동탄, 20260812,
+  train 315, 25,930 bytes, 74 seat cells.
+  **The train number must be zero-padded to five characters, and that is the
+  entire gate.** `trnNo=315` returns a 147-byte alert shell reading
+  "출발 20분 전부터 좌석이 자동배정됩니다…"; `trnNo=00315` returns the grid.
+  Referer and route length change nothing — all three were checked live. The
+  alert reads like a timing rule and is not one, and believing it is what kept
+  this endpoint closed. The app pads identically and says so in a comment
+  (`lfn_getTrNoData`, "열차번호를 5자리로 채워서 가져옴", `main.html:642-661`).
+  The padding lives in `payloads.seat_grid_payload` next to
+  `SEAT_TRAIN_NUMBER_LENGTH`, is re-checked at the safety boundary as
+  `[0-9]{5}`, and is pinned by a test using the three-character number 315.
+  **A seat has TWO identifiers and `SeatGridSeat` keeps them apart by name.**
+  Each cell is `choiceSeatNo('3', '1C', 'Y')`: internal seat number, printed
+  label, selectable flag — so `internal_seat_number` and `printed_seat_label`
+  are separate fields. The element id and `aria-label` use the printed label;
+  the class is `seatChoice<seatAttCd><Y|N>` (`000`, `015`, `021`, `028` all
+  observed in one car). Conflating the two is the mistake the sibling korail
+  client already made, where the form sends one and the detail echoes the other.
+  **The `#` envelope is a business refusal, not a parse failure.** The page's
+  own handler is `tmp = args.trim().split("#"); if (tmp[0] == "0") alert(tmp[1])`,
+  so `"0#<message>"` raises `SrtSeatUnavailableError` (an `SrtAppError`) with
+  `code="0"` — this route is HTML and carries no `msgCd` at all — rather than a
+  protocol error. A body with neither cells nor envelope raises
+  `SrtProtocolError` instead of returning an empty grid.
+  **Read-only allowlist: 22 routes -> 23**, with an exact eleven-field form
+  contract of its own. `SRT_MUTATION_ROUTES` and `SRT_LIVE_MUTATION_CATEGORIES`
+  are untouched and their canaries are unchanged; `assert_mutation_route`
+  refuses this path.
+  New exports: `SeatGrid`, `SeatGridSeat`, `SeatDesignation`,
+  `parse_seat_grid_response`.
+  Offline gate: `1448 passed, 1 deselected` (was `1404`).
+
 - **환승 search response shape LIVE-CONFIRMED (2026-07-26): one row per leg,
   paired by `trnOrdrNo`.** A read-only probe of 동대구(0015) -> 광주송정(0036),
   20260809 from 080000, settled what the bundle could not. The direct search on

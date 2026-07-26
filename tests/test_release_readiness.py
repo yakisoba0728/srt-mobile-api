@@ -843,21 +843,28 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     progress_flat = " ".join(progress_lower.split())
     assert "installable read-only" in readme_lower
     assert "analysis workspace" not in readme_lower
-    assert "22 routes" in readme
+    assert "23 routes" in readme
     # The CURRENT offline count, so this is a real gate: it must be updated
     # whenever the suite grows. (The README also cites the historical 0.2.0
     # figure; that one is labelled as historical and is not asserted here,
     # because a frozen number can never fail.)
-    assert "1404 passed" in readme and "1 deselected" in readme
+    assert "1448 passed" in readme and "1 deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in readme.casefold()
     assert "personal and group each returned two pages" in readme.casefold()
     assert "inventory_source_candidate" in readme
+    # Both documents must state the CURRENT truth about the seat-grid route.
+    # Two of these entries used to be "not allowlisted" and "no closed response
+    # parser"; the 2026-07-26 live read made both false, and the fix for a
+    # truth pin that has gone stale is to re-pin the new truth, not to drop it.
+    # The padding is pinned here because it is the one fact the endpoint turned
+    # on, and a document that omits it would send the next reader back to
+    # believing the alert shell's timing story.
     for evidence_truth in (
         "seat_page_schema_v2_evidence.json",
         "/arc/selectListArc02011_n.do",
-        "not allowlisted",
-        "no closed response parser",
+        "zero-padded to five",
+        "parse_seat_grid_response",
     ):
         assert evidence_truth.casefold() in readme_flat
         assert evidence_truth.casefold() in progress_flat

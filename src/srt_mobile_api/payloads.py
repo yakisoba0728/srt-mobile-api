@@ -622,6 +622,98 @@ def seat_page_payload(
     }
 
 
+# The five-character 열차번호 the seat routes require, and the app's own reason
+# for it. main.html:642-661 defines lfn_getTrNoData with the comment
+# "열차번호를 5자리로 채워서 가져옴" ("get the train number padded to 5 digits")
+# and pads a 3- or 4-character number with leading zeros; ara1001l.js:1461 is
+# the one place trnNo1 is written, and it writes lfn_getTrNoData(item.trnNo).
+# The seat page's own inline script re-does the same padding before serialising
+# trnScarSeatFrm.
+#
+# THIS IS THE GATE ON THE SEAT GRID, live-confirmed 2026-07-26: the identical
+# request with trnNo=315 returns a 147-byte alert shell, and with trnNo=00315
+# returns the seat grid (25,930 bytes, 74 cells). Referer and route length
+# change nothing; the padding is the whole difference. The alert text that
+# comes back unpadded ("출발 20분 전부터 좌석이 자동배정됩니다...") reads like a
+# timing rule and is not one -- it is what this server says when it cannot find
+# the train, and believing it is what kept this endpoint closed.
+SEAT_TRAIN_NUMBER_LENGTH = 5
+
+
+def seat_grid_payload(
+    train: TrainSummary,
+    car_number: str,
+    cabin_class: str = "1",
+    seat_count: str = "1",
+    *,
+    seat_attr_code: str = "015",
+) -> dict[str, str]:
+    """Build the 좌석배치도 request for ``/arc/selectListArc02011_n.do``.
+
+    This is ``trnScarSeatFrm`` serialised, which is what the seat page's own
+    inline script does when a 호차 is picked::
+
+        trnScarSeatFrm.trnNo.value = <trnNo padded to 5>
+        params = $("#trnScarSeatFrm").serialize();
+        $.ajax({type: "POST", url: "/arc/selectListArc02011_n.do",
+                data: params, dataType: "html", ...})
+
+    Eleven fields, in the order the live page declares them. Two independent
+    offline records agree on that set: the 2026-07-15 structural capture
+    retained as ``tests/fixtures/seat_page_schema_v2_evidence.json`` (which also
+    pins the route and the POST) and the 2026-07-26 live read of the page
+    itself. The route and the form are both 0-hit in the v2.0.41 bundle — they
+    exist only in what the server renders.
+
+    The fields are the seat PAGE's fields minus ``reqCode``, ``dptDt`` and
+    ``dptTm``, plus ``scarNo`` — the 호차 being opened, which the page leaves
+    empty until one is chosen. ``dptStnRunOrdr``/``arvStnRunOrdr`` come from the
+    train row, exactly as they do for the seat page; taking them from anywhere
+    else is what made an earlier hand-built probe fail.
+
+    See :data:`SEAT_TRAIN_NUMBER_LENGTH` for the zero-padding, which is the
+    single fact that separates a seat grid from an alert shell.
+    """
+    if train.train_group_code != "300":
+        raise ValueError("train_group_code must be 300 for an SRT seat grid")
+    if cabin_class not in {"1", "2"}:
+        raise ValueError("cabin_class must be '1' (일반실) or '2' (특실)")
+    if not isinstance(seat_count, str) or re.fullmatch(r"[1-9][0-9]*", seat_count) is None:
+        raise ValueError("seat_count must be a positive integer")
+    return {
+        "trnGpCd": "300",
+        "runDt": _required_digits(train.run_date, "run_date", length=8),
+        # THE GATE. See SEAT_TRAIN_NUMBER_LENGTH above.
+        "trnNo": _required_digits(train.train_no, "train_no", max_length=5).zfill(
+            SEAT_TRAIN_NUMBER_LENGTH
+        ),
+        "scarNo": _required_digits(car_number, "car_number", max_length=3),
+        "psrmClCd": cabin_class,
+        "dptRsStnCd": _required_digits(
+            train.departure_station_code,
+            "departure_station_code",
+            length=4,
+        ),
+        "arvRsStnCd": _required_digits(
+            train.arrival_station_code,
+            "arrival_station_code",
+            length=4,
+        ),
+        # Request-side, like the seat page's: the app sends
+        # lfn_getRsv("rqSeatAttCd1"), seeded "015" (ara0101v.js:132).
+        "seatAttCd": _required_digits(seat_attr_code, "seat_attr_code", length=3),
+        "dptStnRunOrdr": _required_digits(
+            train.departure_run_order,
+            "departure_run_order",
+        ),
+        "arvStnRunOrdr": _required_digits(
+            train.arrival_run_order,
+            "arrival_run_order",
+        ),
+        "choiceSeatCount": seat_count,
+    }
+
+
 # getStlbTrnClsfCdNm(), lifted verbatim from the LIVE search page served on
 # 2026-07-26 by GET /ara/selectListAra10007_n.do. It maps 역무차종별코드
 # (stlbTrnClsfCd) to the display name the timetable and fare forms transmit as

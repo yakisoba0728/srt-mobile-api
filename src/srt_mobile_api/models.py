@@ -824,6 +824,149 @@ class SeatSelectionPage(HtmlPage):
 
 
 @dataclass(frozen=True)
+class SeatGridSeat:
+    """One seat cell of a 호차's 좌석배치도, carrying BOTH of its identifiers.
+
+    **Live-captured 2026-07-26** from ``/arc/selectListArc02011_n.do``. Every
+    cell in that grid is one element of this shape::
+
+        <div role="text" tabindex="0" aria-label="1C" id="scarSeat_1C"
+             class="seatChoice015Y"
+             onclick="choiceSeatNo('3', '1C', 'Y');"><span>1C</span></div>
+
+    **A seat has two names and they are not interchangeable.**
+    ``choiceSeatNo``'s first argument is the car's INTERNAL seat number — 1, 2,
+    3, 4, 5 … running across the car — and its second is the PRINTED label the
+    passenger reads off the seat itself (1A, 1B, 1C, 1D, 2A …). In the captured
+    car, internal ``3`` is printed ``1C``. The element ``id`` is built from the
+    PRINTED label (``scarSeat_1C``), and so is ``aria-label``.
+
+    They are modelled separately, and named at length, because conflating them
+    is a mistake this project has already made once on the sibling korail
+    client: there the reservation form sends the internal seat number while the
+    reservation DETAIL echoes the printed spec, and comparing the wrong pair
+    made it look as though the server had ignored the seat map entirely.
+
+    **Which one the reservation form takes: the PRINTED label.** The app's own
+    seat-selection callback receives ``{scarSeatNo: "2,7,10", scarSeatNm:
+    "1B,2C,3B", scarNo: 1}`` — both lists — and fills ``seatNo1_1..N`` from
+    ``scarSeatNm``, the printed labels, discarding ``scarSeatNo`` entirely
+    (``ara0101v.js:868-878``). So the field spelled ``seatNo`` carries the
+    NAME. That is bundle-evidenced and NOT live-verified; see
+    :func:`~srt_mobile_api.payloads.personal_reservation_payload`.
+
+    :attr:`seat_attribute_code` is the 좌석속성코드 embedded in the cell's class
+    (``seatChoice<code><Y|N>``); ``000``, ``015``, ``021`` and ``028`` were all
+    present in the captured car. :attr:`selectable` is ``choiceSeatNo``'s third
+    argument being ``Y``: ``N`` cells are rendered but cannot be picked.
+    """
+
+    internal_seat_number: str
+    printed_seat_label: str
+    seat_attribute_code: str = ""
+    selectable: bool = False
+
+
+@dataclass(frozen=True)
+class SeatDesignation:
+    """The seats a caller has chosen in ONE 호차, validated as a set.
+
+    The argument type of ``reserve(..., designated_seats=…)``, and the reason
+    that method cannot be handed a car number and a seat list that disagree.
+    Build it from a grid — :meth:`SeatGrid.choose` — rather than by hand, so the
+    labels are the server's own and the selectable check has something to check
+    against.
+
+    Construction validates what the wire cannot be allowed to carry:
+
+    * at least one seat, all of them exactly :class:`SeatGridSeat`,
+    * every seat ``selectable`` — an ``N`` cell is rendered by the server but
+      refused by it, so designating one is asking for a failed reservation,
+    * no repeated printed label (the same seat twice would consume two of the
+      party's slots and leave one traveller unseated),
+    * a digits-only car number, which is what ``scarNo1`` transmits.
+
+    The party-size rule is NOT here: it needs the passenger counts, so it lives
+    in :func:`~srt_mobile_api.payloads.personal_reservation_payload` where both
+    halves are in scope.
+    """
+
+    car_number: str
+    seats: tuple[SeatGridSeat, ...]
+
+    def __post_init__(self) -> None:
+        if not _is_digits(self.car_number):
+            raise ValueError("designated seats need a digits-only car number (scarNo1)")
+        if not isinstance(self.seats, tuple) or not self.seats:
+            raise ValueError("a seat designation needs at least one seat")
+        labels: list[str] = []
+        for seat in self.seats:
+            if type(seat) is not SeatGridSeat:
+                raise ValueError("designated seats must be exact SeatGridSeat values")
+            if not seat.printed_seat_label:
+                raise ValueError("a designated seat needs its printed label")
+            if not seat.selectable:
+                raise ValueError(
+                    "seat "
+                    f"{seat.printed_seat_label} is not selectable "
+                    "(the grid marked it 'N'); the server will refuse it"
+                )
+            labels.append(seat.printed_seat_label)
+        duplicates = sorted({label for label in labels if labels.count(label) > 1})
+        if duplicates:
+            raise ValueError(
+                "a seat may be designated only once; repeated: "
+                + ", ".join(duplicates)
+            )
+
+    @property
+    def printed_seat_labels(self) -> tuple[str, ...]:
+        """The labels in the order they will be sent as ``seatNo1_1..N``."""
+        return tuple(seat.printed_seat_label for seat in self.seats)
+
+
+@dataclass(frozen=True)
+class SeatGrid(HtmlPage):
+    """The parsed 좌석배치도 of ONE 호차 of ONE train.
+
+    :attr:`car_number` is the 호차 that was ASKED for — the ``scarNo`` this
+    library put on the request — because the grid fragment itself never names
+    the car it belongs to. :attr:`seats` is every cell in document order,
+    selectable or not.
+    """
+
+    car_number: str = ""
+    seats: tuple[SeatGridSeat, ...] = ()
+
+    @property
+    def selectable_seats(self) -> tuple[SeatGridSeat, ...]:
+        return tuple(seat for seat in self.seats if seat.selectable)
+
+    def choose(self, *printed_seat_labels: str) -> SeatDesignation:
+        """Designate seats by their PRINTED labels (``"1C"``, ``"2A"``, …).
+
+        The labels are the ones a passenger reads and the ones the reservation
+        form transmits (``ara0101v.js:868-878``), which is why they are what
+        this takes. An unknown label raises rather than being dropped, so a
+        typo cannot quietly shrink the party's seat list.
+        """
+        by_label = {seat.printed_seat_label: seat for seat in self.seats}
+        chosen: list[SeatGridSeat] = []
+        for label in printed_seat_labels:
+            seat = by_label.get(label)
+            if seat is None:
+                available = ", ".join(
+                    sorted(seat.printed_seat_label for seat in self.selectable_seats)
+                )
+                raise ValueError(
+                    f"seat {label!r} is not in car {self.car_number}'s grid; "
+                    f"selectable seats are: {available}"
+                )
+            chosen.append(seat)
+        return SeatDesignation(car_number=self.car_number, seats=tuple(chosen))
+
+
+@dataclass(frozen=True)
 class Notice:
     is_main: str
     page_id: str

@@ -28,6 +28,8 @@ from .models import (
     ReservationTrain,
     SearchPageState,
     SeatCarOption,
+    SeatGrid,
+    SeatGridSeat,
     SeatSelectionPage,
     SrtCancelResult,
     SrtPaymentResult,
@@ -407,6 +409,118 @@ def parse_seat_selection_page(html: str) -> SeatSelectionPage:
         text=page.text,
         raw=page.raw,
         cars=tuple(car_parser.cars),
+    )
+
+
+# choiceSeatNo(<internal seat number>, <printed label>, <'Y' | 'N'>) -- the
+# onclick of every cell in the 좌석배치도, live-captured 2026-07-26. Single or
+# double quotes are both accepted because this is server-rendered markup and
+# neither the page nor the bundle promises which it emits.
+_SEAT_CHOICE_CALL_RE = re.compile(
+    r"""choiceSeatNo\(\s*['"](?P<number>[^'"]*)['"]\s*,"""
+    r"""\s*['"](?P<label>[^'"]*)['"]\s*,"""
+    r"""\s*['"](?P<selectable>[^'"]*)['"]\s*\)"""
+)
+# class="seatChoice015Y" -- 좌석속성코드 plus the same Y/N flag the onclick
+# carries. Codes 000, 015, 021 and 028 were all present in the captured car.
+_SEAT_CLASS_RE = re.compile(r"seatChoice(?P<attribute>[0-9]{3})(?P<selectable>[YN])")
+# The grid's error envelope, in the page's own words:
+#     args = args.trim(); tmp = args.split("#");
+#     if (tmp[0] == "0") alert(tmp[1]); else render(args);
+_SEAT_GRID_REFUSAL_MARKER = "0"
+
+
+class _SeatGridParser(HTMLParser):
+    """Every ``choiceSeatNo`` cell of a 좌석배치도, in document order.
+
+    Driven by the onclick rather than by the element name or class, because the
+    onclick is what the page itself treats as the seat: it is the only place
+    both identifiers appear together, and it is the only place the Y/N flag is
+    authoritative. The class is read for the 좌석속성코드 and is allowed to be
+    absent.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seats: list[SeatGridSeat] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key.casefold(): value or "" for key, value in attrs}
+        call = _SEAT_CHOICE_CALL_RE.search(values.get("onclick", ""))
+        if call is None:
+            return
+        class_match = _SEAT_CLASS_RE.search(values.get("class", ""))
+        self.seats.append(
+            SeatGridSeat(
+                internal_seat_number=call.group("number").strip(),
+                printed_seat_label=call.group("label").strip(),
+                seat_attribute_code=(
+                    class_match.group("attribute") if class_match else ""
+                ),
+                selectable=call.group("selectable").strip().upper() == "Y",
+            )
+        )
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+
+def parse_seat_grid_response(html: str, *, car_number: str = "") -> SeatGrid:
+    """Parse the 좌석배치도 fragment ``/arc/selectListArc02011_n.do`` returns.
+
+    **Live-captured 2026-07-26**, 수서 -> 동탄, train 315: 25,930 bytes and 74
+    seat cells for one 호차. The response is an HTML FRAGMENT, not a page — the
+    seat page loads it into an empty ``<div id="trnScarSeatInfo">`` — so there
+    is no page marker to require and none is required.
+
+    **The ``#`` envelope is a business refusal, not a parse failure.** The
+    page's own handler is ``tmp = args.trim().split("#"); if (tmp[0] == "0")
+    alert(tmp[1]);``, so a body whose first ``#``-segment is exactly ``"0"``
+    carries a server message rather than a grid. That is a declared failure of
+    a request the server understood, which is what
+    :class:`~srt_mobile_api.errors.SrtSeatUnavailableError` already means here,
+    so it is raised rather than a protocol error — and being a
+    :class:`~srt_mobile_api.errors.SrtAppError` subclass, an existing
+    ``except SrtAppError`` keeps its meaning. ``code`` is the envelope's own
+    marker ``"0"``: this route is HTML and carries no ``msgCd`` at all, exactly
+    as the seat page carries only an alert key.
+
+    **Do not read that message as a diagnosis.** The one refusal this project
+    has seen ("출발 20분 전부터 좌석이 자동배정됩니다...") was produced by OUR
+    unpadded ``trnNo``, not by any timing rule; the same request with the train
+    number zero-padded to five characters returned the grid
+    (:data:`~srt_mobile_api.payloads.SEAT_TRAIN_NUMBER_LENGTH`).
+
+    ``car_number`` is stamped onto the result because the fragment never names
+    the car it describes; it is the ``scarNo`` the caller asked for.
+    """
+    if not html.strip():
+        raise SrtProtocolError("SRT seat grid returned an empty body")
+    stripped = html.strip()
+    marker, separator, message = stripped.partition("#")
+    if separator and marker.strip() == _SEAT_GRID_REFUSAL_MARKER:
+        raise SrtSeatUnavailableError(
+            _SEAT_GRID_REFUSAL_MARKER,
+            message.strip() or "SRT seat grid was refused without a message",
+            raw=html,
+        )
+    if is_unauthenticated_page(html):
+        raise SrtSessionExpiredError("SRT seat grid returned the sign-in page", raw=html)
+    parser = _SeatGridParser()
+    parser.feed(html)
+    parser.close()
+    if not parser.seats:
+        # Not a refusal (the server would have said "0#..."), and not a grid
+        # either. Refusing to return an empty SeatGrid keeps "no seats" from
+        # being indistinguishable from "a shape we do not understand".
+        raise SrtProtocolError(
+            "SRT seat grid contained no choiceSeatNo seat cells", raw=html
+        )
+    return SeatGrid(
+        text=extract_text(html),
+        raw=html,
+        car_number=car_number,
+        seats=tuple(parser.seats),
     )
 
 

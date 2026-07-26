@@ -1,0 +1,47 @@
+<!--
+  REDACTED reproduction of a REAL response, captured 2026-07-26 from
+  POST /arc/selectListArc02011_n.do -- the seat page's follow-up read, returned
+  once a 호차 is chosen. The live body was 25,930 bytes and 74 seat cells; this
+  keeps the cell structure verbatim and shrinks the car to twelve seats.
+
+  What it demonstrates, none of which is in the offline v2.0.41 bundle (both
+  this route and trnScarSeatFrm are 0-hit there):
+
+    * every cell is a div whose onclick is
+      choiceSeatNo(<internal seat number>, <printed label>, <'Y'|'N'>), so a
+      seat has TWO identifiers and only the second one is what a passenger
+      reads (internal 3 is printed 1C);
+    * the element id is built from the PRINTED label (scarSeat_1C), and so is
+      aria-label;
+    * the class is seatChoice<seatAttCd><Y|N> -- 000, 015, 021 and 028 all
+      appeared in the live car;
+    * 'N' cells are rendered exactly like selectable ones. Nothing but the flag
+      distinguishes a seat that can be picked from one that cannot.
+
+  The response is a FRAGMENT: the seat page loads it into its empty
+  <div id="trnScarSeatInfo">, so there is no <html>, no heading and no marker.
+-->
+<div class="seatArea">
+	<div class="seatRow">
+		<div role="text" tabindex="0" aria-label="1A" id="scarSeat_1A" style="left:0px;top:0px;" class="seatChoice015N" onclick="choiceSeatNo('1', '1A', 'N');"><span>1A</span></div>
+		<div role="text" tabindex="0" aria-label="1B" id="scarSeat_1B" style="left:40px;top:0px;" class="seatChoice015Y" onclick="choiceSeatNo('2', '1B', 'Y');"><span>1B</span></div>
+		<div role="text" tabindex="0" aria-label="1C" id="scarSeat_1C" style="left:80px;top:0px;" class="seatChoice015Y" onclick="choiceSeatNo('3', '1C', 'Y');"><span>1C</span></div>
+		<div role="text" tabindex="0" aria-label="1D" id="scarSeat_1D" style="left:120px;top:0px;" class="seatChoice000N" onclick="choiceSeatNo('4', '1D', 'N');"><span>1D</span></div>
+	</div>
+	<div class="seatRow">
+		<div role="text" tabindex="0" aria-label="2A" id="scarSeat_2A" style="left:0px;top:40px;" class="seatChoice021Y" onclick="choiceSeatNo('5', '2A', 'Y');"><span>2A</span></div>
+		<div role="text" tabindex="0" aria-label="2B" id="scarSeat_2B" style="left:40px;top:40px;" class="seatChoice021N" onclick="choiceSeatNo('6', '2B', 'N');"><span>2B</span></div>
+		<div role="text" tabindex="0" aria-label="2C" id="scarSeat_2C" style="left:80px;top:40px;" class="seatChoice028Y" onclick="choiceSeatNo('7', '2C', 'Y');"><span>2C</span></div>
+		<div role="text" tabindex="0" aria-label="2D" id="scarSeat_2D" style="left:120px;top:40px;" class="seatChoice028Y" onclick="choiceSeatNo('8', '2D', 'Y');"><span>2D</span></div>
+	</div>
+	<div class="seatRow">
+		<div role="text" tabindex="0" aria-label="3A" id="scarSeat_3A" style="left:0px;top:80px;" class="seatChoice000Y" onclick="choiceSeatNo('9', '3A', 'Y');"><span>3A</span></div>
+		<div role="text" tabindex="0" aria-label="3B" id="scarSeat_3B" style="left:40px;top:80px;" class="seatChoice000N" onclick="choiceSeatNo('10', '3B', 'N');"><span>3B</span></div>
+		<div role="text" tabindex="0" aria-label="3C" id="scarSeat_3C" style="left:80px;top:80px;" class="seatChoice015Y" onclick="choiceSeatNo('11', '3C', 'Y');"><span>3C</span></div>
+		<div role="text" tabindex="0" aria-label="3D" id="scarSeat_3D" style="left:120px;top:80px;" class="seatChoice015Y" onclick="choiceSeatNo('12', '3D', 'Y');"><span>3D</span></div>
+	</div>
+	<div class="seatLegend">
+		<span class="legendItem">선택가능</span>
+		<span class="legendItem">선택불가</span>
+	</div>
+</div>

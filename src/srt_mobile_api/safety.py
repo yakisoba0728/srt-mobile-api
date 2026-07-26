@@ -52,6 +52,45 @@ SEAT_PAGE_FIXED_VALUES = {
     "reqCode": "9",
     "trnGpCd": "300",
 }
+# 좌석배치도 (seat grid) for one 호차. The seat page's own inline script POSTs
+# $("#trnScarSeatFrm").serialize() here; the route and the form are 0-hit in the
+# v2.0.41 bundle and exist only in what the server renders. Registered as a READ
+# on the same footing as SEAT_PAGE_PATH: it returns a seat map and creates
+# nothing. Its exact field contract is enforced below, so this path cannot
+# become a general-purpose POST.
+SEAT_GRID_PATH = "/arc/selectListArc02011_n.do"
+SEAT_GRID_FIELDS = frozenset(
+    {
+        "trnGpCd",
+        "runDt",
+        "trnNo",
+        "scarNo",
+        "psrmClCd",
+        "dptRsStnCd",
+        "arvRsStnCd",
+        "seatAttCd",
+        "dptStnRunOrdr",
+        "arvStnRunOrdr",
+        "choiceSeatCount",
+    }
+)
+SEAT_GRID_FIXED_VALUES = {"trnGpCd": "300"}
+SEAT_GRID_VALUE_PATTERNS = {
+    "runDt": r"[0-9]{8}",
+    # FIVE digits, not "up to five". The zero-padding is the gate that decides
+    # whether this route answers with a seat grid or an alert shell
+    # (payloads.SEAT_TRAIN_NUMBER_LENGTH), so it is enforced at the boundary too
+    # rather than trusted to the builder.
+    "trnNo": r"[0-9]{5}",
+    "scarNo": r"[0-9]{1,3}",
+    "psrmClCd": r"[12]",
+    "dptRsStnCd": r"[0-9]{4}",
+    "arvRsStnCd": r"[0-9]{4}",
+    "seatAttCd": r"[0-9]{3}",
+    "dptStnRunOrdr": r"[0-9]+",
+    "arvStnRunOrdr": r"[0-9]+",
+    "choiceSeatCount": r"[1-9][0-9]*",
+}
 SEAT_PAGE_VALUE_PATTERNS = {
     "runDt": r"[0-9]{8}",
     "dptDt": r"[0-9]{8}",
@@ -135,6 +174,8 @@ READ_ONLY_ROUTES = frozenset(
         ReadOnlyRoute("POST", "app", "/common/ARA/ARA0701P/view.do"),
         ReadOnlyRoute("POST", "app", "/common/ARA/ARA0201V/view.do"),
         ReadOnlyRoute("POST", "app", SEAT_PAGE_PATH),
+        # 좌석배치도. The seat page's follow-up read, live-confirmed 2026-07-26.
+        ReadOnlyRoute("POST", "app", SEAT_GRID_PATH),
         ReadOnlyRoute("GET", "netfunnel", "/ts.wseq"),
     }
 )
@@ -347,28 +388,64 @@ def _same_origin(left: httpx.URL, right: httpx.URL) -> bool:
     )
 
 
-def _assert_seat_page_request(request: httpx.Request) -> None:
+def _assert_exact_form_contract(
+    request: httpx.Request,
+    *,
+    context: str,
+    fields: frozenset[str],
+    fixed_values: dict[str, str],
+    value_patterns: dict[str, str],
+) -> None:
+    """Require a POST read's body to be EXACTLY one registered form contract.
+
+    Shared by the seat page and the seat grid, which are the same kind of route:
+    a POST read whose body is a fixed set of journey identifiers. Extracted
+    rather than copied so that a second such route cannot be registered with a
+    quietly weaker check than the first.
+    """
     if b"?" in request.url.raw_path:
-        raise SrtProtocolError("SRT seat page request must not use URL query parameters")
+        raise SrtProtocolError(f"SRT {context} request must not use URL query parameters")
     content_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
     if content_type != "application/x-www-form-urlencoded":
-        raise SrtProtocolError("SRT seat page request must use URL-encoded form data")
+        raise SrtProtocolError(f"SRT {context} request must use URL-encoded form data")
     try:
         body = request.content.decode("ascii")
         items = parse_qsl(body, keep_blank_values=True, strict_parsing=True)
     except (UnicodeDecodeError, ValueError):
-        raise SrtProtocolError("SRT seat page form encoding is invalid") from None
+        raise SrtProtocolError(f"SRT {context} form encoding is invalid") from None
     counts = Counter(name for name, _value in items)
-    if set(counts) != SEAT_PAGE_FIELDS or any(count != 1 for count in counts.values()):
-        raise SrtProtocolError("SRT seat page form keys do not match the registered contract")
+    if set(counts) != fields or any(count != 1 for count in counts.values()):
+        raise SrtProtocolError(f"SRT {context} form keys do not match the registered contract")
     values = dict(items)
-    if any(values.get(name) != value for name, value in SEAT_PAGE_FIXED_VALUES.items()):
-        raise SrtProtocolError("SRT seat page fixed form values do not match the registered contract")
+    if any(values.get(name) != value for name, value in fixed_values.items()):
+        raise SrtProtocolError(
+            f"SRT {context} fixed form values do not match the registered contract"
+        )
     if any(
         re.fullmatch(pattern, values.get(name, "")) is None
-        for name, pattern in SEAT_PAGE_VALUE_PATTERNS.items()
+        for name, pattern in value_patterns.items()
     ):
-        raise SrtProtocolError("SRT seat page dynamic form values are malformed")
+        raise SrtProtocolError(f"SRT {context} dynamic form values are malformed")
+
+
+def _assert_seat_page_request(request: httpx.Request) -> None:
+    _assert_exact_form_contract(
+        request,
+        context="seat page",
+        fields=SEAT_PAGE_FIELDS,
+        fixed_values=SEAT_PAGE_FIXED_VALUES,
+        value_patterns=SEAT_PAGE_VALUE_PATTERNS,
+    )
+
+
+def _assert_seat_grid_request(request: httpx.Request) -> None:
+    _assert_exact_form_contract(
+        request,
+        context="seat grid",
+        fields=SEAT_GRID_FIELDS,
+        fixed_values=SEAT_GRID_FIXED_VALUES,
+        value_patterns=SEAT_GRID_VALUE_PATTERNS,
+    )
 
 
 # The NetFunnel queue protocol, one exact query contract per opcode.
@@ -606,6 +683,9 @@ def assert_read_only_request(request: httpx.Request, config: SrtConfig) -> None:
     assert_no_card_secrets(request)
     if route == ReadOnlyRoute("POST", "app", SEAT_PAGE_PATH):
         _assert_seat_page_request(request)
+        return
+    if route == ReadOnlyRoute("POST", "app", SEAT_GRID_PATH):
+        _assert_seat_grid_request(request)
         return
     if route == ReadOnlyRoute("POST", "app", REFUND_TICKET_INFO_PATH):
         _assert_empty_body_request(request)
