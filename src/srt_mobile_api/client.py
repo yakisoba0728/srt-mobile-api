@@ -78,6 +78,7 @@ from .payloads import (
     card_payment_payload,
     date_selector_payload,
     fare_payload,
+    group_reservation_payload,
     group_search_ajax_payload,
     passenger_selector_payload,
     personal_reservation_payload,
@@ -675,19 +676,17 @@ class SrtClient:
         consent: MutationConsent,
         netfunnel_key: str | None,
     ) -> MutationPreview | SrtReservationHold:
-        """The one reservation send path, behind :meth:`reserve`.
+        """The one reservation send path, shared by :meth:`reserve` and :meth:`reserve_group`.
 
-        Extracted rather than left inline because every safety property of a
+        Extracted rather than copied because every safety property of a
         reservation lives here — the consent gate, the session requirement, the
         no-I/O dry run, the single NetFunnel acquisition, the guaranteed slot
-        release, the never-retry rule, and the PNR-salvaging parse. The app
-        itself keeps ONE ``#rsvForm`` and varies only the URL and a few body
-        fields across its reservation variants (ara1001l.js:1542-1547), so a
-        variant should cost a different ``route``/``build_form`` pair and not a
-        second copy of that list. Behaviour is unchanged by the extraction.
-
-        ``build_form`` is called with the NetFunnel key exactly once, and only
-        after the key exists, so no form is ever built twice or sent twice.
+        release, the never-retry rule, and the PNR-salvaging parse. A second
+        endpoint deserves a second URL, not a second copy of that list; the app
+        itself keeps one ``#rsvForm`` and switches only the URL
+        (ara1001l.js:1542-1547). ``build_form`` is called with the NetFunnel key
+        exactly once, and only after the key exists, so no form is ever built
+        twice or sent twice.
         """
         require_mutation_consent(consent, "reserve")
         if self.session.current is None:
@@ -721,7 +720,10 @@ class SrtClient:
                     # The app reserves from the search-result page
                     # (ara1001l.js:1541-1560), which is the referer every other
                     # post-search read here sends. INFERRED from the app flow,
-                    # not captured from the wire.
+                    # not captured from the wire. Unchanged for a group: the
+                    # group SEARCH already posts to Ara10082 under this same
+                    # referer (_post_search_page), because it is the same
+                    # ara1001l list page in the app either way.
                     referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
                 )
             finally:
@@ -750,6 +752,8 @@ class SrtClient:
         seat_type: SeatType = SeatType.GENERAL_FIRST,
         window_seat: bool | None = None,
         netfunnel_key: str | None = None,
+        standby: bool = False,
+        round_trip: bool = False,
     ) -> MutationPreview | SrtReservationHold:
         """Create a personal (개인예약) SRT reservation hold under explicit consent.
 
@@ -801,6 +805,44 @@ class SrtClient:
         but cancelable hold when strict parsing trips over an unrelated
         malformed field, and a failed reserve is never retried — a retry could
         double-book — so at most one hold can exist per call.
+
+        **standby** (``jobId=1102``, 예약대기) puts the party on the waitlist for
+        a train whose general cabin is full but whose search row offers 예약대기.
+        Bundle-evidenced (``ara0101v.js:90`` names the job type,
+        ``ara1001l.js:1445-1448`` chooses it), NOT live-verified. It is opt-in
+        rather than derived from the row on purpose: deriving would silently
+        change what an existing caller's ``reserve(train)`` sends the first time
+        they pass a full train, and a waitlist entry is not the thing they asked
+        for. ``ValueError`` if the row says the train is not 예약대기 — see
+        :func:`~srt_mobile_api.payloads._refuse_ineligible_standby`, including
+        why a row with no such column is accepted rather than refused. srtgo
+        additionally POSTs ``/ata/selectListAta01135_n.do`` afterwards to set
+        SMS/seat-change options (srt.py:1014-1051); that route is 0-hit in our
+        v2.0.41 bundle and has no equivalent in it, so it is NOT implemented and
+        a standby entry made here simply carries the server's defaults.
+
+        **round_trip** (``rtnDv=1``, 왕복) is deliberately NOT a second network
+        call. SRT models a round trip as 오는열차: the app reserves the outbound
+        leg, then re-searches with the stations swapped and the return date, then
+        reserves the return leg as a SECOND POST to this same endpoint
+        (``ara1001l.js:1580-1596``). So the sequence is two ``reserve`` calls,
+        both with ``round_trip=True``:
+
+        1. ``reserve(outbound, round_trip=True, consent=…)`` → hold A
+        2. search the return leg — ``TrainSearchQuery.for_return_leg`` builds the
+           swapped query for you — then
+           ``reserve(inbound, round_trip=True, consent=…)`` → hold B
+
+        Keeping it two calls preserves the property this method is built around:
+        one call can create at most one hold, so a failure can strand at most
+        one. The caller owns BOTH PNRs and must cancel both. ``jrnyCnt`` stays
+        ``"1"`` on each — see
+        :func:`~srt_mobile_api.payloads.personal_reservation_payload` for why
+        ``jrnyCnt="2"`` means 환승 and not 왕복. Whether the server links the two
+        holds (the app carries the outbound result forward in ``go_baseDsXml`` /
+        ``go_seatDsXml``, ``ara0101v.js:143-144``, which is not reproducible from
+        a search row) is UNVERIFIED; treat them as two independent holds until a
+        live run says otherwise.
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
@@ -810,6 +852,80 @@ class SrtClient:
                 seat_type=seat_type,
                 netfunnel_key=key,
                 window_seat=window_seat,
+                standby=standby,
+                round_trip=round_trip,
+            ),
+            consent=consent,
+            netfunnel_key=netfunnel_key,
+        )
+
+    def reserve_group(
+        self,
+        train: TrainSummary,
+        *,
+        consent: MutationConsent,
+        passengers: PassengerCounts,
+        seat_type: SeatType = SeatType.GENERAL_FIRST,
+        netfunnel_key: str | None = None,
+        standby: bool = False,
+    ) -> MutationPreview | SrtReservationHold:
+        """Create a 단체 (group, >= 10 people) reservation hold under explicit consent.
+
+        A SEPARATE method rather than ``reserve(group=True)``, decided on three
+        grounds and not on the shared body:
+
+        * **The endpoint changes.** ``/arc/selectListArc06014_n.do``, chosen by
+          ``grpDv`` (``ara1001l.js:1542-1547``). A boolean that silently
+          redirects a mutation to a different URL is the kind of parameter this
+          repository has been bitten by.
+        * **The precondition changes.** The train has to come from the group
+          search (``/ara/selectListAra10082_n.do``, ``ara1001l.js:174-180``),
+          which returns different columns — no ``rsvWaitPsbCd``, no
+          ``stmpRsvPsbFlgCd``. The library already splits that read into its own
+          :meth:`search_group_trains`, and this is the matching half.
+        * **The return value may not mean the same thing** — see below. Making
+          group a flag on :meth:`reserve` would mean one method whose result is
+          a cancelable hold on one path and possibly not on the other.
+
+        The signature difference is deliberate too: ``passengers`` is REQUIRED
+        (there is no sensible default party of ten) and there is no
+        ``window_seat``, because ticking 단체 resets the seat option to
+        일반/기본 and disables the picker (``ara0101v.js:446-457``). There is no
+        ``round_trip`` either: 단체 + 왕복 is refused by the app at three
+        separate points (``ara0101v.js:348-351``, ``:440-443``, ``:557-560``).
+        Fewer than :data:`~srt_mobile_api.payloads.GROUP_MIN_PARTY_SIZE`
+        passengers raises ``ValueError`` before anything is built, mirroring
+        "단체예약은 10매 이상입니다." (``ara0101v.js:551-554``).
+
+        **READ THIS BEFORE SENDING ONE LIVE.** The request is bundle-evidenced;
+        the response is not, and the bundle actively suggests it differs. The
+        app hands a group reservation to the payment page with ``pnrNo`` forced
+        to ``-1`` and identifies it by ``resultMap.tmpJobSqno1`` (임시작업일련번호),
+        where a personal reservation passes ``reservListMap.pnrNo``
+        (``ara1001l.js:1597-1610``). Two consequences:
+
+        1. If the response carries no PNR,
+           :func:`~srt_mobile_api.parsers.parse_reservation_hold_response` raises
+           :class:`~srt_mobile_api.errors.SrtProtocolError` — it will not invent
+           a hold — and the exception's ``raw`` is then the only record of what
+           was created.
+        2. :meth:`cancel` takes a PNR. A group hold identified only by
+           ``tmpJobSqno1`` has no cancel path in this library.
+
+        So a live group attempt must be treated as potentially uncancellable
+        from here: re-read :meth:`get_reservations` immediately afterwards, and
+        be prepared to release it through the app or the call centre. Nothing in
+        the parsers was changed to accommodate this — inventing a group hold
+        object with no live evidence of its shape would be worse than raising.
+        """
+        return self._submit_reservation(
+            "/arc/selectListArc06014_n.do",
+            lambda key: group_reservation_payload(
+                train,
+                passengers,
+                seat_type=seat_type,
+                netfunnel_key=key,
+                standby=standby,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,

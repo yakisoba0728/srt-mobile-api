@@ -13,9 +13,66 @@ from .models import (
 from .stations import station_name_by_code
 
 
-# jobId for a personal (개인예약) reservation (srtgo RESERVE_JOBID["PERSONAL"],
-# srt.py:31). STANDBY (1102) is intentionally NOT implemented here.
+# The three 조정구분코드 (jobId) values, documented by the app itself in a single
+# comment on its own reservation-form seed (ara0101v.js:90):
+#   "jobId" : "1101"  //조정구분코드(1101:개인예약, 1102:예약대기, 1103:시트맵예약)
+# so SRT has the same three job types korail does. Two of them are built here;
+# 1103 is not, and RESERVE_SEATMAP_JOBID below records why.
+
+# 개인예약. Also what a GROUP reservation sends: 단체 is selected by grpDv="1"
+# plus a different endpoint, NOT by a different jobId (ara1001l.js:1434-1449
+# never inspects grpDv, and :1542-1547 is where 단체 diverges). srtgo agrees on
+# the value (RESERVE_JOBID["PERSONAL"], srt.py:31).
 RESERVE_PERSONAL_JOBID = "1101"
+
+# 예약대기 (standby / waitlist). ara1001l.js:1445-1448: fn_moveRsv defaults
+# sJobId="1101" and overwrites it with "1102" when the selected row's
+# general-cabin image is the 예약대기 image. srtgo agrees on the VALUE
+# (RESERVE_JOBID["STANDBY"], srt.py:31) but not on the TRIGGER -- see
+# _STANDBY_ROW_IMAGES.
+RESERVE_STANDBY_JOBID = "1102"
+
+# 시트맵예약 (seat-map reservation), NOT IMPLEMENTED, deliberately. The value is
+# evidenced (ara0101v.js:90, ara1001l.js:1436) but the request it belongs to is
+# not: 1103 is set only on the ARC0201C branch, which navigates to the seat-map
+# page (/arc/selectListArc02012_n.do -- our read-only SrtClient.get_seat_page)
+# and hands off to a `fn_submit()` that has exactly one hit in the whole bundle,
+# the call site itself (ara0101v.js:882). Its definition lives in the
+# server-rendered page, so neither the submit target nor the body is knowable
+# offline. What IS visible is the extra field family a seat-map reservation
+# carries (ara0101v.js:871-878: seatNo1_1..N from the picked seat NAMES,
+# scarGridcnt1/scarGridcnt2, scarNo1/scarNo2) -- recorded here so a future
+# capture has somewhere to land, and so that "unimplemented" is not mistaken
+# for "unknown".
+RESERVE_SEATMAP_JOBID = "1103"
+
+# The 예약대기 row images (ara1001l.js:32-33). The SERVER sends
+# grd_WF_Waiting.png; the app rewrites it to the _S ("selected") spelling when
+# the row is tapped (:1045, :1058), and fn_moveRsv then tests for the _S form
+# (:1447). A library never performs that rewrite, so both spellings count as the
+# same signal.
+#
+# THIS IS WHERE THE BUNDLE AND srtgo DISAGREE, and the bundle wins. srtgo picks
+# standby off `reserve_wait_possible_code >= 0` (rsvWaitPsbCd); our app never
+# reads rsvWaitPsbCd for this decision at all -- it reads gnrmRsvPsbImg. The two
+# are not interchangeable: rsvWaitPsbCd is present on personal search rows and
+# ABSENT from group ones (Ara10082 omits it, as our own fixtures show), while
+# gnrmRsvPsbImg is on both.
+_STANDBY_ROW_IMAGES = frozenset(
+    {
+        "IMAGE::grd_WF_Waiting.png",
+        "IMAGE::grd_WF_Waiting_S.png",
+    }
+)
+
+# The minimum party size the app enforces for a 단체 (group) reservation, and
+# the maximum it allows without one. ara0101v.js:549-566, on the 조회하기 button:
+# 단체 checked with totPrnb < 10 alerts "단체예약은 10매 이상입니다." and returns
+# without sending; 단체 unchecked with totPrnb > 9 alerts "10매 이상은
+# 단체예약입니다." and returns. So 10 is a real, client-enforced boundary in both
+# directions, not a UI hint. Already enforced on the group SEARCH
+# (group_search_ajax_payload); the reservation form enforces the same number.
+GROUP_MIN_PARTY_SIZE = 10
 
 # WINDOW_SEAT mapping (srtgo srt.py:86): None -> "000" (no preference),
 # True -> "012" (window), False -> "013" (aisle). Fed into locSeatAttCd1.
@@ -307,9 +364,13 @@ def group_search_ajax_payload(
     # individual and group searches (ara1001l.js:104 sPsgNum=lfn_getRsv("totPrnb"), :165
     # "psgNum":sPsgNum). Mirror the app's own guard instead of silently clamping psgNum to
     # 10 while totPrnb stays below it (which would emit a psgNum!=totPrnb payload the app
-    # would never send).
-    if query.passengers.total < 10:
-        raise ValueError("group search requires at least 10 passengers (totPrnb >= 10)")
+    # would never send). The floor is shared with group_reservation_payload so the search
+    # and the reservation cannot disagree about what "단체" means.
+    if query.passengers.total < GROUP_MIN_PARTY_SIZE:
+        raise ValueError(
+            "group search requires at least "
+            f"{GROUP_MIN_PARTY_SIZE} passengers (totPrnb >= {GROUP_MIN_PARTY_SIZE})"
+        )
     payload = search_ajax_payload(query, netfunnel_key, hydrated_fields=hydrated_fields)
     payload["grpDv"] = "1"
     payload["psgNum"] = str(query.passengers.total)
@@ -659,6 +720,43 @@ def _reservation_passenger_fields(
     return fields
 
 
+def _standby_row_image(train: TrainSummary) -> str:
+    # The raw search row is kept on TrainSummary.raw, which is where the app's
+    # own standby signal lives; nothing on the typed surface carries it, because
+    # gnrmRsvPsbImg is a UI asset name and was never worth promoting to a field.
+    raw = train.raw
+    if not isinstance(raw, dict):
+        return ""
+    image = raw.get("gnrmRsvPsbImg")
+    return image if isinstance(image, str) else ""
+
+
+def _refuse_ineligible_standby(train: TrainSummary) -> None:
+    """Refuse ``standby=True`` on a row the app would never offer 예약대기 for.
+
+    The app has no "standby rejected" dialog to copy, because the choice is not
+    the user's: fn_moveRsv reads the SELECTED row's general-cabin image and
+    emits ``jobId=1102`` only when it is the 예약대기 image (ara1001l.js:1447).
+    Sending 1102 for any other row is sending a body the app cannot produce, and
+    this repository's rule is to send what the app sends -- the same reasoning
+    that makes ``personal_reservation_payload`` refuse a non-SRT train.
+
+    Absence is NOT ineligibility. A row that carries no ``gnrmRsvPsbImg`` at all
+    is accepted: a hand-built :class:`~srt_mobile_api.models.TrainSummary`, or a
+    response shape that drops the column, would otherwise make standby
+    unreachable for reasons that have nothing to do with the train. That is the
+    same "blank, not an error" treatment ``arvDt1`` gets. Only a row that HAS
+    the field and disagrees is refused, which is the only case where we have
+    positive evidence the app would not offer standby.
+    """
+    image = _standby_row_image(train)
+    if image and image not in _STANDBY_ROW_IMAGES:
+        raise ValueError(
+            "standby (jobId 1102) requires a 예약대기 train: the search row's "
+            f"gnrmRsvPsbImg is {image!r}, not one of {sorted(_STANDBY_ROW_IMAGES)}"
+        )
+
+
 def personal_reservation_payload(
     train: TrainSummary,
     passengers: PassengerCounts,
@@ -666,15 +764,72 @@ def personal_reservation_payload(
     seat_type: SeatType = SeatType.GENERAL_FIRST,
     netfunnel_key: str,
     window_seat: bool | None = None,
+    standby: bool = False,
+    round_trip: bool = False,
 ) -> dict[str, str]:
-    """Build the personal (개인예약) reservation form, mirroring srtgo _reserve.
+    """Build the 개인예약 / 예약대기 reservation form (``/arc/selectListArc05013_n.do``).
 
     Reproduces the srtgo ``_reserve`` wire for ``jobId=1101`` (srt.py:962-997)
     EXACTLY, sourcing the train/station/time/order fields from ``train`` and the
     passenger dict from ``passengers`` (mapped to SRT psgTpCd via the same
     compaction the search payloads use). ``netfunnel_key`` is placed verbatim
-    into ``netfunnelKey``. ``mblPhone`` is omitted (srtgo passes ``None``, which
-    requests drops from the wire for a personal reservation).
+    into ``netfunnelKey``. ``mblPhone`` is omitted -- srtgo passes ``None``,
+    which requests drops from the wire, and the string has ZERO hits across the
+    whole v2.0.41 bundle, so there is nothing to add it back from.
+
+    Two keyword-only variants ride the same form; both default to off, so a call
+    that does not name them produces the byte-for-byte form that was
+    live-verified on 2026-07-25.
+
+    ``standby=True`` switches ``jobId`` to ``1102`` (예약대기). Three things
+    change together, and all three come from the one branch that produces 1102:
+
+    * ``jobId`` becomes ``"1102"`` (ara1001l.js:1445-1448).
+    * ``psrmClCd1`` is forced to ``"1"`` (일반실). ara1001l.js:1431 is the only
+      line that can pair a 예약대기 row with a cabin class, and it assigns 1;
+      the 특실 branch on the next line tests only the two 예약가능 images, so a
+      특실-standby simply has no representation in the app. Forcing matters
+      because the default ``SeatType.GENERAL_FIRST`` resolves to 특실 whenever
+      the general cabin is not "예약가능" -- which is exactly what a standby row
+      looks like. Without the override, asking for standby would silently order
+      a first-class seat.
+    * ``reserveType`` is DROPPED. srtgo sets it only for a personal reservation
+      (srt.py:990-991). The field is 0-hit in our bundle, so srtgo is the only
+      source there is and it is followed rather than guessed past.
+
+    The caller-facing eligibility rule is in :func:`_refuse_ineligible_standby`.
+    Note that ``stndFlg`` stays ``"N"``: it is 입석여부 (standing-room), a
+    different thing from 예약대기, and the app never changes it (2 hits total,
+    the seed at ara0101v.js:96 and a null-check read at ara1001l.js:1656).
+
+    ``round_trip=True`` sets ``rtnDv`` to ``"1"`` (왕복). That is the ENTIRE wire
+    delta, and the reason is that SRT does not model a round trip as one
+    multi-leg reservation. ara1001l.js:1580-1596: with ``rtnDv=1`` the app
+    reserves the 가는열차 first, stores the result, re-searches with the
+    stations swapped and the ``back_dptDt1``/``back_dptTm1`` date and time
+    (:110-115), and reserves the 오는열차 as a SECOND, separate POST to the same
+    endpoint, whose leg-1 fields (``dptRsStnCd1`` ... ``trnNo1``) are overwritten
+    with the return train's row (:1454-1470). So each leg is one call here too.
+
+    ``jrnyCnt`` therefore stays ``"1"`` for both legs, and this is worth being
+    exact about because it is easy to assume otherwise. ``jrnyCnt`` has three
+    hits in the entire bundle: the seed ``"1"`` (ara0101v.js:92), a null-check
+    read (ara1001l.js:1654), and ONE write -- the 환승 (transfer) toggle, which
+    sets ``jrnyCnt="2"`` together with ``jrnyTpCd="14"`` (ara0101v.js:288-311).
+    Nothing on the 왕복 path touches it, and 환승 and 왕복 are mutually exclusive
+    anyway (:296-298, :333). So ``jrnyCnt="2"`` means TRANSFER, not round trip.
+
+    By extension the ``...2`` suffix in this form family indexes the 여정
+    (journey) slot, not a passenger and not the return leg. The app's own gloss
+    is ``여정일련번호1(001:선행, 002:후행)`` (ara0101v.js:97, echoed at
+    ara1001l.js:1607 ``0001 : 선행, 0002 : 후행``): slot 2 is the FOLLOWING leg of
+    a transfer. A round trip never fills it -- the one-way seat callback
+    explicitly blanks it (``scarGridcnt2=0``, ``scarNo2=""``, ara0101v.js:875-878),
+    the 왕복 seat callbacks write no slot at all (:884-892), and the return
+    train arrives in slot 1 on the second POST. Passengers are counted in a
+    different family entirely (``psgTpCd1..5``/``psgInfoPerPrnb1..5``, indexed by
+    passenger TYPE), which is the reading this suffix is most often confused
+    with.
     """
     if type(train) is not TrainSummary:
         raise ValueError("reservation requires an exact TrainSummary")
@@ -749,10 +904,20 @@ def personal_reservation_payload(
         train.arrival_station_code
     )
 
+    # Resolved unconditionally, even when standby overrides the answer below, so
+    # that seat_type is still type-validated on every path (_resolve_special_seat
+    # is where that check lives).
     special_seat = _resolve_special_seat(train, seat_type)
+    if standby:
+        _refuse_ineligible_standby(train)
+        # 예약대기 is a 일반실 waitlist in this app: ara1001l.js:1431 assigns
+        # sPsrmClCd=1 for the 예약대기 image, and the 특실 branch immediately
+        # after tests only the two 예약가능 images. See the docstring for why
+        # this has to override rather than defer to seat_type.
+        special_seat = False
 
     payload = {
-        "jobId": RESERVE_PERSONAL_JOBID,
+        "jobId": RESERVE_STANDBY_JOBID if standby else RESERVE_PERSONAL_JOBID,
         "jrnyCnt": "1",
         "jrnyTpCd": "11",
         "jrnySqno1": "001",
@@ -760,7 +925,11 @@ def personal_reservation_payload(
         "trnGpCd1": "300",
         "trnGpCd": "109",
         "grpDv": "0",
-        "rtnDv": "0",
+        # 왕복구분 (ara0101v.js:94, written at :381/:390). group_reservation_payload
+        # flips grpDv above; this flips rtnDv. They are never both set: the app
+        # refuses 단체+왕복 at three separate points (ara0101v.js:348-351,
+        # :440-443, :557-560), which is why the group builder takes no round_trip.
+        "rtnDv": "1" if round_trip else "0",
         "stlbTrnClsfCd1": train.service_class_code,
         "dptRsStnCd1": departure_station_code,
         "dptRsStnCdNm1": departure_station_name,
@@ -779,9 +948,16 @@ def personal_reservation_payload(
         "dptStnRunOrdr1": departure_run_order,
         "arvStnRunOrdr1": arrival_run_order,
         "netfunnelKey": netfunnel_key,
-        # reserveType is set only for a personal reservation (srtgo srt.py:990-991).
-        "reserveType": "11",
     }
+    if not standby:
+        # reserveType is set only for a personal reservation (srtgo srt.py:990-991),
+        # so a 예약대기 body omits it entirely. The field is 0-hit in our v2.0.41
+        # bundle -- it is not in the #rsvForm seed and nothing in the app writes it
+        # -- so srtgo is the only source for both its presence and its absence, and
+        # following it in both directions is the only self-consistent choice. Our
+        # 2026-07-25 live round trip sent it and was accepted, which pins the
+        # personal case; the standby case stays srtgo-attested.
+        payload["reserveType"] = "11"
     payload.update(
         _reservation_passenger_fields(
             passengers,
@@ -789,6 +965,75 @@ def personal_reservation_payload(
             window_seat=window_seat,
         )
     )
+    return payload
+
+
+def group_reservation_payload(
+    train: TrainSummary,
+    passengers: PassengerCounts,
+    *,
+    seat_type: SeatType = SeatType.GENERAL_FIRST,
+    netfunnel_key: str,
+    standby: bool = False,
+) -> dict[str, str]:
+    """Build the 단체 (group) reservation form for ``/arc/selectListArc06014_n.do``.
+
+    The body is the personal form with ``grpDv`` flipped to ``"1"`` -- the same
+    delegate-and-flip shape :func:`group_search_ajax_payload` already uses over
+    :func:`search_ajax_payload`, and for the same reason: the app keeps ONE
+    ``#rsvForm`` and switches only the URL (ara1001l.js:1542-1547,
+    ``if (lfn_getRsv("grpDv") == "1") url = "/arc/selectListArc06014_n.do"``).
+    Note what does NOT change: ``jobId`` stays ``1101``, because fn_moveRsv picks
+    the job type without ever consulting ``grpDv`` (ara1001l.js:1434-1449).
+
+    Three group rules are enforced, all of them the app's own:
+
+    * **Party size >= 10** (:data:`GROUP_MIN_PARTY_SIZE`). ara0101v.js:549-554
+      alerts "단체예약은 10매 이상입니다." and returns without sending. The
+      converse is also enforced -- :562-566 pushes a >9 party INTO group booking
+      -- so 10 is a two-sided boundary in the app, and the same floor already
+      guards the group search.
+    * **No window/aisle preference.** Ticking 단체 forces the seat option back to
+      the default and disables the picker (ara0101v.js:446-457:
+      ``locSeatAttCd1="000"``, ``rqSeatAttCd1="015"``, ``seatAttNm1="일반/기본"``,
+      then ``btn_seat.addClass("ui-state-disabled")``). Rather than accept a
+      ``window_seat`` argument and silently discard it, this builder does not
+      take one; ``locSeatAttCd1`` comes out ``"000"`` from the shared passenger
+      field builder.
+    * **No round trip.** Refused by the app at three points (ara0101v.js:348-351
+      on the 왕복 tick, :440-443 on the 단체 tick, :557-560 on 조회하기), so
+      there is no ``round_trip`` argument to pass.
+
+    ``standby`` is offered because nothing in the app couples it to ``grpDv``:
+    fn_moveRsv reads only the row image. Group search rows do carry
+    ``gnrmRsvPsbImg``, so the eligibility check still has its signal -- note
+    that srtgo's rsvWaitPsbCd rule could not work here at all, since Ara10082
+    omits that column.
+
+    UNVERIFIED, and the reason to keep ``dry_run``: the REQUEST is
+    bundle-evidenced, the RESPONSE is not. ara1001l.js:1597-1605 hands a group
+    reservation to the payment page with ``pnrNo = -1`` and identifies it by
+    ``resultMap.tmpJobSqno1`` instead, where a personal reservation passes
+    ``reservListMap.pnrNo`` (:1609). If a real group response carries no
+    PNR, :func:`~srt_mobile_api.parsers.parse_reservation_hold_response` will
+    raise and :meth:`~srt_mobile_api.client.SrtClient.cancel` -- which takes a
+    PNR -- has nothing to act on. See
+    :meth:`~srt_mobile_api.client.SrtClient.reserve_group` for what an operator
+    must do before ever sending this live.
+    """
+    if passengers.total < GROUP_MIN_PARTY_SIZE:
+        raise ValueError(
+            "group reservation requires at least "
+            f"{GROUP_MIN_PARTY_SIZE} passengers (totPrnb >= {GROUP_MIN_PARTY_SIZE})"
+        )
+    payload = personal_reservation_payload(
+        train,
+        passengers,
+        seat_type=seat_type,
+        netfunnel_key=netfunnel_key,
+        standby=standby,
+    )
+    payload["grpDv"] = "1"
     return payload
 
 

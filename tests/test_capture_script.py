@@ -58,6 +58,10 @@ def test_capture_script_reaches_no_mutation_route_and_builds_no_consent():
     source = CAPTURE_PATH.read_text(encoding="utf-8")
     for forbidden in (
         "/arc/selectListArc05013_n.do",
+        # The 단체 reservation endpoint is a second reserve URL, so the read
+        # capture has to be unable to reach it too -- listing only arc05013
+        # would have let a group reservation through this guard.
+        "/arc/selectListArc06014_n.do",
         "/ard/selectListArd02045_n.do",
         "/ata/selectListAta09036_n.do",
         "/atc/selectListAtc02063_n.do",
@@ -68,6 +72,7 @@ def test_capture_script_reaches_no_mutation_route_and_builds_no_consent():
         "allow_refund",
         "post_mutation_form",
         ".reserve(",
+        ".reserve_group(",
         ".cancel(",
     ):
         assert forbidden not in source, forbidden

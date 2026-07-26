@@ -57,7 +57,7 @@ under `## Unreleased` in `CHANGELOG.md`). Entries dated before that describe the
   the repr-hidden `raw` attribute.
 - The read-only transport boundary allows 22 exact read-only app/NetFunnel
   routes; every mutation route is excluded from it, so
-  `assert_read_only_request` refuses all four. The 22nd is the refund's step-1
+  `assert_read_only_request` refuses all five. The 22nd is the refund's step-1
   read (`/atc/getListAtc14087.do`), classified as a read by inference rather
   than by proof -- see the comment on it in `safety.py`.
 - A consent-gated mutation surface was subsequently added (see "Consent-gated
@@ -122,9 +122,11 @@ helpers; they perform no I/O and are not client routes.
 The transport currently allows 22 exact read-only app/NetFunnel routes.
 `act_19`, the app's own `Ard02017`/`Ard02018` WebView payment entry, other
 ATA/ARD flows, native bridges, callbacks, and external seat-map calls are not
-callable. Preview-by-default `reserve`, `cancel`, `pay_with_card` and `refund`
-methods exist; all four transmit under an explicit non-dry-run consent for their
-own category, and all four are live-verified. See the next section.
+callable. Preview-by-default `reserve`, `reserve_group`, `cancel`, `pay_with_card` and
+`refund` methods exist; all transmit under an explicit non-dry-run consent for
+their own category. Four operations are live-verified. `reserve_group`, and the
+`standby` / `round_trip` variants of `reserve`, are **not** — they are
+bundle-evidenced only. See the next two sections.
 
 ## Consent-gated Mutation Surface
 
@@ -168,11 +170,15 @@ own category, and all four are live-verified. See the next section.
 - `payment` and `refund` have client methods (`pay_with_card`, `refund`, and the
   refund's step-1 read `get_refund_ticket_info`) and are live-enabled as of
   2026-07-26; see "Card Payment and Refund" below.
-- The four state-changing routes are tiered in `safety.SRT_MUTATION_ROUTES` and
+- The state-changing routes are tiered in `safety.SRT_MUTATION_ROUTES` and
   deliberately kept out of `READ_ONLY_ROUTES`, so the 22-route read-only
   allowlist and its guarantee are unchanged and `assert_read_only_request`
   refuses each of them. `SRT_MUTATION_ROUTE_CATEGORIES` binds each route to one
-  consent category.
+  consent category. There are **five routes across four categories**: the 단체
+  reservation endpoint `/arc/selectListArc06014_n.do` is a second URL for the
+  existing `reserve` category (`ara1001l.js:1542-1547` switches only the URL, on
+  `grpDv`), not a fifth category. Route count and category count are allowed to
+  differ on purpose — the category is what gates transmission.
 - **Which categories may transmit is enforced at the transport layer, and
   membership means one thing: a live run answered that category's own wire
   format.** `safety.SRT_LIVE_MUTATION_CATEGORIES` holds exactly
@@ -199,6 +205,102 @@ own category, and all four are live-verified. See the next section.
   card-kind gate (exactly one of `fake_card_only` / `real_card_acknowledged`)
   behind the live-enablement one. That gate used to sit behind a closed door and
   is now the last check before a real charge.
+
+## Reservation Variants (IMPLEMENTED, BUNDLE-EVIDENCED, NOT LIVE-VERIFIED)
+
+Group (단체), standby (예약대기) and the round trip / 오는열차 second leg. The
+evidentiary situation is the **inverse** of payment and refund: those had to be
+built from srtgo because their routes are 0-hit here, whereas all three of these
+are evidenced in our own v2.0.41 bundle. srtgo was therefore used only as a
+cross-check, and where the two disagree the bundle won. **None of the three has
+been live-verified**; the operator will do that next, and only for the
+combinations actually exercised.
+
+The app names all three of its job types in one comment on its own reservation
+form seed — `ara0101v.js:90`,
+`"jobId" : "1101"  //조정구분코드(1101:개인예약, 1102:예약대기, 1103:시트맵예약)`.
+
+- `SrtClient.reserve(train, *, standby=False, ...)` — **standby, `jobId=1102`**.
+  Bundle: `ara1001l.js:1445-1448` (fn_moveRsv defaults `1101` and overwrites with
+  `1102` when the selected row's general-cabin image is the 예약대기 image).
+  Three fields move together: `jobId` → `1102`, `psrmClCd1` forced to `1`
+  (`:1431` is the only line that can pair a 예약대기 row with a cabin class, and
+  the 특실 branch beside it tests only the two 예약가능 images), and
+  `reserveType` **dropped** (srtgo `srt.py:990-991` sets it for personal only;
+  the field is 0-hit in our bundle, so srtgo is the only source for both its
+  presence and its absence). Forcing the cabin is required, not cosmetic: the
+  default `GENERAL_FIRST` resolves to 특실 whenever the general cabin is not
+  "예약가능", which is exactly what a standby train looks like. `stndFlg` stays
+  `"N"` — that is 입석여부, a different concept the app never writes.
+- **Standby eligibility is where the bundle and srtgo disagree, and the bundle
+  wins.** srtgo selects standby from `rsvWaitPsbCd >= 0`; our app reads
+  `gnrmRsvPsbImg` (`ara1001l.js:32-33`, `:1447`). Not interchangeable: the group
+  search `Ara10082` omits `rsvWaitPsbCd` entirely (our own group fixture
+  confirms it) while `gnrmRsvPsbImg` is on both personal and group rows. Both
+  spellings of the image count — the server sends `grd_WF_Waiting.png`, the app
+  rewrites it to `_S` on tap (`:1045`). A row with a DIFFERENT image is refused;
+  a row with NO image column is ACCEPTED, since absence is not ineligibility
+  (the same rule `arvDt1` gets). srtgo's follow-up standby-option POST
+  `/ata/selectListAta01135_n.do` is 0-hit here with no equivalent, so it is
+  deliberately not implemented.
+- `SrtClient.reserve_group(train, *, passengers, ...)` — **group,
+  `/arc/selectListArc06014_n.do`** (`ara1001l.js:1542-1547`). A separate method
+  rather than a flag, because the endpoint changes, the precondition changes
+  (the train must come from `search_group_trains`/`Ara10082`) and the return
+  value may not mean the same thing. The body delta is exactly `grpDv="1"` —
+  the same delegate-and-flip shape `group_search_ajax_payload` uses — and
+  `jobId` stays `1101`, since the app picks the job type without consulting
+  `grpDv`. **Party size ≥ 10**, the app's own two-sided boundary:
+  `ara0101v.js:551-554` refuses 단체 under 10 and `:562-566` refuses a non-단체
+  party over 9. Two further app rules are expressed structurally: no
+  `window_seat` argument (ticking 단체 resets the seat option and disables the
+  picker, `:446-457`) and no `round_trip` argument (단체 + 왕복 refused at
+  `:348-351`, `:440-443`, `:557-560`).
+- **Group's RESPONSE is unverified and the bundle suggests it differs.** The app
+  hands a group reservation to the payment page with `pnrNo` forced to `-1` and
+  identifies it by `resultMap.tmpJobSqno1` (임시작업일련번호), where a personal
+  reservation passes `reservListMap.pnrNo` (`ara1001l.js:1597-1610`). If a real
+  group response carries no PNR, `parse_reservation_hold_response` raises rather
+  than inventing a hold, and `cancel` — which takes a PNR — has nothing to act
+  on. The parsers were deliberately NOT changed: a group hold object invented
+  with no live evidence of its shape would be worse than an exception. A live
+  group attempt must be treated as potentially uncancellable from this library.
+- `SrtClient.reserve(train, *, round_trip=False, ...)` — **round trip,
+  `rtnDv="1"`**, and that one flag is the entire wire delta. SRT models a round
+  trip as 오는열차, not as a multi-leg reservation: the app reserves the
+  가는열차, re-searches with the stations swapped and `back_dptDt1`/
+  `back_dptTm1` (`ara1001l.js:110-115`), then reserves the 오는열차 as a SECOND
+  POST to the same endpoint whose leg-1 fields are overwritten with the return
+  train (`:1454-1470`, `:1580-1596`). So the public API is two ordinary
+  `reserve` calls, with `TrainSearchQuery.for_return_leg(date, time)` building
+  the swapped query. Two calls preserves "one call creates at most one hold";
+  the caller owns both PNRs. Whether the server LINKS the two holds is
+  unverified — the app carries the outbound result forward in `go_baseDsXml`/
+  `go_seatDsXml` (`ara0101v.js:143-144`), which is not reproducible from a
+  search row.
+- **`jrnyCnt` does not become `"2"` for a round trip.** It has three hits in the
+  whole bundle: the seed `"1"` (`ara0101v.js:92`), a null-check read
+  (`ara1001l.js:1654`), and one write — the **환승** toggle, which sets
+  `jrnyCnt="2"` with `jrnyTpCd="14"` (`ara0101v.js:288-311`). Nothing on the
+  왕복 path touches it, and 환승 + 왕복 is mutually exclusive anyway. By
+  extension the `...2` suffix indexes the 여정 (journey) slot — the app's gloss
+  is `여정일련번호1(001:선행, 002:후행)` (`ara0101v.js:97`, `ara1001l.js:1607`) —
+  so slot 2 is a transfer's FOLLOWING leg, never filled by a round trip, and
+  certainly not a second passenger (passengers are `psgTpCd1..5`, indexed by
+  type).
+- **`jobId=1103` (시트맵예약) deliberately left out.** The value is evidenced
+  (`ara0101v.js:90`, `ara1001l.js:1436`) but the request is not: `1103` is set on
+  the ARC0201C branch, which navigates to the seat-map page (read-only here as
+  `get_seat_page`) and hands off to a `fn_submit()` whose only hit in all 21,673
+  files is the call site (`ara0101v.js:882`) — its definition is server-rendered,
+  so neither the submit target nor the body is knowable offline.
+  `payloads.RESERVE_SEATMAP_JOBID` records the value and the field family such a
+  body would carry (`seatNo1_1..N`, `scarGridcnt1`/`2`, `scarNo1`/`2`,
+  `ara0101v.js:871-878`), and a test asserts nothing emits it.
+- Compatibility is pinned, not assumed: every new parameter is keyword-only and
+  defaulted off, and `test_reserve_variants` asserts the default form is
+  byte-for-byte AND order-for-order what it was, so the existing
+  single-passenger pins in `test_mutation_live_paths` pass unchanged.
 
 ## Card Payment and Refund (IMPLEMENTED, LIVE-VERIFIED 2026-07-26, LIVE-ENABLED)
 
@@ -588,10 +690,13 @@ car/seat response or availability contract.
   consent-gated mutation port, the transport-layer live-mutation gate, the
   consent-gated cancel surface, the reservation-list read, the NetFunnel
   queue protocol, the error taxonomy, the real-card acknowledgement gate, the
-  consent-gated card-payment and refund surfaces and the four-category live
-  enablement: `1311 passed, 1 deselected`; the deselected case remains the
+  consent-gated card-payment and refund surfaces, the four-category live
+  enablement and the three bundle-evidenced reservation variants:
+  `1348 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
   `httpx.MockTransport`; the live runs are the operator scripts' job.
+- Prior offline gate before the reservation variants (group, standby, round
+  trip): `1311 passed, 1 deselected`.
 - Prior offline gate before payment and refund were live-enabled:
   `1285 passed, 1 deselected`.
 - Prior offline gate after the mutation port and its transport-layer gate, before
@@ -714,10 +819,12 @@ cookie, session token, NetFunnel key, or raw personal response is stored.
   excluded, and repeated failure scenarios
 - Runtime-success entries: 20
 - Currently implemented underlying read routes: 20, including NetFunnel `act_10`
-- Mutation routes tiered: 4 (reserve, cancel, payment, refund). All four have
-  client methods, preview by default and transmit under an explicit non-dry-run
-  consent for their own category; all four are live-verified (reserve and cancel
-  2026-07-25, payment and refund 2026-07-26)
+- Mutation routes tiered: 5 across 4 categories (reserve `arc05013` and its
+  단체 sibling `arc06014`, cancel, payment, refund). All have client methods,
+  preview by default and transmit under an explicit non-dry-run consent for
+  their own category; the four CATEGORIES are live-verified (reserve and cancel
+  2026-07-25, payment and refund 2026-07-26), but `arc06014` itself and the
+  `standby`/`round_trip` variants of `arc05013` are bundle-evidenced only
 - Therefore the complete documented endpoint matrix is not yet implemented
 
 Static aliases, the `Ard02017`/`Ard02018` WebView payment handoff, native
@@ -738,3 +845,12 @@ Refund"). What remains excluded is the app's own payment path — the
 `Ard02017`/`Ard02018` WebView pages, the TransKey keypad and FIDO — which this
 library does not implement at all. The implemented personal and
 group continuation contract has bounded live evidence.
+
+Three reservation variants now exist and are **awaiting live verification**:
+group (`arc06014`), standby (`jobId=1102`) and the round trip / 오는열차 second
+leg (`rtnDv=1`). See "Reservation Variants" for what each rests on and for the
+group response risk. Still deferred within that surface: **`jobId=1103`
+(시트맵예약)**, whose submit target and body are not knowable from the offline
+bundle (`fn_submit()` is defined in the server-rendered page), and srtgo's
+standby-option POST `/ata/selectListAta01135_n.do`, which is 0-hit here with no
+equivalent in our app. Both would need capture, not inference.

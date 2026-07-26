@@ -28,7 +28,7 @@ The mutation send path itself (`post_mutation_form`, and the underlying
 two also binds the target route to the caller's category
 (`assert_mutation_route` plus `assert_mutation_route_category`), so a category
 cannot be aimed at another category's endpoint, and the read-only guard refuses
-all four mutation routes by allowlist.
+all five mutation routes by allowlist.
 
 A payment carries two further gates behind that: the consent must state exactly
 one of `fake_card_only` / `real_card_acknowledged`, and `assert_no_card_secrets`

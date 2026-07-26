@@ -2,6 +2,107 @@
 
 ## Unreleased
 
+- **Three reservation variants, built from OUR bundle rather than from srtgo:
+  group (단체), standby (예약대기) and the round trip / 오는열차 second leg.**
+  The opposite evidentiary situation from payment and refund. Those two had to
+  be built from srtgo's attestation because their routes are 0-hit here; all
+  three of these are evidenced in our own v2.0.41 bundle, so srtgo was used only
+  as a cross-check — and where the two disagree, the bundle won and the
+  disagreement is recorded. **None of the three is live-verified.** All three
+  ride the EXISTING `reserve` consent category:
+  `SRT_LIVE_MUTATION_CATEGORIES` is untouched at
+  `{"reserve", "cancel", "payment", "refund"}` and its canary is unchanged.
+  **The app names all three of its job types itself**, in one comment on its own
+  reservation form seed (`ara0101v.js:90`):
+  `"jobId" : "1101"  //조정구분코드(1101:개인예약, 1102:예약대기, 1103:시트맵예약)`.
+  **Standby** (`reserve(train, standby=True)`) sets `jobId=1102`, forces
+  `psrmClCd1=1` and DROPS `reserveType`. All three move together because they
+  come from the one branch that produces `1102` (`ara1001l.js:1445-1448` for the
+  job id, `:1431` for the cabin — the 특실 branch beside it tests only the two
+  예약가능 images, so a 특실 standby has no representation in the app; srtgo
+  `srt.py:990-991` for `reserveType` being personal-only). Forcing the cabin is
+  not cosmetic: the default `GENERAL_FIRST` resolves to 특실 whenever the general
+  cabin is not "예약가능", which is exactly what a standby train looks like, so
+  without the override asking for a waitlist place would have silently ordered
+  first class. `stndFlg` stays `"N"` — that is 입석여부, a different concept, and
+  the app never writes it (2 hits, both non-writes).
+  **THE DISAGREEMENT, and the bundle wins.** srtgo selects standby from
+  `rsvWaitPsbCd >= 0`. Our app never reads that column for the decision; it reads
+  the selected row's general-cabin IMAGE (`gnrmRsvPsbImg`, `ara1001l.js:32-33`,
+  `:1447`). The two are not interchangeable: the group search `Ara10082` omits
+  `rsvWaitPsbCd` entirely — our own group fixture confirms it — while
+  `gnrmRsvPsbImg` is on both personal and group rows. So the image is the rule
+  here. Both spellings count (`grd_WF_Waiting.png` is what the server sends;
+  the app rewrites it to `_S` on tap, `:1045`), a row with a DIFFERENT image is
+  refused, and a row with NO image column is ACCEPTED — absence is not
+  ineligibility, the same rule `arvDt1` already gets. srtgo's follow-up
+  standby-option POST `/ata/selectListAta01135_n.do` is **0-hit** in our bundle
+  with no equivalent in it, so it is deliberately NOT implemented.
+  **Group** is `SrtClient.reserve_group`, a separate method rather than
+  `reserve(group=True)`, on three grounds: the endpoint changes
+  (`/arc/selectListArc06014_n.do`, `ara1001l.js:1542-1547`), the precondition
+  changes (the train must come from `search_group_trains`/`Ara10082`, which
+  returns different columns), and the return value may not mean the same thing.
+  The BODY delta is exactly one field — `grpDv="1"` — the same delegate-and-flip
+  shape `group_search_ajax_payload` already uses; in particular `jobId` stays
+  `1101`, because the app picks the job type without ever consulting `grpDv`.
+  The **party-size floor is 10**, and it is the app's own two-sided boundary, not
+  a guess: `ara0101v.js:551-554` refuses 단체 under 10 ("단체예약은 10매
+  이상입니다.") and `:562-566` refuses a non-단체 party over 9 ("10매 이상은
+  단체예약입니다."). Two more app rules are expressed structurally rather than
+  checked: there is no `window_seat` argument, because ticking 단체 resets the
+  seat option and disables the picker (`:446-457`), and no `round_trip`
+  argument, because 단체 + 왕복 is refused at three separate points (`:348-351`,
+  `:440-443`, `:557-560`).
+  **What group's request evidence does NOT cover is its response.** The app hands
+  a group reservation to the payment page with `pnrNo` forced to `-1`, and
+  identifies it by `resultMap.tmpJobSqno1` (임시작업일련번호), where a personal
+  reservation passes `reservListMap.pnrNo` (`ara1001l.js:1597-1610`). If a real
+  group response carries no PNR, `parse_reservation_hold_response` raises rather
+  than inventing a hold, and `cancel` — which takes a PNR — has nothing to act
+  on. The parsers were deliberately left untouched: a group hold object invented
+  with no live evidence of its shape would be worse than an exception. A live
+  group attempt must be treated as potentially uncancellable from this library,
+  and README says so at the point an operator would read it.
+  **Round trip** (`reserve(train, round_trip=True)`) adds exactly `rtnDv="1"`
+  and nothing else, because SRT does not model a round trip as a multi-leg
+  reservation — it models it as 오는열차. The app reserves the 가는열차,
+  re-searches with the stations swapped and `back_dptDt1`/`back_dptTm1`, then
+  reserves the 오는열차 as a SECOND POST to the same endpoint whose leg-1 fields
+  are overwritten with the return train (`ara1001l.js:1454-1470`, `:1580-1596`).
+  So the public API is two ordinary `reserve` calls, with
+  `TrainSearchQuery.for_return_leg(date, time)` building the swapped query. That
+  preserves the property `reserve` is built around: one call creates at most one
+  hold, so a failure strands at most one. The caller owns both PNRs.
+  **`jrnyCnt` does NOT become `"2"` for a round trip**, and the premise that it
+  might is refuted by the bundle rather than argued about. `jrnyCnt` has three
+  hits in the whole bundle: the seed `"1"`, a null-check read, and ONE write —
+  the 환승 (transfer) toggle, which sets `jrnyCnt="2"` with `jrnyTpCd="14"`
+  (`ara0101v.js:288-311`). Nothing on the 왕복 path touches it, and 환승 + 왕복
+  is mutually exclusive anyway. By extension the `...2` suffix indexes the 여정
+  (journey) slot — the app's own gloss is `여정일련번호1(001:선행, 002:후행)`
+  (`ara0101v.js:97`, `ara1001l.js:1607`) — so slot 2 is a transfer's FOLLOWING
+  leg and a round trip never fills it. It is certainly not a second passenger;
+  passengers live in `psgTpCd1..5`, indexed by TYPE.
+  **`jobId=1103` (시트맵예약) was deliberately left out.** The value is evidenced
+  (`ara0101v.js:90`, `ara1001l.js:1436`) but the request is not: `1103` is set on
+  the ARC0201C branch, which navigates to the seat-map page (already read-only
+  here as `get_seat_page`) and hands off to a `fn_submit()` whose only hit in the
+  entire 21,673-file bundle is the call site (`ara0101v.js:882`) — its definition
+  is server-rendered, so neither the submit target nor the body is knowable
+  offline. `payloads.RESERVE_SEATMAP_JOBID` records the value and the field
+  family a seat-map body would carry (`ara0101v.js:871-878`) so that "not
+  implemented" is not mistaken for "not known about", and a test asserts nothing
+  emits it.
+  **Compatibility.** Every new parameter is keyword-only and defaulted off, and
+  the first test in the new file asserts the default form is byte-for-byte AND
+  order-for-order identical to what it was — the existing single-passenger pins
+  in `test_mutation_live_paths` pass unchanged. `arc06014` is registered in
+  `SRT_MUTATION_ROUTES` and mapped to the `reserve` category (a route count of
+  five against four categories, deliberately), and the read-capture guard now
+  forbids it too.
+  Offline gate: `1348 passed, 1 deselected` (was `1311`).
+
 - **Payment and refund are live-verified and live-enabled.**
   `safety.SRT_LIVE_MUTATION_CATEGORIES` now holds
   `{"reserve", "cancel", "payment", "refund"}` — the four categories a live run

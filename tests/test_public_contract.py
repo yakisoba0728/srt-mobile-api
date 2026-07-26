@@ -44,6 +44,11 @@ def test_client_public_method_set_is_stable():
         # (SUCC / IRT200277): gated, previewable by default, and transmittable.
         "refund",
         "reserve",
+        # The 단체 half of reserve, kept as its own method because it POSTs a
+        # different endpoint (arc06014) and may not return a cancelable PNR.
+        # Same "reserve" consent category and the same kill switch; the
+        # request is bundle-evidenced, the response is not live-verified.
+        "reserve_group",
         "search_group_trains",
         "search_trains",
     }

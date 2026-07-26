@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
 
@@ -139,6 +139,49 @@ class TrainSearchQuery:
             raise ValueError("departure_time must use HHMMSS")
         if self.train_group_code not in {"300", "900", "109"}:
             raise ValueError("train_group_code must be one of 300, 900, or 109")
+
+    def for_return_leg(
+        self,
+        departure_date: str,
+        departure_time: str = "000000",
+    ) -> "TrainSearchQuery":
+        """Build the 오는열차 (return-leg) search query for a round trip.
+
+        Exactly what the app does when it re-searches for the return train:
+        swap the departure and arrival stations and search from
+        ``back_dptDt1`` / ``back_dptTm1`` instead of ``dptDt1`` / ``dptTm1``
+        (``ara1001l.js:110-115``, the ``fv_sRtnCd == "2"`` branch of
+        ``fn_search``). Everything else — party, train group, seat attribute —
+        is carried over, because the app carries it over too: the return leg is
+        a re-search of the same booking form, not a new one.
+
+        The station SWAP is the part worth having in code. A round trip in SRT
+        is not one request with two legs; it is two ordinary one-way searches
+        and two ordinary one-way reservations (see
+        :meth:`~srt_mobile_api.client.SrtClient.reserve`), and the only thing
+        that makes the second one a "return" is that the stations are reversed
+        and both reservations carry ``rtnDv=1``. Getting that reversal wrong is
+        silent — it books a second outbound.
+
+        ``departure_time`` defaults to ``"000000"``, the app's own seed for
+        ``back_dptTm1`` (``ara0101v.js:111``), rather than to this query's own
+        departure time: a return train that must leave after the outbound train
+        arrives is the normal case, and starting the return search at midnight
+        of the return date shows every candidate. The app refuses a return date
+        earlier than the outbound date, and a same-date return earlier than the
+        outbound time (``ara0101v.js:593-603``); those are dialogs on a form
+        this library does not render, and both would be rejected by the operator
+        long before a request, so they are documented here rather than enforced.
+        """
+        return replace(
+            self,
+            departure_station_code=self.arrival_station_code,
+            arrival_station_code=self.departure_station_code,
+            departure_station_name=self.arrival_station_name,
+            arrival_station_name=self.departure_station_name,
+            departure_date=departure_date,
+            departure_time=departure_time,
+        )
 
 
 @dataclass(frozen=True)

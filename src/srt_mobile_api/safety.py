@@ -140,9 +140,12 @@ READ_ONLY_ROUTES = frozenset(
 )
 
 
-# Documentation-level tiering of the state-changing routes. These are the four
-# core SRT mutation endpoints (one per category), taken from srtgo API_ENDPOINTS
-# (srt.py:89-103). They are deliberately kept OUT of READ_ONLY_ROUTES so the
+# Documentation-level tiering of the state-changing routes: the four core SRT
+# mutation endpoints from srtgo API_ENDPOINTS (srt.py:89-103), plus the 단체
+# reservation endpoint the app switches to on grpDv (ara1001l.js:1542-1547),
+# which belongs to the reserve category rather than adding a fifth. Route COUNT
+# and category COUNT are deliberately allowed to differ; the category is what
+# gates transmission. They are deliberately kept OUT of READ_ONLY_ROUTES so the
 # read-only allowlist and its guarantee stay fully intact:
 # ``assert_read_only_request`` rejects every one of these (none is reachable via
 # a read path). This is a classification only.
@@ -181,6 +184,14 @@ SRT_MUTATION_ROUTES = frozenset(
         # reserve (client method exists, preview by default; LIVE-ENABLED;
         # route present in the v2.0.41 bundle, live wiring verified 2026-07-25)
         MutationRoute("POST", "app", "/arc/selectListArc05013_n.do"),
+        # reserve, 단체 (group) variant of the SAME category. The app keeps one
+        # #rsvForm and switches only the URL on grpDv (ara1001l.js:1542-1547), so
+        # this is one route with two endpoints rather than a fifth category --
+        # SRT_LIVE_MUTATION_CATEGORIES is untouched by its addition. Route
+        # present in the v2.0.41 bundle; NOT live-verified, and its response
+        # shape is unknown (the app reads tmpJobSqno1 and forces pnrNo=-1 for a
+        # group, ara1001l.js:1597-1605).
+        MutationRoute("POST", "app", "/arc/selectListArc06014_n.do"),
         # cancel (client method exists, preview by default; LIVE-ENABLED;
         # srtgo-sourced shape, 0-hit in v2.0.41, live-verified 2026-07-25)
         MutationRoute("POST", "app", "/ard/selectListArd02045_n.do"),
@@ -273,6 +284,9 @@ SRT_LIVE_MUTATION_CATEGORIES: frozenset[str] = frozenset(
 # route (e.g. the refund route).
 SRT_MUTATION_ROUTE_CATEGORIES = {
     "/arc/selectListArc05013_n.do": "reserve",
+    # Both reservation endpoints are the "reserve" category: the 단체 variant is
+    # the same operation on a different URL, not a new kind of state change.
+    "/arc/selectListArc06014_n.do": "reserve",
     "/ard/selectListArd02045_n.do": "cancel",
     "/ata/selectListAta09036_n.do": "payment",
     "/atc/selectListAtc02063_n.do": "refund",
