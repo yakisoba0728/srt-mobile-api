@@ -1371,3 +1371,42 @@ Sending `315` returns a 147-byte alert shell whose message
 ("출발 20분 전부터 좌석이 자동배정됩니다") reads like a timing rule and is a red
 herring; `00315` returns the grid. Referer and route length make no difference.
 
+## Group booking — the ERROR_CODE -1 was ours, and the flow is not what we modelled (2026-07-26)
+
+Re-examined with the page-fetching technique. Two findings, both material.
+
+**1. `psgGridcnt` was the blocker.** The booking page's own group branch sets
+BOTH values, not just the one we were sending::
+
+    $('#grpDv').val('1');
+    $('#psgGridcnt').val('2');
+
+We compute `psgGridcnt` as the number of distinct passenger types, which is `1`
+for ten adults. Sending `2` instead made the wrapper-level
+`{"ERROR_CODE": "-1", "ERROR_MSG": "조회 중 에러가 발생 하였습니다…"}` disappear
+entirely. So the earlier conclusion — "probably an account entitlement" — was
+wrong, and the guess that it might equally be an undisclosed field was right.
+
+**2. `Arc06014` does not return JSON, and does not create a hold.** With the
+corrected field it answers with a 66 KB server-rendered page headed
+`단체승차권 직통 / 예약내역 페이지`. That is why our JSON parser found neither
+`pnrNo` nor `tmpJobSqno1` — there was no JSON to find. The account's reservation
+list stayed empty afterwards.
+
+The page is the group PAYMENT step: it carries `<form id="ata0201cForm">`,
+functions `goToPay` / `goToPayAlert` / `kakaoPayReturn` / `kakao_direct_open`,
+`tmpJobSqno` six times and `pnrNo` twice, and it posts to
+**`/ata/selectListAta01033_n.do`** (and an `_Simple` variant) — NOT the
+`Ata09036` this library implements for personal payment.
+
+**So SRT group booking is a different shape from personal booking**: reserve
+and pay are one flow ending at a payment page keyed by `tmpJobSqno`, rather
+than a hold with a PNR that can be cancelled and paid separately. The earlier
+worry — that a group booking might produce an uncancellable ten-seat hold —
+does not arise, because no hold is produced at all.
+
+**Not attempted:** the payment step. `Ata01033` is unimplemented and untested,
+group fares are ten seats, and the KakaoPay hooks suggest at least one path
+that leaves this client entirely. Anyone continuing should fetch that page for
+a group they are willing to pay for, read `goToPay`, and decide deliberately.
+
