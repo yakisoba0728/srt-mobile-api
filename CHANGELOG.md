@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **할인 (discount) code tables — `srt_mobile_api.discounts`.** Two tables from
+  two different kinds of evidence, and the difference is the point.
+  **`DISCOUNT_KIND_NAMES_BY_CODE`** is a direct copy of the `dcntKndCd` run in
+  the app's own `js/commCode.js`: **173 codes, not 171**, because `133`
+  기본 특별할인(기준) and `191` 정차역 할인 carry no `code_group_cd` key at all in
+  the source while sitting inside the run between `132` and `192`. 25 rows carry
+  `"rmk": "V"`; the bundle never says what `V` marks, so nothing is built on it
+  and no accessor exposes it. The codes are stable and four of the NAMES are
+  not: a live fetch of `/js/commCode.js` on 2026-07-26 had renamed `205`/`206`
+  to the current legal wording (장애의정도가심한/심하지않은장애인), matching the same
+  rename on `psgTpCd` 2 and 3. The table keeps the v2.0.41 wording, because the
+  bundle is the committed evidence, and says so.
+  **`PUBLIC_DISCOUNT_NAMES_BY_CODE`** (공공할인, `PBL_DISC_CD` `01`–`06`) is
+  **0-hit in the bundle** — the field name and every value. It came from a page
+  the live server renders to our own session: the 승차인원선택 popup
+  (`/common/ARA/ARA0901P/view.do`, already allowlisted and already implemented)
+  writes the mapping out as a comment block inside its own `setPassenger`.
+  `07` and `08` have branches on the 할인 승차권 page and no name anywhere
+  fetched here, so they are absent rather than guessed.
+  **`YOUTH_PASSENGER_TYPE_CODE = "6"`** records a `psgTpCd` that is in NEITHER
+  copy of `commCode.js` — not v2.0.41, not the live copy — and exists only under
+  공공할인 `04` (청소년). It is recorded as a constant and deliberately NOT wired
+  into `PassengerCounts`: emitting it would change the reservation payload for a
+  discount no account here can hold.
+  Nothing is transmitted by this change. No route, payload, model or client
+  method moved; `dcntKndCd` is decoded, never set.
+  Offline gate: `1471 passed, 1 deselected` (was `1455`).
+
 - **단체 (group) booking REMOVED — `Arc06014` is a payment page, not a hold.**
   `SrtClient.reserve_group`, `payloads.group_reservation_payload` and the
   `SRT_MUTATION_ROUTES` / `SRT_MUTATION_ROUTE_CATEGORIES` registration of

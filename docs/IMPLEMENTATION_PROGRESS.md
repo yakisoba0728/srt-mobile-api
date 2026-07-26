@@ -861,10 +861,11 @@ car/seat response or availability contract.
   enablement, the bundle-evidenced reservation variants, the 환승
   (transfer) search and reservation, the 좌석배치도 (seat grid) read and the
   좌석지정 (seat-designated) reservation — and after 단체 (group) booking was
-  removed again:
-  `1455 passed, 1 deselected`; the deselected case remains the
+  removed again, and after the 할인 code tables landed:
+  `1471 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
   `httpx.MockTransport`; the live runs are the operator scripts' job.
+- Prior offline gate before the 할인 code tables: `1455 passed, 1 deselected`.
 - Prior offline gate with 단체 (group) booking still implemented:
   `1463 passed, 1 deselected`.
 - Prior offline gate after the seat-grid read, before seat designation:

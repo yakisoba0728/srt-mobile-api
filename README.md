@@ -86,9 +86,10 @@ surfaces, the four-category live enablement, the bundle-evidenced
 reservation variants (standby, round trip), the 환승 (transfer)
 search and reservation, the 좌석배치도 (seat grid) read and the 좌석지정
 (seat-designated) reservation
-landed — and after 단체 (group) booking was removed again —
+landed — and after 단체 (group) booking was removed again, and after the
+할인 (discount) code tables —
 the current offline suite at HEAD is
-`1455 passed, 1 deselected`. The deselected case is the
+`1471 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -891,6 +892,39 @@ It does not compose with `standby` (`jobId` cannot be both `1102` and `1103`) or
 with `round_trip` (the app's 왕복 seat callback writes no seat fields at all, so
 that body is unevidenced); both raise `ValueError` before anything is built. It
 is not offered on `reserve_transfer`, which blanks the slot-2 car and seat.
+
+### 할인 (discount) code tables
+
+`srt_mobile_api.discounts` carries two lookup tables and their accessors,
+`discount_kind_name` and `public_discount_name`. Both return `""` for an unknown
+code rather than raising, following `stations.station_name_by_code`: these
+decode values the SERVER chose, and a client that crashes on an unfamiliar
+discount code is worse than one that shows none.
+
+- **`DISCOUNT_KIND_NAMES_BY_CODE`** — 할인종류코드 (`dcntKndCd`), a direct copy of
+  that run in the app's own `js/commCode.js`. **173 codes, not 171**: two rows
+  (`133` 기본 특별할인(기준), `191` 정차역 할인) carry no `code_group_cd` key at all
+  in the source, sit inside the `dcntKndCd` run between `132` and `192`, and are
+  included deliberately. 25 rows carry `"rmk": "V"`; nothing in the bundle says
+  what `V` marks, so nothing is built on it. `dcntKndCd` is a real transmitted
+  field — every SRT booking page this project has fetched carries
+  `<input type="hidden" name="dcntKndCd">` — but this library never SETS it.
+  Nothing here asks for a discount; the table exists to decode what comes back.
+- **`PUBLIC_DISCOUNT_NAMES_BY_CODE`** — 공공할인코드 (`PBL_DISC_CD`) `01`–`06`.
+  This is **0-hit in the v2.0.41 bundle**, code and values alike. It comes from
+  a page the live server renders to our own authenticated session: the
+  승차인원선택 popup writes the whole mapping out as a comment block in its own
+  `setPassenger` (fetched 2026-07-26). `07` and `08` have branches on the
+  할인 승차권 page and no name on any page fetched here, so they stay unknown
+  rather than invented.
+
+`PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE` records the one rule two separate live
+pages state identically — 다자녀 (`01`) and 3세대 동행할인 (`06`) refuse a party
+under three, message `rsv071` — and `YOUTH_PASSENGER_TYPE_CODE` records
+`psgTpCd` **6**, which is in neither copy of `commCode.js` and exists only under
+공공할인 `04` (청소년). It is recorded and deliberately **not** wired into
+`PassengerCounts`; see "공공할인 is a passenger vocabulary, not just a price"
+in `docs/IMPLEMENTATION_PROGRESS.md`.
 
 ### Mutual verification
 
