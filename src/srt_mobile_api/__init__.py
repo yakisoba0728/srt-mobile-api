@@ -15,6 +15,7 @@ from .errors import (
     SrtMutationNotAllowedError,
     SrtNetFunnelError,
     SrtNetFunnelKeyError,
+    SrtNoDirectTrainError,
     SrtNoResultsError,
     SrtProtocolError,
     SrtQueueRejectedError,
@@ -53,8 +54,11 @@ from .models import (
     TrainSearchResult,
     TrainSummary,
     TransferItinerary,
+    TransferSearchResult,
+    UnpairedTransferGroup,
 )
 from .parsers import (
+    pair_transfer_itineraries,
     parse_card_payment_response,
     parse_refund_response,
     parse_refund_ticket_info_response,
@@ -79,6 +83,7 @@ __all__ = [
     "SrtMutationNotAllowedError",
     "SrtNetFunnelError",
     "SrtNetFunnelKeyError",
+    "SrtNoDirectTrainError",
     "SrtNoResultsError",
     "SrtProtocolError",
     "SrtQueueRejectedError",
@@ -93,6 +98,7 @@ __all__ = [
     "Notice",
     "NoticeListResult",
     "PassengerCounts",
+    "pair_transfer_itineraries",
     "parse_card_payment_response",
     "parse_refund_response",
     "parse_refund_ticket_info_response",
@@ -122,4 +128,6 @@ __all__ = [
     "TrainSearchResult",
     "TrainSummary",
     "TransferItinerary",
+    "TransferSearchResult",
+    "UnpairedTransferGroup",
 ]

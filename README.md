@@ -84,7 +84,7 @@ surfaces, the four-category live enablement, the three bundle-evidenced
 reservation variants (group, standby, round trip) and the 환승 (transfer)
 search and reservation
 landed, the current offline suite at HEAD is
-`1388 passed, 1 deselected`. The deselected case is the
+`1404 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -573,6 +573,7 @@ mapped, and so the map can be grown from real traffic.
 |---|---|---|
 | `WRG000000` "조회 결과가 없습니다." | `SrtNoResultsError` | live 2026-07-26, empty search window |
 | `WRT300005` "조회자료가 없습니다." | `SrtNoResultsError` | live 2026-07-26, reservation list `rsMap` |
+| `WRD000061` "직통열차는 없지만, 환승으로 조회 가능합니다." | `SrtNoDirectTrainError` (refines `SrtNoResultsError`) | live 2026-07-26, 동대구→광주송정 direct search |
 | `WRP011002` "승객수 오류" | `SrtInvalidRequestError` | live, reserve runtime probe |
 | `WRR000100` | `SrtInvalidRequestError` | live 2026-07-15, bounded zero-passenger one-shot |
 | `S111` | `SrtSessionExpiredError` | **bundle**, `ara1001l.js:1565` (reserve only) |
@@ -1059,25 +1060,71 @@ var sChtnDvCd = lfn_getRsv("jrnyTpCd") == "11" ? "1" : "2"; //직통:1, 환승:2
 `/ara/selectListAra10007_n.do`. `chtnDvCd` is also a **column on every returned
 row** (`ara1001l.js:1206` reads `item.chtnDvCd`), kept on `TrainSummary.raw`.
 
-> **How the response pairs the two legs is UNKNOWN offline, and is not guessed
-> at.** The bundle's own list screen cannot say: `fn_postSearch`
-> (`ara1001l.js:384-460`) renders one single-leg `<tr>` per row with no transfer
-> branch, `fn_moveRsv` (`:1453-1468`) writes only slot 1, and `fn_validChk`
-> (`:1649-1700`) validates only slot 1 under a `//직통` heading. The 환승 list is
-> server-rendered — the stylesheet keeps a taller two-row card with a layover
-> band for it (`.time_Difference`, `.timeDiff`, `custom.css:4412`, `:4431`) — and
-> that markup is not in the bundle. `search_transfer_trains` therefore returns
-> the rows exactly as the server sends them and lets **you** pair them.
-> Relatedly, `dsOutput0` carries a second cursor `fllwPgExt2` (null in every
-> direct search captured, read by nothing in the bundle), so
-> `iter_train_search_pages` is deliberately **not** extended to transfer:
-> paging a two-cursor list on a guess would walk the wrong leg.
+**The response is ONE ROW PER LEG — live-confirmed 2026-07-26.** The bundle
+could not have told us: `fn_postSearch` (`ara1001l.js:384-460`) renders one
+single-leg `<tr>` per row with no transfer branch, `fn_moveRsv` (`:1453-1468`)
+writes only slot 1, `fn_validChk` (`:1649-1700`) validates only slot 1 under a
+`//직통` heading, and the 환승 list itself is server-rendered (the stylesheet
+keeps its taller two-row card with a layover band, `.time_Difference`,
+`.timeDiff`, `custom.css:4412`, `:4431`). A read-only probe of 동대구(`0015`) →
+광주송정(`0036`) settled it: 10 ordinary `dsOutput1` rows, every one with
+`chtnDvCd="2"`, with the legs of one itinerary **sharing a `trnOrdrNo`**:
+
+| `trnOrdrNo` | train | leg | times |
+| --- | --- | --- | --- |
+| 1 | 382 | 동대구 → 오송 | 085200 → 095100 |
+| 1 | 411 | 오송 → 광주송정 | 100600 → 110500 |
+| 2 | 14 | 동대구 → 천안아산 | 085800 → 100900 |
+| 2 | 475 | 천안아산 → 광주송정 | 102500 → 125000 |
+| 3 | 316 | 동대구 → 오송 | 091600 → 101500 |
+| 3 | 655 | 오송 → 광주송정 | 103100 → 113100 |
+
+So `trnOrdrNo` is the **itinerary index** here. The `...2` columns *do* exist on
+every row and are **empty strings** (`trnNo2: ""`, `dptRsStnCd2: ""`,
+`jrnySqno: ""`) — because the second leg is a separate ROW, not a set of
+columns. `fllwPgExt2` was `null`.
+
+`search_transfer_trains` therefore returns a `TransferSearchResult`:
+
+```python
+result = client.search_transfer_trains(query)
+result.itineraries      # tuple[TransferItinerary, ...] — ready for reserve_transfer
+result.unpaired         # groups that did NOT fit, each with a .reason
+result.search           # the untouched TrainSearchResult
+result.rows, result.raw # the ungrouped rows and the raw JSON
+```
+
+> **The grouping is our inference layer, and it is built to fail loudly.**
+> `pair_transfer_itineraries` groups by `trnOrdrNo` and requires exactly two
+> rows per itinerary.
+> - **Leg order comes from the STATIONS, never the row position.** The probe
+>   happened to deliver the legs in order, but that is one observation and not a
+>   guarantee, and pairing them backwards builds a *clean* reservation that books
+>   the journey in reverse. Both orientations are offered to `TransferItinerary`
+>   and the one that validates wins, so "is this an itinerary?" has exactly one
+>   implementation.
+> - **A group that does not fit is set aside, not dropped and not forced.** Wrong
+>   row count, legs that do not connect or run backwards, or an ambiguous order
+>   all land in `result.unpaired` with a reason. Losing an itinerary silently
+>   hides a journey; handing back a mispaired one produces a reservation whose
+>   two slots are not one journey and which the server would accept. The second
+>   is worse, so nothing is invented and nothing is discarded.
+> - **Unless NOTHING pairs.** Rows present and zero itineraries means this
+>   grouping rule is wrong for the response in hand, not that the server sent ten
+>   broken itineraries — that raises `SrtProtocolError` carrying `raw`, because
+>   an empty list would be the one genuinely silent failure available here. An
+>   empty response is not that case.
+>
+> `iter_train_search_pages` is still **not** extended to transfer: the probe
+> returned `fllwPgExt2` as `null` just as every direct search does, so what the
+> second cursor is *for* remains unobserved and nothing in the bundle reads it.
 
 **`TransferItinerary` is what stops you booking half a journey.** A transfer
 search row is an ordinary `TrainSummary` — `reserve(row)` would accept it and
 produce a real, successful-looking PNR to the 환승역 and no further. So
 `reserve_transfer` takes **only** a `TransferItinerary(first_leg=…,
-second_leg=…)`, which validates the join at construction: both legs exactly
+second_leg=…)`, which validates the join at construction (and which the pairing
+above already ran, so anything in `result.itineraries` is ready as it stands): both legs exactly
 `TrainSummary`, the first must **arrive where the second departs**, the second
 must not depart before the first arrives (the comparison the app applies to the
 왕복 second leg, `ara1001l.js:1258-1272`), and the two must not be the same
@@ -1130,6 +1177,14 @@ exact keys, values **and order**; the 23 slot-2 keys are appended after it:
 > - **INFERRED** — zero hits in any form; slot 1's name with the suffix changed:
 >   **`stlbTrnClsfCd2`, `dptStnConsOrdr2`, `arvStnConsOrdr2`, `dptStnRunOrdr2`,
 >   `arvStnRunOrdr2`**. These five are the ones a live run has to settle.
+>
+> **The 2026-07-26 live search did NOT move any tier, and that is the point.** It
+> settled the *response*, and it showed that a search ROW carries `...2` columns
+> as empty strings. They are blank because the second leg arrives as its own row,
+> so there is nothing for them to hold — which says nothing whatsoever about
+> whether the *reservation form* wants them filled. A response column and a
+> request field that share a name are still two different things, and only a
+> **reserve** capture can settle the request side.
 
 **What composes with transfer, and what does not.**
 
@@ -1178,21 +1233,16 @@ candidates:
 A 수서-origin route is the wrong test: 수서→광주송정 and 수서→부산 are both
 direct, so `chtnDvCd=2` would return nothing and prove nothing.
 
-1. **Search first — it is read-only and costs nothing.**
-   `search_transfer_trains(TrainSearchQuery(departure_station_code="0015",
-   arrival_station_code="0036", departure_date=…))`. **Capture the raw JSON.**
-   The most valuable thing this whole exercise can produce is the answer to *how
-   `dsOutput1` represents two legs*: one row per leg (paired, ordered — check
-   `trnOrdrNo` and `chtnDvCd` on each) or one row per itinerary with `...2`
-   columns. Also record whether `dsOutput0.fllwPgExt2` is non-null here, since it
-   is null in every direct search captured so far. **An `SrtProtocolError` here
-   is a result, not a failure** — the rows go through the same parser as a direct
-   search, so a differently shaped transfer row raises rather than being coerced,
-   and the exception's `raw` is exactly the capture this step is for.
-2. **Compare against a direct search of the same pair.** `search_trains` on
-   동대구→광주송정 should come back empty (`WRG000000` / "조회 결과가 없습니다.",
-   which surfaces as `SrtNoResultsError`). If it does not, the pair is not a
-   transfer pair and step 1's rows mean something else.
+1. **The search is already done — 2026-07-26, read-only.** `search_trains` on
+   동대구→광주송정 answered `WRD000061` ("직통열차는 없지만, 환승으로 조회
+   가능합니다."), now raised as `SrtNoDirectTrainError`, and
+   `search_transfer_trains` on the same query returned three well-formed
+   itineraries. Re-running it costs nothing and is the cheapest way to confirm
+   the account and the date are usable. Check `result.unpaired` is empty; if it
+   is not, capture it — the grouping rule met something it has not seen.
+2. **Everything left to settle is on the REQUEST side.** The search shape is
+   confirmed; the reservation form is not. Nothing below can be learned from
+   another search.
 3. **Preview the reservation before anything else.** Build the
    `TransferItinerary` from two rows and call `reserve_transfer(...)` with the
    default `dry_run=True`. Check the preview: `jrnyTpCd=14`, `jrnyCnt=2`,

@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+- **환승 search response shape LIVE-CONFIRMED (2026-07-26): one row per leg,
+  paired by `trnOrdrNo`.** A read-only probe of 동대구(0015) -> 광주송정(0036),
+  20260809 from 080000, settled what the bundle could not. The direct search on
+  that pair answered `WRD000061` "직통열차는 없지만, 환승으로 조회 가능합니다.",
+  and the transfer search returned 10 ordinary `dsOutput1` rows, every one with
+  `chtnDvCd="2"`, with the legs of one itinerary sharing a `trnOrdrNo`: `1` ->
+  trains 382 (동대구->오송) + 411 (오송->광주송정), `2` -> 14 (동대구->천안아산) +
+  475 (천안아산->광주송정), `3` -> 316 + 655. So `trnOrdrNo` is the ITINERARY
+  index, not a position in the list. The `...2` columns DO exist on every row and
+  are EMPTY STRINGS (`trnNo2: ""`, `dptRsStnCd2: ""`, `jrnySqno: ""`) — because
+  the second leg is a separate ROW, not a set of columns. `fllwPgExt2` was
+  `null`.
+  **`search_transfer_trains` now returns a `TransferSearchResult`** —
+  `itineraries` (paired and validated), `unpaired` (groups that did not fit, each
+  with a reason), `search` (the untouched `TrainSearchResult`), plus `rows` and
+  `raw`. The grouping is `parsers.pair_transfer_itineraries`, exported, and it is
+  NAMED as an inference layer because that is what it is: the server sends a flat
+  row list and the pairing is ours, so the raw rows stay reachable behind it.
+  **Leg order is derived from the STATIONS, never from row position.** The probe
+  delivered legs in order, but that is one observation and not a guarantee, and a
+  reversed pair builds a perfectly clean reservation that books the journey
+  backwards — a failure the server would accept. Both orientations are handed to
+  `TransferItinerary` and the one that validates wins, so "is this an itinerary?"
+  has exactly one implementation: connection, time order and distinct trains all
+  come from the type that already enforced them.
+  **A group that does not fit is set aside, not dropped and not forced.** Wrong
+  row count, legs that do not connect or run backwards, an ambiguous order, or a
+  missing `trnOrdrNo` all land in `unpaired` with a plain-sentence reason. The
+  choice was between two bad outcomes and it is made deliberately: losing an
+  itinerary silently hides a journey the traveller could have taken, but handing
+  back a mispaired one produces a reservation whose two slots are not one
+  journey. The second is worse, so nothing is invented and nothing is discarded.
+  **Except when NOTHING pairs** — rows present and zero itineraries means the
+  grouping rule is wrong for the response in hand, not that the server sent ten
+  broken itineraries, and an empty list would be the one genuinely silent failure
+  available. That raises `SrtProtocolError` carrying `raw`. An empty response is
+  not that case.
+  **`WRD000061` is now classified as `SrtNoDirectTrainError`**, refining
+  `SrtNoResultsError`. It previously fell through to a bare `SrtAppError`, so
+  nothing narrowed. It sits one level deeper rather than beside its parent
+  because "there is no DIRECT train" IS "this query matched nothing", with the
+  remedy named — a caller already writing `except SrtNoResultsError` was right
+  about this response too — and because the sibling korail client classifies the
+  identical code the same way under `KorailNoResultsError`. No transfer search is
+  issued automatically: the app offers the 환승 re-query in a dialog and waits,
+  and this library does not turn one caller-requested read into two.
+  **The live search moved NO evidence tier, and that is the point.**
+  `TRANSFER_SLOT2_FIELD_EVIDENCE` is unchanged: the five INFERRED slot-2 key
+  names are still inferred. The search row's `...2` columns are blank because the
+  second leg arrives as its own ROW, which says nothing whatsoever about whether
+  the RESERVATION form wants them filled. A response column and a request field
+  that share a name are two different things, and only a reserve capture can
+  settle the request side. **Search shape: live-confirmed. Reservation form
+  slot-2 handling: still inferred, still not live-verified.**
+  `iter_train_search_pages` is still not extended to transfer: the probe returned
+  `fllwPgExt2` as `null` exactly as every direct search does, so what the second
+  cursor is FOR remains unobserved.
+  Offline gate: `1404 passed, 1 deselected` (was `1388`).
+
 - **환승 (transfer) search and reservation — the one shape SRT reserves as TWO
   journeys in ONE request.** `SrtClient.search_transfer_trains(query)` and
   `SrtClient.reserve_transfer(itinerary, ...)`. **Bundle-evidenced request, NOT

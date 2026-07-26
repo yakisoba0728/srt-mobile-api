@@ -339,21 +339,62 @@ share `Ara10007`; the hydration GET carries the toggle's `jrnyTpCd=14` /
 `item.chtnDvCd`), present in the 2026-07-26 live capture, and kept on
 `TrainSummary.raw`.
 
-**How a transfer itinerary comes back is UNKNOWN offline.** The bundled list
-screen has no transfer branch at all: `fn_postSearch` renders one single-leg
-`<tr>` per row (`ara1001l.js:384-460`), `fn_moveRsv` writes only slot 1
-(`:1453-1468`), `fn_validChk` validates only slot 1 under a `//직통` heading
-(`:1649-1700`), and the "select both legs" error `rsv023` is defined but never
-called (`messages.js:217`). The 환승 list is server-rendered — the stylesheet
-still ships its taller two-row card with a layover band (`.time_Difference`,
-`.timeDiff`, `custom.css:4412`, `:4431`). So whether `dsOutput1` returns one row
-per leg or one row per itinerary is not decidable here and is NOT guessed at:
-`search_transfer_trains` returns rows as sent. `iter_train_search_pages` is
-deliberately not extended to transfer, because a search response carries a
-second cursor `fllwPgExt2` that is null in every direct search captured and read
-by nothing in the bundle.
+**How a transfer itinerary comes back is LIVE-CONFIRMED (2026-07-26), and the
+bundle could not have said so.** The bundled list screen has no transfer branch
+at all: `fn_postSearch` renders one single-leg `<tr>` per row
+(`ara1001l.js:384-460`), `fn_moveRsv` writes only slot 1 (`:1453-1468`),
+`fn_validChk` validates only slot 1 under a `//직통` heading (`:1649-1700`), and
+the "select both legs" error `rsv023` is defined but never called
+(`messages.js:217`). The 환승 list is server-rendered — the stylesheet still
+ships its taller two-row card with a layover band (`.time_Difference`,
+`.timeDiff`, `custom.css:4412`, `:4431`).
 
-**`TransferItinerary` is the safety property.** A transfer row is an ordinary
+A read-only probe of 동대구(0015) → 광주송정(0036), 20260809 from 080000, settled
+it. The direct search answered `WRD000061`; the transfer search returned **10
+ordinary `dsOutput1` rows, ONE PER LEG**, every row `chtnDvCd="2"`, with the legs
+of one itinerary sharing a `trnOrdrNo`: `1` → trains 382 (동대구→오송) and 411
+(오송→광주송정), `2` → 14 (동대구→천안아산) and 475 (천안아산→광주송정), `3` →
+316 and 655. So `trnOrdrNo` is the ITINERARY index here, not a position in the
+whole list. The `...2` columns exist on every row and are **empty strings**
+(`trnNo2: ""`, `dptRsStnCd2: ""`, `jrnySqno: ""`) because the second leg is a
+separate ROW. `fllwPgExt2` was `null`.
+
+`search_transfer_trains` therefore returns a `TransferSearchResult`
+(`itineraries` / `unpaired` / `search`, plus `rows` and `raw`), and
+`parsers.pair_transfer_itineraries` is the grouping. Three properties are
+deliberate:
+
+- **Leg order is derived from the STATIONS, not from row position.** The probe
+  delivered legs in order, but that is one observation, and a reversed pair
+  builds a clean reservation that books the journey backwards. Both orientations
+  are handed to `TransferItinerary` and the one that validates wins, so
+  "is this an itinerary?" has exactly one implementation.
+- **A group that does not fit is set aside with a reason, never dropped and
+  never forced** (`TransferSearchResult.unpaired`). Losing an itinerary silently
+  hides a journey; a mispaired one produces a reservation whose two slots are not
+  one journey and which the server would accept. The second is worse.
+- **Rows present and zero itineraries raises `SrtProtocolError`** carrying `raw`,
+  because that means the grouping rule is wrong for the response in hand and an
+  empty list would be the one genuinely silent failure available. An empty
+  response is not that case.
+
+`iter_train_search_pages` is still not extended to transfer: the probe returned
+`fllwPgExt2` as `null` exactly as every direct search does, so what the second
+cursor is FOR remains unobserved and nothing in the bundle reads it.
+
+**`WRD000061` is now classified.** `SrtNoDirectTrainError`, refining
+`SrtNoResultsError` — "직통열차는 없지만, 환승으로 조회 가능합니다." is the
+server naming its own remedy, and it is the natural signal to re-ask the query as
+a transfer search. It previously fell through to a bare `SrtAppError`, so nothing
+narrowed; it sits one level deeper rather than beside `SrtNoResultsError` because
+the direct query genuinely matched nothing, and because the sibling korail client
+classifies the identical code the same way. No transfer search is issued
+automatically — the app offers the re-query in a dialog and waits.
+
+**`TransferItinerary` is the safety property**, and the pairing above already
+runs it, so anything in `result.itineraries` is reservable as it stands.
+
+A transfer row is an ordinary
 `TrainSummary` that `reserve()` would book on its own, producing a real PNR to
 the 환승역 and no further. `reserve_transfer` accepts only a
 `TransferItinerary(first_leg=…, second_leg=…)`, validated at construction: exact
@@ -375,6 +416,14 @@ grades:
 | native | `psrmClCd2` `dptDt2` `dptTm2` `arvDt2` `arvTm2` | the app's own two-leg offline-ticket model, gated on `isTransfer == "true"` (`analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:785-815`), with a 수서→천안아산→부산 layout placeholder (`analysis/apktool/res/layout/listview_offline_detail_item.xml:31,43,59`) |
 | hydrated | `jrnySqno2` `trnGpCd2` `dptRsStnCdNm2` `arvRsStnCdNm2` | 0-hit in the bundle; already sent on the Ara10007 hydration GET by `search_page_payload`, accepted live every run |
 | **INFERRED** | `stlbTrnClsfCd2` `dptStnConsOrdr2` `arvStnConsOrdr2` `dptStnRunOrdr2` `arvStnRunOrdr2` | 0-hit in any form; slot 1's name with the suffix changed |
+
+The live search moved **no tier**, deliberately. It settled the RESPONSE and
+showed that a search ROW carries `...2` columns as empty strings — blank because
+the second leg arrives as its own row, which says nothing about whether the
+RESERVATION form wants them filled. A response column and a request field
+sharing a name are two different things; only a reserve capture settles the
+request side. **Search shape: live-confirmed 2026-07-26. Reservation form
+slot-2 handling: still inferred.**
 
 The server-rendered `#rsvForm` is not in the bundle (the app POSTs
 `$("#rsvForm").serialize()`, `ara1001l.js:1550`), which is why the last two tiers
@@ -805,7 +854,7 @@ car/seat response or availability contract.
   consent-gated card-payment and refund surfaces, the four-category live
   enablement, the three bundle-evidenced reservation variants and the 환승
   (transfer) search and reservation:
-  `1388 passed, 1 deselected`; the deselected case remains the
+  `1404 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
   `httpx.MockTransport`; the live runs are the operator scripts' job.
 - Prior offline gate before the reservation variants (group, standby, round

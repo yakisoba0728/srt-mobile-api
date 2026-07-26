@@ -46,6 +46,7 @@ from .models import (
     TrainSearchResult,
     TrainSummary,
     TransferItinerary,
+    TransferSearchResult,
 )
 from .netfunnel import (
     QUEUE_POLL_LIMIT,
@@ -71,6 +72,7 @@ from .parsers import (
     parse_search_has_following_page,
     parse_search_page_state,
     parse_seat_selection_page,
+    pair_transfer_itineraries,
     parse_timetable_page,
     parse_train_search_response,
     parse_unpaid_cancel_response,
@@ -512,7 +514,7 @@ class SrtClient:
         with self._session_guard():
             return self._search_with_retry(query, group=True)
 
-    def search_transfer_trains(self, query: TrainSearchQuery) -> TrainSearchResult:
+    def search_transfer_trains(self, query: TrainSearchQuery) -> TransferSearchResult:
         """Search 환승 (transfer) itineraries — trains that need a connection.
 
         A SIBLING METHOD rather than a ``transfer=True`` flag on
@@ -535,48 +537,65 @@ class SrtClient:
         signal, and :class:`~srt_mobile_api.models.TransferItinerary` plus
         :meth:`reserve_transfer` is the enforcement — see there.
 
-        **What comes back is NOT normalised into itineraries, deliberately.**
-        The app's own list screen cannot help here: ``fn_postSearch``
-        (``ara1001l.js:384-460``) renders one single-leg ``<tr>`` per row and has
-        no transfer branch at all, ``fn_moveRsv`` (``:1453-1468``) writes only
-        slot 1, and ``fn_validChk`` (``:1649-1700``) validates only slot 1 under
-        a ``//직통`` heading. The 환승 list is server-rendered — the stylesheet
-        keeps a ``.timeDiff`` / ``.time_Difference`` rule for it, a taller
-        two-row card with a layover band (``custom.css:4412``, ``:4431``) — and
-        that markup is not in the bundle. So how the JSON pairs the legs (one
-        row per leg in ``dsOutput1``, versus one row per itinerary) is
-        **UNKNOWN offline**, and the pairing is not guessed at here. Two facts
-        that a caller can use are known:
+        **The response shape is LIVE-CONFIRMED (2026-07-26)**, and it is ONE ROW
+        PER LEG. The bundle could not have said so — ``fn_postSearch``
+        (``ara1001l.js:384-460``) renders one single-leg ``<tr>`` per row with no
+        transfer branch, ``fn_moveRsv`` (``:1453-1468``) writes only slot 1, and
+        the 환승 list itself is server-rendered (the stylesheet keeps its taller
+        two-row card with a layover band, ``custom.css:4412``, ``:4431``). A
+        read-only probe of 동대구(0015) -> 광주송정(0036) settled it: 10 ordinary
+        ``dsOutput1`` rows, every one carrying ``chtnDvCd="2"``, with the legs of
+        one itinerary sharing a ``trnOrdrNo``::
 
-        * every row carries its own ``chtnDvCd`` column (``ara1001l.js:1206``
-          reads ``item.chtnDvCd``; the 2026-07-26 live capture has the column on
-          every direct row too), so a row can say which kind it is. It is kept
-          on :attr:`~srt_mobile_api.models.TrainSummary.raw`.
-        * ``dsOutput0`` carries a SECOND paging cursor, ``fllwPgExt2``, which is
-          ``null`` in every direct search we have captured. It is very likely the
-          slot-2 counterpart of ``fllwPgExt``, but nothing reads it in the
-          bundle, so :meth:`iter_train_search_pages` is deliberately NOT
-          extended to transfer: paging a two-cursor list on a guess would walk
-          the wrong leg.
+            trnOrdrNo=1   trn 382  동대구->오송        085200->095100
+            trnOrdrNo=1   trn 411  오송->광주송정      100600->110500
+            trnOrdrNo=2   trn 14   동대구->천안아산    085800->100900
+            trnOrdrNo=2   trn 475  천안아산->광주송정  102500->125000
 
-        Pair the legs yourself, from the rows, into a
-        :class:`~srt_mobile_api.models.TransferItinerary` — which refuses a pair
-        that does not connect — and pass that to :meth:`reserve_transfer`.
+        The ``...2`` columns DO exist on every row and are empty strings
+        (``trnNo2: ""``, ``dptRsStnCd2: ""``, ``jrnySqno: ""``) — because the
+        second leg is a separate ROW, not a set of columns. ``fllwPgExt2`` was
+        ``null``.
 
-        The rows go through the SAME parser as a direct search, so if a transfer
-        row is shaped differently — a missing ``trnNo``, a leg pair delivered as
-        one row with ``...2`` columns — this raises
-        :class:`~srt_mobile_api.errors.SrtProtocolError` rather than coercing the
-        response into a shape it is not. That is the intended outcome: the
-        exception carries ``raw``, and a first live transfer search is a capture
-        exercise before it is anything else.
+        So this returns a
+        :class:`~srt_mobile_api.models.TransferSearchResult`: the paired
+        ``itineraries``, the ``unpaired`` groups that did not fit with a reason
+        each, and ``search`` — the untouched
+        :class:`~srt_mobile_api.models.TrainSearchResult` — because the grouping
+        is OUR inference and a caller has to be able to get behind it. See
+        :func:`~srt_mobile_api.parsers.pair_transfer_itineraries` for the rule
+        and for why a group that does not fit is set aside rather than dropped
+        or forced.
 
-        NOT LIVE-VERIFIED. Read-only and consent-free like the other searches,
-        so trying it costs nothing but a query; see the README for the station
-        pairs that make a transfer itinerary exist at all.
+        Each itinerary is ready for :meth:`reserve_transfer` as it stands: the
+        pairing runs :class:`~srt_mobile_api.models.TransferItinerary`'s own
+        validation, so anything you get back connects and runs forwards.
+
+        ``iter_train_search_pages`` is still deliberately NOT extended to
+        transfer. ``dsOutput0`` carries a second cursor ``fllwPgExt2``, and the
+        live transfer probe returned it ``null`` just as every direct search
+        does — so what it is FOR remains unobserved, and nothing in the bundle
+        reads it. Paging a two-cursor list on a guess would walk the wrong leg.
+
+        The rows still go through the SAME row parser as a direct search, so a
+        differently shaped row (a missing ``trnNo``) raises
+        :class:`~srt_mobile_api.errors.SrtProtocolError` rather than being
+        coerced. So does a response whose rows exist but pair into nothing —
+        that would mean this grouping rule is wrong for the response in hand,
+        and an empty list would be the one genuinely silent failure available.
+        Both carry ``raw``.
+
+        Read-only and consent-free like the other searches. Note that the
+        REQUEST is what remains partly unverified for transfer: see
+        :meth:`reserve_transfer`. And note the natural way to reach this method
+        — a direct search of a pair SRT does not serve answers ``WRD000061``,
+        which this library raises as
+        :class:`~srt_mobile_api.errors.SrtNoDirectTrainError`.
         """
         with self._session_guard():
-            return self._search_with_retry(query, group=False, transfer=True)
+            return pair_transfer_itineraries(
+                self._search_with_retry(query, group=False, transfer=True)
+            )
 
     def _prepare_first_search_page(
         self,

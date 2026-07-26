@@ -50,6 +50,7 @@ from srt_mobile_api.errors import (
     SrtIpBlockedError,
     SrtNetFunnelError,
     SrtNetFunnelKeyError,
+    SrtNoDirectTrainError,
     SrtNoResultsError,
     SrtQueueRejectedError,
     SrtSeatUnavailableError,
@@ -125,6 +126,12 @@ def test_every_new_type_subclasses_the_one_it_replaces():
     below stops holding, an existing ``except`` clause silently narrowed.
     """
     assert issubclass(SrtNoResultsError, SrtAppError)
+    # The one two-level refinement, added deliberately: WRD000061 previously
+    # fell through to a bare SrtAppError, so nothing narrowed -- but it sits
+    # under SrtNoResultsError rather than beside it, because "there is no DIRECT
+    # train" IS "this query matched nothing", with the remedy named. A caller
+    # already writing `except SrtNoResultsError` was right about it too.
+    assert issubclass(SrtNoDirectTrainError, SrtNoResultsError)
     assert issubclass(SrtInvalidRequestError, SrtAppError)
     assert issubclass(SrtSeatUnavailableError, SrtAppError)
     assert issubclass(SrtNetFunnelKeyError, SrtNetFunnelError)
@@ -134,6 +141,7 @@ def test_every_new_type_subclasses_the_one_it_replaces():
     # wraps the whole library in `except SrtApiError` is unaffected too.
     for error_type in (
         SrtNoResultsError,
+        SrtNoDirectTrainError,
         SrtInvalidRequestError,
         SrtSeatUnavailableError,
         SrtNetFunnelKeyError,
@@ -157,6 +165,10 @@ def test_the_new_app_error_types_are_siblings_not_a_chain():
                 assert not issubclass(one, other)
     assert not issubclass(SrtQueueRejectedError, SrtNetFunnelKeyError)
     assert not issubclass(SrtNetFunnelKeyError, SrtQueueRejectedError)
+    # SrtNoDirectTrainError is the deliberate exception to "siblings": it
+    # REFINES SrtNoResultsError. It must still not be caught by the other two.
+    assert not issubclass(SrtNoDirectTrainError, SrtInvalidRequestError)
+    assert not issubclass(SrtNoDirectTrainError, SrtSeatUnavailableError)
 
 
 def test_the_app_error_types_are_exported_from_the_package_root():
@@ -164,6 +176,7 @@ def test_the_app_error_types_are_exported_from_the_package_root():
 
     for name in (
         "SrtNoResultsError",
+        "SrtNoDirectTrainError",
         "SrtInvalidRequestError",
         "SrtSeatUnavailableError",
         "SrtNetFunnelKeyError",

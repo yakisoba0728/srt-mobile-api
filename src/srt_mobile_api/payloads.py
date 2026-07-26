@@ -115,6 +115,16 @@ TRANSFER_BOTH_LEGS_MESSAGE = (
 # The server-rendered #rsvForm is not in the bundle -- the app POSTs
 # $("#rsvForm").serialize() (ara1001l.js:1550) -- so the hydrated and inferred
 # tiers cannot be settled offline. They are a capture away, not a guess away.
+#
+# THE 2026-07-26 LIVE TRANSFER SEARCH DID NOT MOVE ANY TIER, AND THAT IS THE
+# POINT. It settled the RESPONSE (one row per leg, paired by trnOrdrNo -- see
+# parsers.pair_transfer_itineraries) and it showed that a search ROW carries
+# ...2 columns as EMPTY STRINGS: trnNo2 "", dptRsStnCd2 "", jrnySqno "". Those
+# are blank because the second leg arrives as its own ROW, so there is nothing
+# for the columns to hold -- which says nothing whatsoever about whether the
+# RESERVATION form wants them filled. A response column and a request field that
+# share a name are still two different things, and only a reserve capture can
+# settle the request side. The five INFERRED names below remain inferred.
 TRANSFER_SLOT2_FIELD_EVIDENCE = {
     # ara1001l.js:1209-1216, the 운임요금 (Ara13010) params: the app sends
     # dptRsStnCd2/arvRsStnCd2/runDt2/trnNo2 verbatim, blank for a direct

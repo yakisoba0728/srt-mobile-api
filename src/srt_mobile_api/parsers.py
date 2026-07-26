@@ -41,6 +41,9 @@ from .models import (
     TrainSearchMetadata,
     TrainSearchResult,
     TrainSummary,
+    TransferItinerary,
+    TransferSearchResult,
+    UnpairedTransferGroup,
 )
 from .redaction import redact_mapping
 from .stations import station_name_by_code
@@ -2145,3 +2148,176 @@ def parse_search_has_following_page(data: dict[str, Any]) -> bool:
             "SRT paginated search response fllwPgExt must be exactly Y or N"
         )
     return flag == "Y"
+
+
+# The 환승 search row column that identifies WHICH itinerary a leg belongs to.
+# Live-confirmed 2026-07-26 on 동대구(0015) -> 광주송정(0036): 10 rows came back,
+# every one with chtnDvCd="2", and the legs of one itinerary shared a trnOrdrNo
+# (1 -> trains 382 + 411, 2 -> trains 14 + 475, 3 -> trains 316 + 655).
+#
+# The same column is 열차순서번호 on a DIRECT row, where it is just a position in
+# the list, so the name does not change -- only what it groups.
+TRANSFER_ITINERARY_COLUMN = "trnOrdrNo"
+
+# Exactly how many rows one 환승 itinerary is made of. Not a tunable: jrnyCnt="2"
+# is the only journey count 환승 has (ara0101v.js:302-303), the reservation form
+# carries exactly two 여정 slots, and the app's own refusal to book a partial one
+# is phrased for two ("선행 및 후행", messages.js:217).
+TRANSFER_LEGS_PER_ITINERARY = 2
+
+
+def _itinerary_key(train: TrainSummary) -> str:
+    """The itinerary a leg belongs to, as a string, or ``""`` when unknowable.
+
+    ``trnOrdrNo`` is read from the RAW row first and only then from the typed
+    ``train_run_order``. That order matters: ``train_run_order`` accepts
+    ``trnRunOrdr`` ahead of ``trnOrdrNo`` (see ``parse_train_search_response``),
+    and a row carrying both would group by the wrong one.
+    """
+    raw = train.raw
+    if isinstance(raw, dict):
+        value = raw.get(TRANSFER_ITINERARY_COLUMN)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int) and not isinstance(value, bool):
+            return str(value)
+    if train.train_run_order is not None:
+        return str(train.train_run_order)
+    return ""
+
+
+def _order_transfer_legs(
+    rows: tuple[TrainSummary, ...],
+) -> tuple[TransferItinerary | None, str]:
+    """Put two legs in 선행/후행 order using the STATIONS, never the position.
+
+    Returns ``(itinerary, "")`` on success or ``(None, reason)`` on refusal.
+
+    Position is not used as evidence even though the live capture happened to
+    deliver the legs in order, because "the rows arrived in order" is an
+    observation about one response and not a documented guarantee — and the cost
+    of being wrong is a reservation whose two slots describe the journey
+    backwards, which builds cleanly and books a real ticket. The stations say it
+    unambiguously instead: the 선행 leg is the one that ARRIVES where the other
+    DEPARTS.
+
+    Both orientations are offered to :class:`~srt_mobile_api.models.TransferItinerary`
+    and it decides, so there is exactly one implementation of "is this a valid
+    itinerary" — connection, time order, distinct trains and all. Exactly one
+    valid orientation is the answer; zero means the rows are not an itinerary,
+    and two would mean the pair is genuinely ambiguous (a there-and-back loop
+    with no consistent time order), which is refused rather than resolved by a
+    tiebreak we would have to invent.
+    """
+    first, second = rows
+    candidates: list[TransferItinerary] = []
+    failures: list[str] = []
+    for leading, following in ((first, second), (second, first)):
+        try:
+            candidates.append(
+                TransferItinerary(first_leg=leading, second_leg=following)
+            )
+        except ValueError as exc:
+            failures.append(str(exc))
+    if len(candidates) == 1:
+        return candidates[0], ""
+    if not candidates:
+        return None, "; ".join(dict.fromkeys(failures))
+    return (
+        None,
+        "both leg orders read as a valid itinerary, so which one is 선행 is "
+        "ambiguous",
+    )
+
+
+def pair_transfer_itineraries(result: TrainSearchResult) -> TransferSearchResult:
+    """Group a 환승 search's rows into two-leg itineraries by ``trnOrdrNo``.
+
+    **This is an inference layer, and it is named as one.** The server sends a
+    flat list of single-leg rows; the grouping below is ours. That is why
+    :attr:`~srt_mobile_api.models.TransferSearchResult.search` keeps the
+    original result untouched and why nothing here rewrites a row.
+
+    The rule, from the 2026-07-26 live capture: rows sharing a ``trnOrdrNo`` are
+    one itinerary, and an itinerary is exactly
+    :data:`TRANSFER_LEGS_PER_ITINERARY` rows. Groups are emitted in the order
+    their first row appeared, so a caller iterating :attr:`itineraries` walks the
+    server's own ordering.
+
+    **A group that does not fit is set aside, not dropped and not forced.** The
+    three ways it can fail — the wrong number of rows, legs that do not connect
+    or run backwards, and an ambiguous leg order — all land in
+    :attr:`~srt_mobile_api.models.TransferSearchResult.unpaired` with a reason.
+    The choice is between two bad outcomes and it is made deliberately: losing an
+    itinerary silently hides a journey the traveller could have taken, but
+    handing back a mispaired one produces a reservation whose two slots are not
+    one journey, and the server would accept it. So nothing is invented, nothing
+    is discarded, and the leftovers are visible.
+
+    **Except when NOTHING pairs.** If rows came back and not one itinerary could
+    be made from them, that is evidence this grouping rule is wrong for the
+    response in hand — not evidence the server sent ten broken itineraries — and
+    returning an empty list would be the one genuinely silent failure available
+    here. That raises :class:`~srt_mobile_api.errors.SrtProtocolError`, whose
+    ``raw`` is the whole response, which is exactly what a capture needs.
+
+    An empty response is NOT that case: no rows means no itineraries and no
+    complaint. (In practice a fruitless search fails earlier with
+    ``strResult=FAIL``; see
+    :class:`~srt_mobile_api.errors.SrtNoDirectTrainError`.)
+    """
+    groups: dict[str, list[TrainSummary]] = {}
+    for row in result.trains:
+        groups.setdefault(_itinerary_key(row), []).append(row)
+
+    itineraries: list[TransferItinerary] = []
+    unpaired: list[UnpairedTransferGroup] = []
+    for key, rows in groups.items():
+        frozen = tuple(rows)
+        if not key:
+            unpaired.append(
+                UnpairedTransferGroup(
+                    itinerary_no="",
+                    rows=frozen,
+                    reason=(
+                        f"row carries no {TRANSFER_ITINERARY_COLUMN}, so which "
+                        "itinerary it belongs to is unknown"
+                    ),
+                )
+            )
+            continue
+        if len(frozen) != TRANSFER_LEGS_PER_ITINERARY:
+            unpaired.append(
+                UnpairedTransferGroup(
+                    itinerary_no=key,
+                    rows=frozen,
+                    reason=(
+                        f"{TRANSFER_ITINERARY_COLUMN}={key} returned "
+                        f"{len(frozen)} rows; a 환승 itinerary is exactly "
+                        f"{TRANSFER_LEGS_PER_ITINERARY}"
+                    ),
+                )
+            )
+            continue
+        itinerary, reason = _order_transfer_legs(frozen)
+        if itinerary is None:
+            unpaired.append(
+                UnpairedTransferGroup(
+                    itinerary_no=key, rows=frozen, reason=reason
+                )
+            )
+            continue
+        itineraries.append(itinerary)
+
+    if result.trains and not itineraries:
+        raise SrtProtocolError(
+            "SRT transfer search returned rows but none of them paired into an "
+            f"itinerary by {TRANSFER_ITINERARY_COLUMN}: "
+            + "; ".join(group.reason for group in unpaired),
+            raw=result.raw,
+        )
+    return TransferSearchResult(
+        itineraries=tuple(itineraries),
+        unpaired=tuple(unpaired),
+        search=result,
+    )

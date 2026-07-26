@@ -128,6 +128,39 @@ class SrtNoResultsError(SrtAppError):
     """
 
 
+class SrtNoDirectTrainError(SrtNoResultsError):
+    """There is no DIRECT train — the same query as a transfer search will work.
+
+    "Retry is pointless; ask a different question", and unusually the server
+    tells you which question. Live-captured 2026-07-26 on 동대구(0015) ->
+    광주송정(0036), a pair 경부선 and 호남선 only join at 오송::
+
+        msgCd=WRD000061  "직통열차는 없지만, 환승으로 조회 가능합니다."
+
+    So this is the natural signal to call
+    :meth:`~srt_mobile_api.client.SrtClient.search_transfer_trains` with the
+    query that just raised it.
+
+    **Subclasses SrtNoResultsError rather than SrtAppError**, which is a
+    deliberate choice and a small widening. Before this class the code fell
+    through to a bare :class:`SrtAppError`, so the catchability rule is kept
+    either way — every subclass here is a refinement and ``except SrtAppError``
+    still catches it. The reason to go one level deeper is that WRD000061 IS the
+    parent's meaning exactly: the direct search was accepted and matched
+    nothing. A caller who already writes ``except SrtNoResultsError`` to mean
+    "this query found nothing" is right about this response too, and would
+    otherwise have taken an unhandled error for a strictly more informative
+    answer. It also keeps this taxonomy aligned with the sibling korail client,
+    which classifies the identical code as ``KorailNoDirectTrainError`` under
+    ``KorailNoResultsError`` — the two servers really do answer the same code
+    for the same situation.
+
+    No transfer search is issued automatically. The app's own flow is to offer
+    the 환승 re-query in a dialog and wait, and this library does not turn one
+    caller-requested read into two.
+    """
+
+
 class SrtInvalidRequestError(SrtAppError):
     """The server rejected the request we built; the fix is the input.
 
@@ -272,6 +305,10 @@ class SrtQueueRejectedError(SrtNetFunnelError):
 # ---------------------------------------------------------------------------
 
 NO_RESULT_CODES = frozenset({"WRG000000", "WRT300005"})
+# 직통열차는 없지만, 환승으로 조회 가능합니다. — a no-result that names its own
+# remedy. Kept OUT of NO_RESULT_CODES so the generic mapping stays generic; it
+# gets its own, more specific entry below.
+NO_DIRECT_TRAIN_CODE = "WRD000061"
 INVALID_REQUEST_CODES = frozenset({"WRP011002", "WRR000100"})
 NETFUNNEL_KEY_REQUIRED_CODE = "NET000001"
 SESSION_EXPIRED_CODE = "S111"
@@ -279,6 +316,7 @@ SESSION_EXPIRED_CODE = "S111"
 _APP_ERROR_BY_CODE: dict[str, type[SrtAppError]] = {
     **{code: SrtNoResultsError for code in NO_RESULT_CODES},
     **{code: SrtInvalidRequestError for code in INVALID_REQUEST_CODES},
+    NO_DIRECT_TRAIN_CODE: SrtNoDirectTrainError,
 }
 
 

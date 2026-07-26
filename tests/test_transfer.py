@@ -46,10 +46,26 @@ from srt_mobile_api import (
     SrtReservationHold,
     SrtSession,
     TrainSearchQuery,
+    TrainSearchResult,
     TrainSummary,
     TransferItinerary,
+    TransferSearchResult,
 )
-from srt_mobile_api.errors import SrtAuthError
+from srt_mobile_api.errors import (
+    NO_DIRECT_TRAIN_CODE,
+    SrtAppError,
+    SrtAuthError,
+    SrtNoDirectTrainError,
+    SrtNoResultsError,
+    SrtProtocolError,
+    classify_app_error,
+)
+from srt_mobile_api.parsers import (
+    TRANSFER_ITINERARY_COLUMN,
+    TRANSFER_LEGS_PER_ITINERARY,
+    pair_transfer_itineraries,
+    parse_train_search_response,
+)
 from srt_mobile_api.payloads import (
     JOURNEY_COUNT_ONE_WAY,
     JOURNEY_COUNT_TRANSFER,
@@ -424,8 +440,12 @@ def test_transfer_search_uses_the_same_endpoint_as_the_direct_search():
 
     client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
     client.session.current = SrtSession(login_id="synthetic", user_map={})
-    client.search_transfer_trains(_query())
+    result = client.search_transfer_trains(_query())
 
+    # An empty response is not a pairing failure: no rows, no itineraries, no
+    # complaint.
+    assert isinstance(result, TransferSearchResult)
+    assert result.itineraries == () and result.unpaired == ()
     assert seen == [("GET", SEARCH_ROUTE), ("POST", SEARCH_ROUTE)]
     assert GROUP_SEARCH_ROUTE not in [path for _, path in seen]
     # The hydration GET carries the 환승 toggle...
@@ -436,9 +456,10 @@ def test_transfer_search_uses_the_same_endpoint_as_the_direct_search():
 
 
 def test_transfer_search_is_not_paginated():
-    # dsOutput0 carries a SECOND cursor, fllwPgExt2, null in every direct search
-    # we have captured and read by nothing in the bundle. Paging a two-cursor
-    # list on a guess would walk the wrong leg, so pagination stays direct-only.
+    # dsOutput0 carries a SECOND cursor, fllwPgExt2. The 2026-07-26 live transfer
+    # probe returned it null, exactly as every direct search does, so what it is
+    # FOR is still unobserved and nothing in the bundle reads it. Paging a
+    # two-cursor list on a guess would walk the wrong leg.
     parameters = inspect.signature(SrtClient.iter_train_search_pages).parameters
     assert list(parameters) == ["self", "query", "group", "max_pages"]
     assert "transfer" not in parameters
@@ -897,3 +918,401 @@ def test_transfer_adds_no_route_and_does_not_widen_the_kill_switch():
     assert SRT_MUTATION_ROUTE_CATEGORIES[RESERVE_ROUTE] == "reserve"
     assert len(SRT_MUTATION_ROUTES) == 5
     assert RESERVE_ROUTE in SRT_MUTATION_ROUTE_CATEGORIES
+
+
+# --- WRD000061: the server names its own remedy ------------------------------
+
+
+def test_no_direct_train_is_classified_and_refines_no_results():
+    # Live 2026-07-26 on 동대구 -> 광주송정, the direct search answered
+    # WRD000061 "직통열차는 없지만, 환승으로 조회 가능합니다." Before this it fell
+    # through to a bare SrtAppError.
+    error = classify_app_error(
+        NO_DIRECT_TRAIN_CODE,
+        "직통열차는 없지만, 환승으로 조회 가능합니다.",
+        raw={"msgCd": NO_DIRECT_TRAIN_CODE},
+    )
+    assert isinstance(error, SrtNoDirectTrainError)
+    assert error.code == "WRD000061"
+    assert error.raw == {"msgCd": NO_DIRECT_TRAIN_CODE}
+    # The catchability rule: it still IS an SrtAppError, and it refines the
+    # no-results branch because the direct query genuinely matched nothing.
+    assert issubclass(SrtNoDirectTrainError, SrtNoResultsError)
+    assert issubclass(SrtNoDirectTrainError, SrtAppError)
+
+
+def test_a_direct_search_of_a_transfer_only_pair_raises_no_direct_train():
+    # The whole point of the classification: this is the signal to re-ask the
+    # same query as a transfer search.
+    with pytest.raises(SrtNoDirectTrainError) as excinfo:
+        parse_train_search_response(
+            {
+                "ErrorCode": "0",
+                "ErrorMsg": "",
+                "outDataSets": {
+                    "dsOutput0": [
+                        {
+                            "msgCd": NO_DIRECT_TRAIN_CODE,
+                            "strResult": "FAIL",
+                            "msgTxt": "직통열차는 없지만, 환승으로 조회 가능합니다.",
+                        }
+                    ],
+                    "dsOutput1": [],
+                },
+            }
+        )
+    assert excinfo.value.code == NO_DIRECT_TRAIN_CODE
+    # The other no-result codes are untouched by the new entry.
+    assert type(classify_app_error("WRG000000", "조회 결과가 없습니다.")) is (
+        SrtNoResultsError
+    )
+
+
+# --- the live-confirmed response shape ---------------------------------------
+#
+# The rows below reproduce the 2026-07-26 read-only probe of
+# 동대구(0015) -> 광주송정(0036), 20260809 from 080000, verbatim in structure:
+# ONE ROW PER LEG, paired by trnOrdrNo, every row chtnDvCd="2", and the ...2
+# columns present but EMPTY because the second leg is a separate row.
+
+CHEONAN_ASAN = "0502"
+
+
+def _probe_row(
+    train_no: str,
+    departure: str,
+    arrival: str,
+    departure_time: str,
+    arrival_time: str,
+    itinerary_no: object,
+) -> TrainSummary:
+    return TrainSummary(
+        train_no=train_no,
+        service_class_code="17",
+        train_group_code="300",
+        departure_station_code=departure,
+        arrival_station_code=arrival,
+        run_date="20260809",
+        departure_date="20260809",
+        departure_time=departure_time,
+        arrival_date="20260809",
+        arrival_time=arrival_time,
+        departure_run_order="1",
+        arrival_run_order="9",
+        departure_consist_order="1",
+        arrival_consist_order="9",
+        general_seat_availability="예약가능",
+        special_seat_availability="예약가능",
+        train_run_order=itinerary_no if isinstance(itinerary_no, int) else None,
+        raw={
+            "trnOrdrNo": itinerary_no,
+            "chtnDvCd": "2",
+            # Present on every live row and blank, because the second leg is a
+            # ROW and not a set of columns.
+            "trnNo2": "",
+            "dptRsStnCd2": "",
+            "jrnySqno": "",
+        },
+    )
+
+
+def _probe_rows() -> list[TrainSummary]:
+    return [
+        _probe_row("382", DONGDAEGU, OSONG, "085200", "095100", 1),
+        _probe_row("411", OSONG, GWANGJU_SONGJEONG, "100600", "110500", 1),
+        _probe_row("14", DONGDAEGU, CHEONAN_ASAN, "085800", "100900", 2),
+        _probe_row("475", CHEONAN_ASAN, GWANGJU_SONGJEONG, "102500", "125000", 2),
+        _probe_row("316", DONGDAEGU, OSONG, "091600", "101500", 3),
+        _probe_row("655", OSONG, GWANGJU_SONGJEONG, "103100", "113100", 3),
+    ]
+
+
+def _search_result(rows: list[TrainSummary]) -> TrainSearchResult:
+    return TrainSearchResult(
+        trains=rows,
+        result={"msgCd": "IRG000000", "strResult": "SUCC"},
+        raw={"outDataSets": {"dsOutput1": [row.raw for row in rows]}},
+    )
+
+
+def test_rows_are_paired_into_itineraries_by_the_itinerary_column():
+    # The live shape: one row per leg, grouped by trnOrdrNo, three itineraries
+    # out of six rows.
+    result = pair_transfer_itineraries(_search_result(_probe_rows()))
+
+    assert isinstance(result, TransferSearchResult)
+    assert result.unpaired == ()
+    assert len(result.itineraries) == 3
+    assert [
+        (itinerary.first_leg.train_no, itinerary.second_leg.train_no)
+        for itinerary in result.itineraries
+    ] == [("382", "411"), ("14", "475"), ("316", "655")]
+    # Each one is a whole journey from the query's origin to its destination,
+    # via a real 환승역.
+    assert [itinerary.transfer_station_code for itinerary in result.itineraries] == [
+        OSONG,
+        CHEONAN_ASAN,
+        OSONG,
+    ]
+    for itinerary in result.itineraries:
+        assert itinerary.origin_station_code == DONGDAEGU
+        assert itinerary.destination_station_code == GWANGJU_SONGJEONG
+
+
+def test_itineraries_keep_the_servers_own_ordering():
+    result = pair_transfer_itineraries(_search_result(_probe_rows()))
+    assert [itinerary.first_leg.train_no for itinerary in result.itineraries] == [
+        "382",
+        "14",
+        "316",
+    ]
+
+
+def test_leg_order_comes_from_the_stations_and_not_from_the_row_order():
+    # THE test this pairing exists for. The live probe happened to deliver the
+    # legs in order, but that is an observation about one response, not a
+    # guarantee -- and pairing them backwards builds a clean reservation whose
+    # two slots describe the journey in reverse. So every group is handed to
+    # TransferItinerary in BOTH orders and the stations decide.
+    rows = _probe_rows()
+    reversed_within_groups = [
+        rows[1], rows[0],  # 411 오송->광주송정 BEFORE 382 동대구->오송
+        rows[3], rows[2],
+        rows[5], rows[4],
+    ]
+    result = pair_transfer_itineraries(_search_result(reversed_within_groups))
+
+    assert result.unpaired == ()
+    assert [
+        (itinerary.first_leg.train_no, itinerary.second_leg.train_no)
+        for itinerary in result.itineraries
+    ] == [("382", "411"), ("14", "475"), ("316", "655")]
+    # ... and every one still runs forwards in time.
+    for itinerary in result.itineraries:
+        assert itinerary.first_leg.arrival_time <= itinerary.second_leg.departure_time
+
+
+def test_a_group_that_is_not_two_rows_is_set_aside_with_a_reason():
+    # Not dropped (that hides a journey) and not paired anyway (that hands back
+    # two trains that are not one itinerary). The good itineraries still come
+    # back alongside it.
+    rows = _probe_rows()
+    rows.append(
+        _probe_row("999", DONGDAEGU, OSONG, "120000", "130000", 4)
+    )  # a lone leg for itinerary 4
+    result = pair_transfer_itineraries(_search_result(rows))
+
+    assert len(result.itineraries) == 3
+    assert len(result.unpaired) == 1
+    orphan = result.unpaired[0]
+    assert orphan.itinerary_no == "4"
+    assert [row.train_no for row in orphan.rows] == ["999"]
+    assert "1 rows" in orphan.reason and TRANSFER_ITINERARY_COLUMN in orphan.reason
+    assert str(TRANSFER_LEGS_PER_ITINERARY) in orphan.reason
+
+
+def test_a_group_of_three_rows_is_set_aside_too():
+    rows = _probe_rows()
+    rows.insert(2, _probe_row("999", OSONG, GWANGJU_SONGJEONG, "110000", "120000", 1))
+    result = pair_transfer_itineraries(_search_result(rows))
+
+    assert len(result.itineraries) == 2
+    assert [group.itinerary_no for group in result.unpaired] == ["1"]
+    assert "3 rows" in result.unpaired[0].reason
+
+
+def test_legs_that_do_not_connect_are_set_aside_rather_than_paired():
+    # The failure that matters most: two rows sharing a trnOrdrNo whose stations
+    # do not meet are NOT one journey, whatever the server grouped them as.
+    rows = _probe_rows()
+    rows[1] = _probe_row("411", "0010", GWANGJU_SONGJEONG, "100600", "110500", 1)
+    result = pair_transfer_itineraries(_search_result(rows))
+
+    assert len(result.itineraries) == 2
+    assert [group.itinerary_no for group in result.unpaired] == ["1"]
+    assert "do not connect" in result.unpaired[0].reason
+    assert {row.train_no for row in result.unpaired[0].rows} == {"382", "411"}
+
+
+def test_an_ambiguous_leg_order_is_refused_rather_than_broken_by_a_tiebreak():
+    # A there-and-back pair with no usable times reads as a valid itinerary in
+    # BOTH directions. There is no evidence for choosing one, so neither is
+    # chosen.
+    loop_out = dataclasses.replace(
+        _probe_row("382", DONGDAEGU, OSONG, "085200", "095100", 9),
+        arrival_time=None,
+        arrival_date=None,
+    )
+    loop_back = dataclasses.replace(
+        _probe_row("411", OSONG, DONGDAEGU, "100600", "110500", 9),
+        arrival_time=None,
+        arrival_date=None,
+    )
+    result = pair_transfer_itineraries(
+        _search_result(_probe_rows() + [loop_out, loop_back])
+    )
+
+    assert len(result.itineraries) == 3
+    assert [group.itinerary_no for group in result.unpaired] == ["9"]
+    assert "ambiguous" in result.unpaired[0].reason
+
+
+def test_a_row_without_the_itinerary_column_is_set_aside():
+    rows = _probe_rows()
+    rows.append(_probe_row("999", DONGDAEGU, OSONG, "120000", "130000", None))
+    result = pair_transfer_itineraries(_search_result(rows))
+
+    assert len(result.itineraries) == 3
+    assert result.unpaired[0].itinerary_no == ""
+    assert TRANSFER_ITINERARY_COLUMN in result.unpaired[0].reason
+
+
+def test_rows_that_pair_into_nothing_at_all_raise_rather_than_return_empty():
+    # If not one itinerary can be made from a response that HAS rows, this
+    # grouping rule is wrong for the response in hand -- and an empty list would
+    # be the one genuinely silent failure available here.
+    lone = [_probe_row("382", DONGDAEGU, OSONG, "085200", "095100", 1)]
+    with pytest.raises(SrtProtocolError) as excinfo:
+        pair_transfer_itineraries(_search_result(lone))
+    assert TRANSFER_ITINERARY_COLUMN in str(excinfo.value)
+    # raw is carried, because this is exactly the response a capture wants.
+    assert excinfo.value.raw == _search_result(lone).raw
+
+
+def test_no_rows_is_not_a_pairing_failure():
+    result = pair_transfer_itineraries(_search_result([]))
+    assert result.itineraries == () and result.unpaired == ()
+
+
+def test_the_raw_rows_stay_reachable_behind_the_inference():
+    # The grouping is ours, so a caller must be able to get behind it.
+    search = _search_result(_probe_rows())
+    result = pair_transfer_itineraries(search)
+
+    assert result.search is search
+    assert result.rows == search.trains
+    assert len(result.rows) == 6
+    assert result.raw is search.raw
+    # Including the columns the pairing does not use: chtnDvCd says what kind of
+    # row it is, and the ...2 columns are present-but-empty.
+    assert result.rows[0].raw["chtnDvCd"] == "2"
+    assert result.rows[0].raw["trnNo2"] == ""
+    assert result.rows[0].raw[TRANSFER_ITINERARY_COLUMN] == 1
+
+
+def test_a_paired_itinerary_is_ready_to_reserve_as_it_stands():
+    # The pairing runs TransferItinerary's own validation, so anything handed
+    # back can go straight into the reservation builder.
+    result = pair_transfer_itineraries(_search_result(_probe_rows()))
+    form = transfer_reservation_payload(
+        result.itineraries[0],
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+    )
+    assert form["jrnyCnt"] == "2" and form["jrnyTpCd"] == "14"
+    assert form["trnNo1"] == "00382" and form["trnNo2"] == "00411"
+    assert form["dptRsStnCd1"] == DONGDAEGU
+    assert form["arvRsStnCd2"] == GWANGJU_SONGJEONG
+
+
+def test_the_empty_slot_two_columns_on_a_search_row_change_no_evidence_tier():
+    # A response COLUMN and a request FIELD that share a name are two different
+    # things. The search row's trnNo2/dptRsStnCd2 are blank because the second
+    # leg is a separate ROW, which says nothing about whether the RESERVATION
+    # form wants them filled -- so the five inferred names stay inferred.
+    rows = _probe_rows()
+    assert rows[0].raw["trnNo2"] == "" and rows[0].raw["dptRsStnCd2"] == ""
+    inferred = {
+        key
+        for key, tier in TRANSFER_SLOT2_FIELD_EVIDENCE.items()
+        if tier == "inferred"
+    }
+    assert inferred == {
+        "stlbTrnClsfCd2",
+        "dptStnConsOrdr2",
+        "arvStnConsOrdr2",
+        "dptStnRunOrdr2",
+        "arvStnRunOrdr2",
+    }
+    # And the reservation form fills them, blank column or not.
+    result = pair_transfer_itineraries(_search_result(rows))
+    form = transfer_reservation_payload(
+        result.itineraries[0], PassengerCounts(adult=1), netfunnel_key=SYNTHETIC_NF
+    )
+    assert form["trnNo2"] == "00411"
+    assert all(form[key] for key in inferred)
+
+
+def test_search_transfer_trains_returns_paired_itineraries_end_to_end():
+    hydration = (
+        '<html><body><form id="seatSearchForm">'
+        '<input type="hidden" name="serverNonce" value="synthetic" />'
+        "</form>"
+        '<a href="/kr/logout.do">logout</a></body></html>'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == NETFUNNEL_PATH:
+            if request.url.params["opcode"] == "5004":
+                return httpx.Response(
+                    200, text="NetFunnel.gControl.result='5004:200:utime=1';"
+                )
+            return httpx.Response(200, text=NETFUNNEL_BODY)
+        if request.method == "GET":
+            return httpx.Response(200, text=hydration)
+        return httpx.Response(
+            200,
+            json={
+                "ErrorCode": "0",
+                "ErrorMsg": "",
+                "outDataSets": {
+                    "dsOutput0": [
+                        {
+                            "msgCd": "IRG000000",
+                            "strResult": "SUCC",
+                            "msgTxt": "",
+                            "qryCnqeCnt": 6,
+                            "fllwPgExt": "N",
+                            "fllwPgExt2": None,
+                        }
+                    ],
+                    "dsOutput1": [
+                        {
+                            "trnNo": row.train_no,
+                            "trnOrdrNo": row.raw["trnOrdrNo"],
+                            "chtnDvCd": "2",
+                            "stlbTrnClsfCd": "17",
+                            "trnGpCd": "300",
+                            "runDt": row.run_date,
+                            "dptDt": row.departure_date,
+                            "dptTm": row.departure_time,
+                            "arvDt": row.arrival_date,
+                            "arvTm": row.arrival_time,
+                            "dptRsStnCd": row.departure_station_code,
+                            "arvRsStnCd": row.arrival_station_code,
+                            "dptStnRunOrdr": "1",
+                            "arvStnRunOrdr": "9",
+                            "dptStnConsOrdr": "1",
+                            "arvStnConsOrdr": "9",
+                            "trnNo2": "",
+                            "dptRsStnCd2": "",
+                            "jrnySqno": "",
+                        }
+                        for row in _probe_rows()
+                    ],
+                },
+            },
+        )
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    client.session.current = SrtSession(login_id="synthetic", user_map={})
+    result = client.search_transfer_trains(_query())
+
+    assert isinstance(result, TransferSearchResult)
+    assert len(result.itineraries) == 3
+    assert result.unpaired == ()
+    assert len(result.rows) == 6
+    assert [
+        (itinerary.first_leg.train_no, itinerary.second_leg.train_no)
+        for itinerary in result.itineraries
+    ] == [("382", "411"), ("14", "475"), ("316", "655")]

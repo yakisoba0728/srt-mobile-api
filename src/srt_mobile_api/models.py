@@ -361,6 +361,25 @@ class TransferItinerary:
 
 
 @dataclass(frozen=True)
+class UnpairedTransferGroup:
+    """Rows a 환승 search returned that could NOT be made into an itinerary.
+
+    Kept rather than dropped. A transfer search's pairing is *our* inference —
+    the server sends a flat row list and we group it — so when the inference
+    does not fit, the rows have to go somewhere a caller can see. Dropping them
+    silently would hide an itinerary that exists; pairing them anyway would hand
+    back two trains that are not one journey, and that is the worse of the two.
+
+    :attr:`reason` is a plain sentence, not a code: these are conditions we have
+    never observed live, so a code vocabulary would be invented.
+    """
+
+    itinerary_no: str
+    rows: tuple["TrainSummary", ...]
+    reason: str
+
+
+@dataclass(frozen=True)
 class TrainSearchMetadata:
     message_code: str
     status: str
@@ -376,6 +395,47 @@ class TrainSearchResult:
     result: dict[str, Any] = field(default_factory=dict, repr=False)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
     metadata: TrainSearchMetadata | None = None
+
+
+@dataclass(frozen=True)
+class TransferSearchResult:
+    """The result of a 환승 search: itineraries, leftovers, and the raw rows.
+
+    **The response shape is live-confirmed (2026-07-26).** A transfer search
+    returns ONE ROW PER LEG in the ordinary ``dsOutput1`` list — the same column
+    set a direct row has — and the legs of one itinerary share a ``trnOrdrNo``.
+    On 동대구(0015) -> 광주송정(0036) the server sent 10 rows: ``trnOrdrNo=1`` was
+    train 382 동대구->오송 plus train 411 오송->광주송정, ``trnOrdrNo=2`` was train
+    14 동대구->천안아산 plus train 475 천안아산->광주송정, and so on. Every row
+    carried ``chtnDvCd="2"``, and ``fllwPgExt2`` was ``null``.
+
+    So ``trnOrdrNo`` is the ITINERARY index here, not a train ordering within
+    the whole list. The ``...2`` columns do exist on every row and are empty
+    strings (``trnNo2: ""``, ``dptRsStnCd2: ""``, ``jrnySqno: ""``) — because the
+    second leg is a separate ROW, not a set of columns.
+
+    :attr:`itineraries` are the groups that paired cleanly.
+    :attr:`unpaired` are the groups that did not, each with a reason — read it
+    if you care about completeness, because the count of itineraries alone
+    cannot tell you whether anything was set aside. :attr:`search` is the
+    untouched :class:`TrainSearchResult`, so the raw rows and the raw JSON stay
+    reachable: the grouping above is our inference layer and a caller must be
+    able to go behind it.
+    """
+
+    itineraries: tuple[TransferItinerary, ...]
+    unpaired: tuple[UnpairedTransferGroup, ...]
+    search: TrainSearchResult
+
+    @property
+    def rows(self) -> list["TrainSummary"]:
+        """Every row the server sent, ungrouped and in server order."""
+        return self.search.trains
+
+    @property
+    def raw(self) -> dict[str, Any]:
+        """The whole response body, exactly as received."""
+        return self.search.raw
 
 
 @dataclass(frozen=True)
