@@ -1159,6 +1159,7 @@ class SrtClient:
         standby: bool = False,
         round_trip: bool = False,
         designated_seats: SeatDesignation | None = None,
+        seat_attr_code: str = "015",
     ) -> MutationPreview | SrtReservationHold:
         """Create a personal (개인예약) SRT reservation hold under explicit consent.
 
@@ -1308,6 +1309,7 @@ class SrtClient:
                 standby=standby,
                 round_trip=round_trip,
                 designated_seats=designated_seats,
+                seat_attr_code=seat_attr_code,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,
@@ -1322,6 +1324,7 @@ class SrtClient:
         seat_type: SeatType = SeatType.GENERAL_FIRST,
         window_seat: bool | None = None,
         netfunnel_key: str | None = None,
+        seat_attr_code: str = "015",
     ) -> MutationPreview | SrtReservationHold:
         """Create a 환승 (transfer) reservation hold: BOTH legs, in ONE request.
 
@@ -1409,6 +1412,7 @@ class SrtClient:
                 seat_type=seat_type,
                 netfunnel_key=key,
                 window_seat=window_seat,
+                seat_attr_code=seat_attr_code,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,

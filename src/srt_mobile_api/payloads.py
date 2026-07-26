@@ -1,5 +1,6 @@
 import re
 
+from .errors import SrtProtocolError
 from .models import (
     PassengerCounts,
     PublicDiscountSelection,
@@ -1080,17 +1081,88 @@ def _special_seat_available(train: TrainSummary) -> bool:
     return "예약가능" in (train.special_seat_availability or "")
 
 
+def _require_availability(value: str | None, *, seat_type: SeatType, field: str) -> str:
+    """Refuse to guess a seat class when the row never stated availability.
+
+    ``None`` here means the search row carried no availability field at all --
+    not that the class is sold out. The two were folded together, and the fold
+    was expensive: ``"예약가능" in (None or "")`` is ``False``, so
+    ``GENERAL_FIRST`` read a missing field as "general is gone" and booked
+    특실 instead. That is reachable through the plain
+    ``search_trains()`` -> ``reserve()`` path, it costs the caller the fare
+    difference, and on ``reserve_transfer`` it applies to both legs because
+    slot 2 shares slot 1's decision.
+
+    The app does not make this mistake: ``ara1001l.js:1430-1432`` sets
+    ``sPsrmClCd`` to ``1`` or ``2`` only when the matching image says so, and
+    leaves it EMPTY otherwise -- never ``2``. srtgo cannot reach the state at
+    all, since it reads the availability key without a guard.
+
+    A ``*_FIRST`` seat type is by definition "decide from live availability".
+    With no availability to read there is no decision to make, so this raises
+    rather than picking a class on the caller's behalf. ``GENERAL_ONLY`` and
+    ``SPECIAL_ONLY`` state the class outright and are unaffected.
+    """
+    if value is None:
+        raise SrtProtocolError(
+            f"SRT {seat_type.name} needs the train's {field}, and this search "
+            "row did not carry it. A missing availability field is not the "
+            "same as a sold-out class -- guessing would silently change which "
+            "fare is booked. Pass seat_type=SeatType.GENERAL_ONLY or "
+            "SeatType.SPECIAL_ONLY to state the class explicitly."
+        )
+    return value
+
+
+#: The 요구좌석속성 codes SRT itself dispatches on. 015 is the ordinary seat the
+#: search form is seeded with (ara0101v.js:132); 021 and 028 are 휠체어 and
+#: 전동휠체어, which ara0101v.js:611-628 gates behind their own consent dialog --
+#: they are values a real user reaches, not dead constants. commCode.js lists
+#: more, but the rest are the shared KORAIL set with no SRT call site.
+SRT_REQUEST_SEAT_ATTR_CODES = frozenset({"015", "021", "028"})
+
+
+def _validated_seat_attr_code(value: str) -> str:
+    """Check a 요구좌석속성 code before it goes into a reservation body.
+
+    This used to be the literal "015" in both reservation builders while the
+    SEARCH builders honoured TrainSearchQuery.seat_attr_code. Searching for
+    wheelchair inventory with "021" and then reserving a row from those results
+    silently sent "015": the same value respected on the way in and discarded on
+    the way out, with no warning. Wheelchair and powered-wheelchair seats were
+    unreachable through reserve() and reserve_transfer() as a result.
+    """
+    if value not in SRT_REQUEST_SEAT_ATTR_CODES:
+        raise SrtProtocolError(
+            f"SRT seat_attr_code must be one of "
+            f"{sorted(SRT_REQUEST_SEAT_ATTR_CODES)} (015 ordinary, 021 "
+            f"wheelchair, 028 powered wheelchair); got {value!r}"
+        )
+    return value
+
+
 def _resolve_special_seat(train: TrainSummary, seat_type: SeatType) -> bool:
     # srtgo is_special_seat dispatch (srt.py:955-960): *_ONLY force a class;
     # *_FIRST fall back based on the train's live availability strings.
     if not isinstance(seat_type, SeatType):
         raise ValueError("seat_type must be a SeatType")
-    return {
-        SeatType.GENERAL_ONLY: False,
-        SeatType.SPECIAL_ONLY: True,
-        SeatType.GENERAL_FIRST: not _general_seat_available(train),
-        SeatType.SPECIAL_FIRST: _special_seat_available(train),
-    }[seat_type]
+    if seat_type is SeatType.GENERAL_ONLY:
+        return False
+    if seat_type is SeatType.SPECIAL_ONLY:
+        return True
+    if seat_type is SeatType.GENERAL_FIRST:
+        _require_availability(
+            train.general_seat_availability,
+            seat_type=seat_type,
+            field="gnrmRsvPsbStr (general seat availability)",
+        )
+        return not _general_seat_available(train)
+    _require_availability(
+        train.special_seat_availability,
+        seat_type=seat_type,
+        field="sprmRsvPsbStr (special seat availability)",
+    )
+    return _special_seat_available(train)
 
 
 def _reservation_passenger_fields(
@@ -1098,6 +1170,7 @@ def _reservation_passenger_fields(
     *,
     special_seat: bool,
     window_seat: bool | None,
+    seat_attr_code: str = "015",
 ) -> dict[str, str]:
     # Mirrors srtgo Passenger.get_passenger_dict (srt.py:179-204): the seat/class
     # constants plus ONLY the filled psgTpCd/psgInfoPerPrnb slots (enumerate over
@@ -1107,7 +1180,7 @@ def _reservation_passenger_fields(
         "totPrnb": str(passengers.total),
         "psgGridcnt": str(len(slots)),
         "locSeatAttCd1": _WINDOW_SEAT_CODES.get(window_seat, "000"),
-        "rqSeatAttCd1": "015",
+        "rqSeatAttCd1": _validated_seat_attr_code(seat_attr_code),
         "dirSeatAttCd1": "009",
         "smkSeatAttCd1": "000",
         "etcSeatAttCd1": "000",
@@ -1225,6 +1298,7 @@ def personal_reservation_payload(
     standby: bool = False,
     round_trip: bool = False,
     designated_seats: SeatDesignation | None = None,
+    seat_attr_code: str = "015",
 ) -> dict[str, str]:
     """Build the 개인예약 / 예약대기 reservation form (``/arc/selectListArc05013_n.do``).
 
@@ -1484,6 +1558,7 @@ def personal_reservation_payload(
             passengers,
             special_seat=special_seat,
             window_seat=window_seat,
+            seat_attr_code=seat_attr_code,
         )
     )
     # LAST, so that a body without designated seats is byte-for-byte and
@@ -1502,6 +1577,7 @@ def _second_journey_slot_fields(
     *,
     special_seat: bool,
     window_seat: bool | None,
+    seat_attr_code: str = "015",
 ) -> dict[str, str]:
     """The 여정 slot-2 half of a 환승 reservation form.
 
@@ -1580,7 +1656,7 @@ def _second_journey_slot_fields(
         "trnGpCd2": "300",
         "psrmClCd2": "2" if special_seat else "1",
         "locSeatAttCd2": _WINDOW_SEAT_CODES.get(window_seat, "000"),
-        "rqSeatAttCd2": "015",
+        "rqSeatAttCd2": _validated_seat_attr_code(seat_attr_code),
         "dirSeatAttCd2": "009",
         "smkSeatAttCd2": "000",
         "etcSeatAttCd2": "000",
@@ -1594,6 +1670,7 @@ def transfer_reservation_payload(
     seat_type: SeatType = SeatType.GENERAL_FIRST,
     netfunnel_key: str,
     window_seat: bool | None = None,
+    seat_attr_code: str = "015",
 ) -> dict[str, str]:
     """Build the 환승 (transfer) reservation form: ONE body, TWO journey slots.
 
@@ -1686,6 +1763,10 @@ def transfer_reservation_payload(
         seat_type=seat_type,
         netfunnel_key=netfunnel_key,
         window_seat=window_seat,
+        # Both legs of one reservation carry the same 요구좌석속성: the app's
+        # seat-option callback writes rqSeatAttCd1 AND rqSeatAttCd2 from the
+        # same obj.seatOption (ara0101v.js:759-778).
+        seat_attr_code=seat_attr_code,
     )
     if itinerary.second_leg.service_class_code != _SRT_TRAIN_CLASS_CODE:
         raise ValueError(
@@ -1708,6 +1789,7 @@ def transfer_reservation_payload(
             # own values for exactly this reason.
             special_seat=payload["psrmClCd1"] == "2",
             window_seat=window_seat,
+            seat_attr_code=seat_attr_code,
         )
     )
     return payload

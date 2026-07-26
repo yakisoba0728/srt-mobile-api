@@ -840,6 +840,11 @@ def test_transfer_offers_no_standby_and_no_group_and_no_seat_selection():
         "seat_type",
         "window_seat",
         "netfunnel_key",
+        # 요구좌석속성 IS a transfer parameter, unlike the three above: the app's
+        # seat-option callback writes rqSeatAttCd1 and rqSeatAttCd2 from the same
+        # value (ara0101v.js:759-778), so both legs carry it. That is the
+        # opposite of 좌석지정, which blanks slot 2 outright.
+        "seat_attr_code",
     ]
     for name in ("standby", "group", "round_trip", "seat_numbers", "car_number"):
         assert name not in parameters
