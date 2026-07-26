@@ -471,7 +471,9 @@ class _SeatGridParser(HTMLParser):
         self.handle_starttag(tag, attrs)
 
 
-def parse_seat_grid_response(html: str, *, car_number: str = "") -> SeatGrid:
+def parse_seat_grid_response(
+    html: str, *, car_number: str = "", cabin_class: str = ""
+) -> SeatGrid:
     """Parse the 좌석배치도 fragment ``/arc/selectListArc02011_n.do`` returns.
 
     **Live-captured 2026-07-26**, 수서 -> 동탄, train 315: 25,930 bytes and 74
@@ -526,6 +528,7 @@ def parse_seat_grid_response(html: str, *, car_number: str = "") -> SeatGrid:
         text=extract_text(html),
         raw=html,
         car_number=car_number,
+        cabin_class=cabin_class,
         seats=tuple(parser.seats),
     )
 
@@ -1110,11 +1113,45 @@ def _first_row(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _declares_status(row: dict[str, Any]) -> bool:
+    status = row.get("strResult")
+    return isinstance(status, str) and bool(status)
+
+
 def normalize_result_row(data: dict[str, Any]) -> dict[str, Any]:
+    """Pick the result row from whichever container actually carries one.
+
+    ``outDataSets.dsOutput0`` is preferred, as documented, but ONLY when it
+    holds a usable row. The previous test was ``"dsOutput0" in out`` -- key
+    presence alone -- which made the advertised ``resultMap`` fallback
+    unreachable: an empty or null ``dsOutput0`` returned ``{}`` and the caller
+    raised "must contain a result row" while a perfectly good FAIL row sat in
+    ``resultMap`` unread. On refund, cancel and payment that turns a stated
+    reason into an exception that cannot say whether money moved.
+
+    When BOTH containers declare a status and they disagree, the FAILING one
+    wins. That combination has never been observed on these three routes, so
+    this is a deliberate fail-closed choice rather than an observed rule: the
+    opposite default let a side-car ``dsOutput0`` of ``[{"strResult":"SUCC"}]``
+    mask a ``resultMap`` FAIL, and a refund that did not happen must not read
+    as one that did. This backend does ship contradictory containers in one
+    body -- ``tests/fixtures/reservation_list_empty.json`` carries a SUCC
+    ``resultMap`` beside a FAIL ``rsMap`` -- so the case is not hypothetical,
+    it merely has not been seen with this particular pair.
+    """
     out = data.get("outDataSets") or {}
-    if isinstance(out, dict) and "dsOutput0" in out:
-        return _first_row(out.get("dsOutput0"))
-    return _first_row(data.get("resultMap"))
+    primary: dict[str, Any] = {}
+    if isinstance(out, dict):
+        primary = _first_row(out.get("dsOutput0"))
+    fallback = _first_row(data.get("resultMap"))
+
+    if not _declares_status(primary):
+        return primary or fallback
+    if not _declares_status(fallback):
+        return primary
+    if primary.get("strResult") == fallback.get("strResult"):
+        return primary
+    return fallback if fallback.get("strResult") != "SUCC" else primary
 
 
 def parse_mutual_verification_response(
@@ -1939,6 +1976,22 @@ def _reservation_list_container(
     return rows
 
 
+#: Reservation-list columns whose value is a FIXED-WIDTH identifier rather than
+#: a quantity, and the width it must keep. JSON numbers arrive here with their
+#: leading zeros already gone -- a 06:30 departure comes back as 63000 -- and
+#: str() alone would hand a five-character time to a payment builder that
+#: requires six digits, refusing every departure before 10:00. An amount like
+#: rcvdAmt has no such problem, which is why this is a list and not a blanket
+#: rule.
+_ZERO_PADDED_RESERVATION_COLUMNS = {
+    "dptTm": 6,
+    "arvTm": 6,
+    "iseLmtTm": 6,
+    "dptRsStnCd": 4,
+    "arvRsStnCd": 4,
+}
+
+
 def _reservation_list_optional_string(
     row: dict[str, Any],
     key: str,
@@ -1967,11 +2020,13 @@ def _reservation_list_optional_string(
     value = row.get(key)
     if isinstance(value, str):
         return value
+    width = _ZERO_PADDED_RESERVATION_COLUMNS.get(key)
     # bool is an int subclass; a flag is not an identifier or an amount.
     if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
+        return str(value).zfill(width) if width else str(value)
     if isinstance(value, float) and value.is_integer():
-        return str(int(value))
+        text = str(int(value))
+        return text.zfill(width) if width else text
     return None
 
 

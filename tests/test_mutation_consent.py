@@ -350,3 +350,49 @@ def test_card_kind_claim_refuses_a_contradictory_consent():
             )
         )
     assert "contradictory consent" in str(excinfo.value)
+
+
+# --- what the card-kind flags actually do (2026-07-27 audit, H-1) -------------
+#
+# The class docstring used to say a real charge required inverting BOTH card
+# flags. It never did. These pin the real behaviour so the prose cannot drift
+# back: the flags are a mutually-exclusive CLAIM, and the things that gate a
+# charge are allow_payment and dry_run.
+
+
+@pytest.mark.parametrize(
+    ("fake_card_only", "real_card_acknowledged", "transmits"),
+    [
+        (True, False, True),  # the DEFAULT pair -- it transmits
+        (False, True, True),
+        (True, True, False),  # ambiguous
+        (False, False, False),  # unstated
+    ],
+)
+def test_card_kind_claim_requires_exactly_one_flag_not_both(
+    fake_card_only: bool, real_card_acknowledged: bool, transmits: bool
+):
+    consent = MutationConsent(
+        allow_payment=True,
+        dry_run=False,
+        fake_card_only=fake_card_only,
+        real_card_acknowledged=real_card_acknowledged,
+    )
+    if transmits:
+        require_card_kind_claim(consent)
+    else:
+        with pytest.raises(SrtMutationNotAllowedError):
+            require_card_kind_claim(consent)
+
+
+def test_a_default_consent_states_a_card_kind_and_so_passes_the_card_gate():
+    # The point of the audit finding: nothing about the DEFAULT card flags
+    # stops a transmission. Only allow_payment and dry_run do.
+    require_card_kind_claim(MutationConsent(allow_payment=True, dry_run=False))
+
+
+def test_the_docstring_does_not_promise_that_both_flags_must_be_inverted():
+    doc = MutationConsent.__doc__ or ""
+    assert "needs both halves stated" not in doc
+    assert "restricted to a non-chargeable test card" not in doc
+    assert "do not restrict anything" in doc

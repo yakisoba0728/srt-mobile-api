@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import re
 import time
 from collections.abc import Callable
@@ -1044,7 +1046,9 @@ class SrtClient:
                 # Referer -- so this is the app's flow rather than a requirement.
                 referer=f"{self.config.base_url}/arc/selectListArc02012_n.do",
             )
-            return parse_seat_grid_response(raw, car_number=car_number)
+            return parse_seat_grid_response(
+                raw, car_number=car_number, cabin_class=cabin_class
+            )
 
     def get_timetable(self, train: TrainSummary) -> TimetablePage:
         with self._session_guard():
@@ -1145,7 +1149,15 @@ class SrtClient:
             # PNR-bearing response rather than letting a strict-validation
             # failure orphan it, and refuses to manufacture one when the server
             # declared a failure.
-            return parse_reservation_hold_response(response)
+            hold = parse_reservation_hold_response(response)
+            # The form knows how many 여정 it just booked; the response does
+            # not say, and the hold is what cancel() will be handed later.
+            sent_journey_count = form.get("jrnyCnt", "1")
+            if sent_journey_count != hold.journey_count:
+                hold = dataclasses.replace(
+                    hold, journey_count=sent_journey_count
+                )
+            return hold
 
     def reserve(
         self,
@@ -1159,6 +1171,7 @@ class SrtClient:
         standby: bool = False,
         round_trip: bool = False,
         designated_seats: SeatDesignation | None = None,
+        seat_attr_code: str = "015",
     ) -> MutationPreview | SrtReservationHold:
         """Create a personal (개인예약) SRT reservation hold under explicit consent.
 
@@ -1308,6 +1321,7 @@ class SrtClient:
                 standby=standby,
                 round_trip=round_trip,
                 designated_seats=designated_seats,
+                seat_attr_code=seat_attr_code,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,
@@ -1322,6 +1336,7 @@ class SrtClient:
         seat_type: SeatType = SeatType.GENERAL_FIRST,
         window_seat: bool | None = None,
         netfunnel_key: str | None = None,
+        seat_attr_code: str = "015",
     ) -> MutationPreview | SrtReservationHold:
         """Create a 환승 (transfer) reservation hold: BOTH legs, in ONE request.
 
@@ -1409,6 +1424,7 @@ class SrtClient:
                 seat_type=seat_type,
                 netfunnel_key=key,
                 window_seat=window_seat,
+                seat_attr_code=seat_attr_code,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,

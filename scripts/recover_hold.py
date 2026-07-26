@@ -76,9 +76,20 @@ def _print_banner(lines: list[str]) -> None:
     print("=" * width)
 
 
-def cancel_hold(client: SrtClient, pnr: str) -> SrtCancelResult:
-    """Cancel ``pnr`` on an already-authenticated ``client``."""
-    result = client.cancel(pnr, consent=build_cancel_consent())
+def cancel_hold(
+    client: SrtClient, pnr: str, journey_count: str = "1"
+) -> SrtCancelResult:
+    """Cancel ``pnr`` on an already-authenticated ``client``.
+
+    ``journey_count`` is the hold's ``jrnyCnt``. It is "1" for an ordinary
+    reservation and "2" for a 환승 one, and this script is the last-resort path
+    that only has a PNR to work from -- so the value cannot be derived here and
+    has to be stated. Getting it wrong is how a hold survives a cancel that
+    looked like it worked.
+    """
+    result = client.cancel(
+        pnr, consent=build_cancel_consent(), journey_count=journey_count
+    )
     # cancel() returns a MutationPreview for a dry-run consent. build_cancel_
     # consent sets dry_run=False, so this cannot normally happen -- but if a
     # future edit broke that, a preview would look like success while releasing
@@ -172,6 +183,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--journey-count",
+        default="1",
+        help=(
+            "the hold's jrnyCnt: 1 for an ordinary reservation (default), "
+            "2 for a 환승 hold created by reserve_transfer. A transfer hold "
+            "cancelled with 1 may not actually be released"
+        ),
+    )
+    parser.add_argument(
         "--device-key",
         default=None,
         help="override SRT_DEVICE_KEY",
@@ -215,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
             else f"{login_id[0]}{'*' * (len(login_id) - 2)}{login_id[-1]}"
         )
         print(f"Logged in as {masked}")
-        result = cancel_hold(client, pnr)
+        result = cancel_hold(client, pnr, args.journey_count)
     except Exception as exc:  # noqa: BLE001 - the PNR must survive ANY failure
         _print_banner(
             [

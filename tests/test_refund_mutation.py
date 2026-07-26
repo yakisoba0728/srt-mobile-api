@@ -662,3 +662,84 @@ def test_the_refund_route_refuses_every_other_categorys_consent():
     for category in ("reserve", "cancel", "payment"):
         with pytest.raises(SrtProtocolError):
             assert_mutation_route_category(REFUND_ROUTE, category)
+
+
+# --- container priority (2026-07-27 audit, M-1) --------------------------------
+#
+# normalize_result_row tested `"dsOutput0" in out` -- key presence -- which made
+# the resultMap fallback its own docstring advertises unreachable. Two branches
+# were reproducible by execution, and neither had a test:
+#
+#   1. an empty/null dsOutput0 hid a real FAIL row in resultMap, so a refund
+#      whose refusal the server had stated came back as SrtProtocolError;
+#   2. a side-car dsOutput0 of [{"strResult": "SUCC"}] masked a resultMap FAIL,
+#      so a refund that did NOT happen read as one that did.
+#
+# The second is why the tie-break is fail-closed. The combination has not been
+# observed on this route, but this backend does ship contradictory containers in
+# one body: tests/fixtures/reservation_list_empty.json carries a SUCC resultMap
+# beside a FAIL rsMap.
+
+
+def test_empty_ds_output_falls_back_to_the_result_map_reason():
+    parsed = parse_refund_response(
+        {
+            "outDataSets": {"dsOutput0": []},
+            "resultMap": [
+                {
+                    "strResult": "FAIL",
+                    "msgCd": "WRT999999",
+                    "msgTxt": "환불 불가",
+                }
+            ],
+        }
+    )
+    assert parsed.status == "FAIL"
+    assert parsed.message_code == "WRT999999"
+    assert parsed.succeeded is False
+
+
+def test_null_ds_output_falls_back_to_the_result_map_reason():
+    parsed = parse_refund_response(
+        {
+            "outDataSets": {"dsOutput0": None},
+            "resultMap": [
+                {"strResult": "FAIL", "msgCd": "WRT300005", "msgTxt": "실패"}
+            ],
+        }
+    )
+    assert parsed.status == "FAIL"
+    assert parsed.message_code == "WRT300005"
+
+
+def test_a_side_car_success_row_cannot_mask_a_declared_failure():
+    parsed = parse_refund_response(
+        {
+            "outDataSets": {"dsOutput0": [{"strResult": "SUCC"}]},
+            "resultMap": [
+                {"strResult": "FAIL", "msgCd": "WRT999999", "msgTxt": "환불 불가"}
+            ],
+        }
+    )
+    assert parsed.status == "FAIL", (
+        "a refund that did not happen must never read as one that did"
+    )
+    assert parsed.succeeded is False
+
+
+def test_ds_output_still_wins_when_it_carries_the_only_row():
+    parsed = parse_refund_response(
+        {"outDataSets": {"dsOutput0": [{"strResult": "SUCC", "msgCd": "IRT200277"}]}}
+    )
+    assert parsed.status == "SUCC"
+    assert parsed.message_code == "IRT200277"
+
+
+def test_agreeing_containers_are_not_treated_as_a_conflict():
+    parsed = parse_refund_response(
+        {
+            "outDataSets": {"dsOutput0": [{"strResult": "SUCC", "msgCd": "IRT200277"}]},
+            "resultMap": [{"strResult": "SUCC", "msgCd": "IRT200277"}],
+        }
+    )
+    assert parsed.status == "SUCC"
