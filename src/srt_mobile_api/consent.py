@@ -10,12 +10,14 @@ The safety posture mirrors the KORAIL port:
   per-category ``allow_*`` flag defaults to ``False``.
 * ``dry_run`` defaults to ``True``: a mutation call builds and validates its
   request, then returns a :class:`MutationPreview` **without sending**.
-* ``fake_card_only`` defaults to ``True`` and ``real_card_acknowledged``
-  defaults to ``False``, so a payment preview can only ever carry a
-  non-chargeable test card. A real, chargeable card requires the caller to
-  invert BOTH flags explicitly (``fake_card_only=False,
-  real_card_acknowledged=True``); setting neither, or setting both, is refused
-  at the transmit gate.
+* ``fake_card_only`` / ``real_card_acknowledged`` are a CLAIM about which kind
+  of card is being sent, not a restriction on it. Exactly one must be set at
+  the transmit gate; neither and both are refused. Nothing inspects the PAN --
+  this library deliberately never tells a caller whether a card number is real
+  (see ``models.py``) -- so ``fake_card_only=True`` records an assertion rather
+  than enforcing one. What stands between a default consent and a real charge
+  is ``allow_payment=True`` plus ``dry_run=False``, both of which the caller
+  must set deliberately.
 * :func:`require_mutation_consent` denies by default, raising
   :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` before any request
   is built unless the caller has explicitly opted into the exact category.
@@ -59,20 +61,30 @@ class MutationConsent:
     Each ``allow_*`` flag is an independent opt-in for exactly one category and
     defaults to ``False``; a consent grants only what is named explicitly.
     ``dry_run`` (default ``True``) makes a mutation call build-but-never-send,
-    returning a :class:`MutationPreview`. ``fake_card_only`` (default ``True``)
-    keeps any payment path restricted to a non-chargeable test card.
+    returning a :class:`MutationPreview`.
 
-    ``real_card_acknowledged`` (default ``False``) is the single, explicit
-    acknowledgement that a REAL, CHARGEABLE card number will be transmitted in
-    the clear and that money will actually move. It is purely ADDITIVE: because
-    it defaults to ``False``, every consent written before it existed means
-    exactly what it meant before, and the default posture is still
-    fake-card-only. A real charge therefore needs both halves stated
-    deliberately — ``fake_card_only=False`` (this is not a test card) and
-    ``real_card_acknowledged=True`` (yes, charge it). The two are mutually
-    exclusive claims: a consent that sets both is a caller bug and is refused
-    rather than resolved in either direction, because an ambiguous consent is
-    exactly the state a payment must never be sent on.
+    ``fake_card_only`` (default ``True``) and ``real_card_acknowledged``
+    (default ``False``) state WHICH KIND of card the caller believes it is
+    sending. They are mutually exclusive claims, and the transmit gate requires
+    exactly one: both set is a caller bug and is refused rather than resolved
+    in either direction, and neither set is refused too, because an unstated
+    card kind is exactly the state a payment must not be sent on.
+
+    .. warning::
+       These flags do not restrict anything. No code inspects the PAN, by
+       design — see :class:`SrtPaymentCard`, which says outright that this
+       library must never be the thing that tells a caller whether a card
+       number is real. ``fake_card_only=True`` therefore records an assertion;
+       it does not verify one. A default consent whose ``allow_payment`` and
+       ``dry_run`` have been set to ``True``/``False`` WILL transmit whatever
+       PAN it was given, including a real one. The two flags that actually gate
+       a charge are ``allow_payment`` and ``dry_run``.
+
+       This paragraph used to claim a real charge required inverting both card
+       flags. It never did; the 2026-07-27 audit reproduced all four
+       combinations and found ``(fake_card_only=True,
+       real_card_acknowledged=False)`` transmits. The gate was correct and the
+       description was not.
 
     Setting it is NOT what enables a payment. Live enablement is
     :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`'s job and
