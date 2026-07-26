@@ -1100,3 +1100,32 @@ grades in `TRANSFER_SLOT2_FIELD_EVIDENCE` can now be read as live-accepted
 rather than inferred, though acceptance of a form is weaker evidence than
 seeing the app send it: the server may simply ignore a field it does not need.
 
+## 예약대기 — still no eligible train (2026-07-26, second sweep)
+
+Ten live searches now, spanning 20260727 to 20260817 across 수서→부산,
+수서→목포, 수서→동대구 and 부산→수서, including sold-out holiday departures.
+**Not one standby-eligible row.** The code path stays offline-tested only.
+
+The sweep did map the wait vocabulary, which is worth keeping:
+
+| `rsvWaitPsbCd` | `rsvWaitPsbCdNm` | `gnrmRsvPsbImg` | meaning |
+|---|---|---|---|
+| `-2` | `-` | `grd_WF_Ok01.png` | seats available |
+| `-1` | `-` | `grd_WF_Soldout.png` | sold out, standby not offered |
+| `' 0'` | `매진` | `grd_WF_Soldout.png` | sold out, zero standby slots |
+
+Every sold-out SRT departure observed carried `' 0'` or `-1`. For contrast,
+korail offered standby on a comparable sold-out route the same day, with its
+own flag at `" 9"` — so the difference is the operator's, not ours.
+
+Note the values are space-padded to width two, as korail's are, and that our
+implementation deliberately keys off `gnrmRsvPsbImg` rather than this column,
+because that is what the app reads. The column is a useful cross-signal, not
+the decision.
+
+**What would settle it:** a departure where SRT actually opens 예약대기. On
+this evidence that may be rare or currently disabled; it is not something to
+force. Re-run the sweep near a peak booking window rather than probing
+repeatedly — ten searches in a session is already close to what this project
+considers polite.
+
