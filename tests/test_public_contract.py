@@ -17,6 +17,11 @@ def test_client_public_method_set_is_stable():
         "close",
         "get_booking_page",
         "get_date_selector",
+        # 할인쿠폰조회/등록, read half only. The page is also the coupon
+        # REGISTRATION form; registering posts to a different route that is in
+        # neither allowlist and would need a fifth consent category, so no
+        # method for it exists here and none should appear in this set.
+        "get_discount_coupons",
         "get_fare",
         "get_main",
         "get_mutual_verification",

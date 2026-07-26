@@ -25,6 +25,8 @@ from .errors import (
     classify_app_error,
 )
 from .models import (
+    DiscountCoupon,
+    DiscountCouponList,
     FareItem,
     FarePage,
     HtmlPage,
@@ -63,6 +65,7 @@ from .models import (
 from .parsers import (
     pair_transfer_itineraries,
     parse_card_payment_response,
+    parse_discount_coupon_page,
     parse_refund_response,
     parse_refund_ticket_info_response,
     parse_reservation_attempt_response,
@@ -95,6 +98,8 @@ __all__ = [
     "SrtSessionExpiredError",
     "SrtTransportError",
     "classify_app_error",
+    "DiscountCoupon",
+    "DiscountCouponList",
     "FareItem",
     "FarePage",
     "HtmlPage",
@@ -104,6 +109,7 @@ __all__ = [
     "PassengerCounts",
     "pair_transfer_itineraries",
     "parse_card_payment_response",
+    "parse_discount_coupon_page",
     "parse_refund_response",
     "parse_refund_ticket_info_response",
     "parse_reservation_attempt_response",

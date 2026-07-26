@@ -70,7 +70,7 @@ reversal, verified as one round trip so nothing could be stranded paid. Adding a
 is the only thing membership in that set has ever meant. The retained APK
 specification and smoke tooling remain the evidence context for that package.
 
-The reviewed safety boundary contains 23 routes on the read side, plus 4
+The reviewed safety boundary contains 24 routes on the read side, plus 4
 mutation routes, one per consent category. It was 5 until 2026-07-26: the 단체
 reservation endpoint `arc/selectListArc06014_n.do` was **unregistered** when
 group booking was removed, because a route no client method can reach must not
@@ -87,9 +87,9 @@ reservation variants (standby, round trip), the 환승 (transfer)
 search and reservation, the 좌석배치도 (seat grid) read and the 좌석지정
 (seat-designated) reservation
 landed — and after 단체 (group) booking was removed again, and after the
-할인 (discount) code tables —
+할인 (discount) code tables and the 할인쿠폰 read —
 the current offline suite at HEAD is
-`1471 passed, 1 deselected`. The deselected case is the
+`1485 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -925,6 +925,43 @@ under three, message `rsv071` — and `YOUTH_PASSENGER_TYPE_CODE` records
 공공할인 `04` (청소년). It is recorded and deliberately **not** wired into
 `PassengerCounts`; see "공공할인 is a passenger vocabulary, not just a price"
 in `docs/IMPLEMENTATION_PROGRESS.md`.
+
+### 할인쿠폰 (discount coupons) — live-verified empty, 2026-07-26
+
+`SrtClient.get_discount_coupons() -> DiscountCouponList`, one parameterless
+`GET /apa/selectListApa03020_n.do`.
+
+**The route is 0-hit in the v2.0.41 bundle**, which contains no `/apa/` route
+at all. It was found by reading a page this client already fetches: SRT
+server-renders its MY SRT menu into every authenticated page, and that menu is
+where `할인쿠폰조회/등록` names the route as
+`pageMove('/apa/selectListApa03020_n.do')` — with `pageMove` being
+`window.location = url`, so a plain GET. Same technique as the seat grid,
+pointed at a menu instead of a form.
+
+**Live-verified for an account holding no coupons**: 77,056 bytes,
+`ul.coupList` present and empty, `보유한 쿠폰이 없습니다.` A POPULATED list has not
+been read here, and `DiscountCoupon`'s docstring says exactly what its six field
+names rest on — the page's own commented-out designer template — and why every
+value stays display text rather than a parsed number.
+
+**That template is also why this parser is not a regex.** The live page ships a
+two-coupon template, commented out, *inside* `ul.coupList`, with plausible
+numbers and rates. `html.parser` hands a comment to `handle_comment` as one
+opaque string and never parses markup inside it, so the template cannot become
+coupons; a regex over the same bytes would have invented two for an account that
+holds none. The fixture keeps the template verbatim so the property is tested.
+
+**"You hold none" and "we did not understand this page" are kept apart.** The
+parser refuses a page with no `ul.coupList` (not the coupon page), a list that
+neither lists coupons nor carries the marker, and a page that does both.
+
+**Registering a coupon is not implemented and is not reachable.** The same page
+carries a `dscp_no`/`dscp_pwd` form, but its submit is a POST to a *different*
+route (`/arb/selectListArb02A01_n.do`) which is in neither allowlist and would
+need a fifth entry in `SRT_LIVE_MUTATION_CATEGORIES` — pinned to four by its own
+canary. Only `GET` is registered for the coupon path, so a coupon number and its
+password cannot travel there under a read either.
 
 ### Mutual verification
 

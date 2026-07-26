@@ -1,0 +1,72 @@
+<!--
+  SYNTHETIC, and labelled so because the difference matters here.
+
+  Unlike its sibling discount_coupons_empty.html, this is NOT a redaction of a
+  real response: the account this project tests with holds no coupons, so no
+  populated 할인쿠폰 page has ever been read. What this reproduces is the
+  populated shape the LIVE page itself describes -- the commented-out designer
+  template that ships inside ul.coupList on the real page, uncommented, with
+  the numbers replaced.
+
+  So this fixture pins THIS LIBRARY'S contract for a populated list, not the
+  server's. If a real populated page is ever read and the spans are named
+  differently, this fixture is what should change, and the change is a one-line
+  edit to parsers._COUPON_SPAN_FIELDS -- not a redesign.
+
+  The 보유한 쿠폰이 없습니다. panel is absent, as it must be: the parser refuses a
+  page that both lists coupons and says it holds none.
+-->
+<div data-role="page" class="jqm-demos" id="page">
+	<div data-role="header" data-add-back-btn="true" class="type2 ui-header ui-bar-inherit" role="banner">
+		<h1 class="ui-title" role="heading" aria-level="1">할인쿠폰조회/등록</h1>
+	</div>
+
+	<div role="main" class="ui-content" data-ajax="false">
+		<div class="ui-group">
+			<div class="boxType02 mt20">
+				<ul class="dotList01">
+					<li>운임할인 : 승차권금액 중 운임을 할인</li>
+					<li>특실할인 : 특실 예매시 특실요금 할인 </li>
+				</ul>
+			</div>
+		</div>
+
+		<div class="ui-group">
+			<ul class="coupList">
+				<li>
+					<div class="coup-box">
+						<div class="coup-box-left">
+							<span class="rate">30%</span>
+							<span class="boarding">탑승일기준</span>
+							<span class="date">2026.01.01 ~ 2026.12.31</span>
+						</div>
+						<div class="coup-box-right">
+							<span class="type"> 운임할인</span>
+							<span class="num">1000000001</span>
+							<span class="useCnt">이용가능 횟수 : 2</span>
+						</div>
+					</div>
+				</li>
+				<li>
+					<div class="coup-box">
+						<div class="coup-box-left">
+							<span class="rate">10%</span>
+							<span class="boarding">발권일기준</span>
+							<span class="date">2026.03.01 ~ 2026.06.30</span>
+						</div>
+						<div class="coup-box-right">
+							<span class="type"> 특실할인</span>
+							<span class="num">1000000002</span>
+							<span class="useCnt">이용가능 횟수 : 1</span>
+						</div>
+					</div>
+				</li>
+			</ul>
+		</div>
+
+		<form name="couponInfo" id="couponInfo">
+			<input type="number" id="c_txt" name="dscp_no" placeholder="할인쿠폰 번호" maxlength="10">
+			<input type="password" id="c_pw" name="dscp_pwd" placeholder="쿠폰 비밀번호" maxlength="4">
+		</form>
+	</div>
+</div>

@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **할인쿠폰 (discount coupon) READ — `get_discount_coupons()`, live-verified
+  empty 2026-07-26.** One parameterless `GET /apa/selectListApa03020_n.do`
+  returning `DiscountCouponList` of `DiscountCoupon`, parsed by
+  `parse_discount_coupon_page`. `READ_ONLY_ROUTES` 23 → 24.
+  **The route is 0-hit in the v2.0.41 bundle**, which contains no `/apa/` route
+  at all. It was found by reading a page this client already fetches: the MY SRT
+  menu is server-rendered into every authenticated page and names it as
+  `pageMove('/apa/selectListApa03020_n.do')`, with `pageMove` being
+  `window.location = url`. The seat-grid technique, pointed at a menu.
+  **Live-verified for an account holding nothing**: 77,056 bytes, `ul.coupList`
+  present and empty, "보유한 쿠폰이 없습니다." The POPULATED row shape is NOT
+  verified and `DiscountCoupon`'s docstring says so; its six field names come
+  from the page's own commented-out designer template, and every value stays
+  display text rather than a parsed number, because turning "23%" into a number
+  would be inventing structure on a shape nobody here has seen the server
+  produce.
+  **That template is why this is a parser and not a regex.** The live page ships
+  a two-coupon template, commented out, INSIDE `ul.coupList`, with plausible
+  numbers. `html.parser` never parses markup inside a comment, so it cannot
+  become coupons; a regex would have produced two for an empty account. The
+  fixture keeps it verbatim and a test pins the property.
+  **"You hold none" and "we did not understand this page" cannot look the
+  same**: no `ul.coupList` → refused; no coupons and no marker → refused;
+  coupons AND the marker → refused.
+  **Registration is NOT implemented and NOT reachable.** The same page carries a
+  `dscp_no`/`dscp_pwd` form; its submit is a POST to a different route
+  (`/arb/selectListArb02A01_n.do`) which is in neither allowlist, is
+  uncategorised, and would need a fifth `SRT_LIVE_MUTATION_CATEGORIES` entry —
+  pinned to four. Only GET is registered for the coupon path, so a coupon number
+  and password cannot travel there under a read either. Tests pin all of it.
+  Offline gate: `1485 passed, 1 deselected` (was `1471`).
+
 - **할인 (discount) code tables — `srt_mobile_api.discounts`.** Two tables from
   two different kinds of evidence, and the difference is the point.
   **`DISCOUNT_KIND_NAMES_BY_CODE`** is a direct copy of the `dcntKndCd` run in

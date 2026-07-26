@@ -59,6 +59,24 @@ SEAT_PAGE_FIXED_VALUES = {
 # nothing. Its exact field contract is enforced below, so this path cannot
 # become a general-purpose POST.
 SEAT_GRID_PATH = "/arc/selectListArc02011_n.do"
+# 할인쿠폰조회/등록. Reached by the app's own MY SRT menu as
+# pageMove('/apa/selectListApa03020_n.do'), and pageMove is
+# `window.location = url` -- a plain GET with no parameters. Live-read
+# 2026-07-26 (77,056 bytes, "보유한 쿠폰이 없습니다.").
+#
+# 0-hit in the v2.0.41 offline bundle, which knows no /apa/ route at all; the
+# menu that names it is server-rendered into every authenticated page, which is
+# why fetching a page we already read found a route static analysis could not.
+#
+# Registered as a READ and as GET ONLY, and the distinction is load-bearing
+# rather than stylistic: this page is BOTH a coupon list and a coupon
+# REGISTRATION form. The registration is not a POST to this path -- the page's
+# own couponReg() posts {dscp_no, dscp_pwd} to /arb/selectListArb02A01_n.do --
+# so refusing everything but GET here is what keeps a coupon number and its
+# password from ever travelling under a read. That other route is deliberately
+# absent from BOTH allowlists in this module: registering a coupon changes
+# account state, and it belongs to no member of SRT_LIVE_MUTATION_CATEGORIES.
+COUPON_LIST_PATH = "/apa/selectListApa03020_n.do"
 SEAT_GRID_FIELDS = frozenset(
     {
         "trnGpCd",
@@ -176,6 +194,11 @@ READ_ONLY_ROUTES = frozenset(
         ReadOnlyRoute("POST", "app", SEAT_PAGE_PATH),
         # 좌석배치도. The seat page's follow-up read, live-confirmed 2026-07-26.
         ReadOnlyRoute("POST", "app", SEAT_GRID_PATH),
+        # 할인쿠폰조회/등록. GET, and only GET: the same page carries a
+        # registration form whose submit goes to a DIFFERENT route
+        # (POST /arb/selectListArb02A01_n.do), which is a mutation and is not
+        # registered anywhere in this module. See COUPON_LIST_PATH.
+        ReadOnlyRoute("GET", "app", COUPON_LIST_PATH),
         ReadOnlyRoute("GET", "netfunnel", "/ts.wseq"),
     }
 )

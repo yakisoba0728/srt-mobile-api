@@ -1,0 +1,112 @@
+<!--
+  REDACTED reproduction of a REAL response, live-read 2026-07-26 from
+  GET /apa/selectListApa03020_n.do (할인쿠폰조회/등록) for an account holding no
+  coupons. The live body was 77,056 bytes, almost all of it the shared MY SRT
+  menu and footer; this keeps the content region verbatim and drops the chrome.
+
+  Two things it demonstrates that no synthetic page would:
+
+    * the list CONTAINER (ul.coupList) is rendered even when the account holds
+      nothing, which is why the parser uses it as the page's identity marker
+      rather than using the presence of a coupon;
+    * a commented-out two-coupon designer TEMPLATE ships inside that same
+      container, on the live page, complete with plausible numbers and rates.
+      It is reproduced here verbatim, because a parser that turned it into two
+      coupons would look correct on every synthetic fixture and be wrong on the
+      real page. html.parser hands a comment to handle_comment as one opaque
+      string and never parses markup inside it.
+
+  The registration form is kept because it is part of this page and the parser
+  must ignore it: its submit goes to POST /arb/selectListArb02A01_n.do, a
+  mutation this library does not implement.
+-->
+<div data-role="page" class="jqm-demos" id="page">
+	<div data-role="header" data-add-back-btn="true" class="type2 ui-header ui-bar-inherit" role="banner">
+		<a href="#leftpanel3" class="ui-btn-left ui-btn menu" data-role="button" role="button">메뉴</a>
+		<h1 class="ui-title" role="heading" aria-level="1">할인쿠폰조회/등록</h1>
+	</div>
+
+	<div role="main" class="ui-content" data-ajax="false" style="overflow-y:hidden;">
+		<div style="height:calc(100% - 250px); overflow-y:auto;">
+			<!-- information -->
+			<div class="ui-group">
+				<div class="boxType02 mt20">
+					<ul class="dotList01">
+						<li>운임할인 : 승차권금액 중 운임을 할인</li>
+						<li>특실할인 : 특실 예매시 특실요금 할인 </li>
+					</ul>
+				</div>
+			</div>
+			<!--// information -->
+
+			<!-- 쿠폰이 없을 시 -->
+
+				<div class="boxType03 mt10 ac p20">보유한 쿠폰이 없습니다.</div>
+
+
+			<!-- 쿠폰이 있을 시 -->
+
+			<!-- Coupon List -->
+			<div class="ui-group">
+				<ul class="coupList">
+				<!--
+					<li>
+						<div class="coup-box">
+							<div class="coup-box-left">
+								<span class="rate">23%</span>
+								<span class="boarding">탑승일기준</span>
+								<span class="date">2020.07.07 ~ 2021.07.07</span>
+							</div>
+							<div class="coup-box-right">
+								<span class="type"> 운임할인</span>
+								<span class="num">5503900624</span>
+								<span class="useCnt">이용가능 횟수 : 1</span>
+							</div>
+						</div>
+					</li>
+					<li>
+						<div class="coup-box">
+							<div class="coup-box-left">
+								<span class="rate">15%</span>
+								<span class="boarding">탑승일기준</span>
+								<span class="date">2020.07.07 ~ 2021.07.07</span>
+							</div>
+							<div class="coup-box-right">
+								<span class="type"> 운임할인</span>
+								<span class="num">5503900624</span>
+								<span class="useCnt">이용가능 횟수 : 1</span>
+							</div>
+						</div>
+					</li>
+				-->
+
+
+
+
+				</ul>
+			</div>
+			<!--// Coupon List -->
+		</div>
+
+		<!--할인쿠폰등록-->
+		<form name="couponInfo" id="couponInfo">
+		<div class="ui-group bor-top">
+			<ul class="inputList2 mt10 h100">
+				<li>
+					<label for="">할인쿠폰등록</label>
+					<div class="row">
+						<div class="ui-input-text ui-body-inherit ui-corner-all ui-shadow-inset"><input type="number" id="c_txt" name="dscp_no" placeholder="할인쿠폰 번호" maxlength="10"></div>
+					</div>
+					<div class="row mt10">
+						<div class="ui-input-text ui-body-inherit ui-corner-all ui-shadow-inset"><input type="password" id="c_pw"  name="dscp_pwd" placeholder="쿠폰 비밀번호" maxlength="4"></div>
+					</div>
+				</li>
+			</ul>
+		</div>
+		</form>
+		<!--//할인쿠폰등록-->
+		<div class="footerBtn relative mt50">
+			<a href="#" class="ui-btn ui-corner-all" data-mini="true" data-inline="true" onclick="javascript:couponReg()">등록하기</a>
+		</div>
+	</div>
+</div>

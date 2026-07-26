@@ -17,6 +17,8 @@ from .errors import (
     classify_app_error,
 )
 from .models import (
+    DiscountCoupon,
+    DiscountCouponList,
     FareItem,
     FarePage,
     HtmlPage,
@@ -521,6 +523,150 @@ def parse_seat_grid_response(html: str, *, car_number: str = "") -> SeatGrid:
         raw=html,
         car_number=car_number,
         seats=tuple(parser.seats),
+    )
+
+
+# The 할인쿠폰 page's own markup vocabulary, taken from the live page
+# (2026-07-26). `coupList` is the list CONTAINER and is rendered whether or not
+# the account holds anything, which is what makes it usable as the page's
+# identity marker; `coup-box` is one coupon.
+COUPON_LIST_CLASS = "coupList"
+_COUPON_BOX_CLASS = "coup-box"
+# Six spans, keyed by class. Read from the page's own commented-out template --
+# see models.DiscountCoupon for why that is the best evidence available and for
+# why every value stays display text.
+_COUPON_SPAN_FIELDS = {
+    "num": "coupon_number",
+    "type": "discount_kind",
+    "rate": "discount_rate",
+    "date": "validity",
+    "boarding": "basis",
+    "useCnt": "remaining_uses",
+}
+COUPON_EMPTY_MARKER = "보유한 쿠폰이 없습니다"
+
+
+class _DiscountCouponParser(HTMLParser):
+    """Every ``coup-box`` on the 할인쿠폰 page, plus whether the list exists at all.
+
+    **Markup inside HTML comments is not parsed as markup**, which is not an
+    incidental property here — it is the reason this parser is safe on the real
+    page. The live page ships a commented-out two-coupon designer template
+    directly inside ``ul.coupList``, complete with plausible numbers and rates.
+    ``HTMLParser`` hands a comment to ``handle_comment`` as one opaque string
+    and never calls ``handle_starttag`` for anything inside it, so the template
+    cannot become coupons. A regex over the same page would have invented two.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.has_coupon_list = False
+        self.coupons: list[DiscountCoupon] = []
+        self._in_box = False
+        self._fields: dict[str, str] = {}
+        self._span_field: str | None = None
+        self._span_parts: list[str] = []
+
+    def _flush(self) -> None:
+        if self._fields:
+            self.coupons.append(DiscountCoupon(**self._fields))
+        self._fields = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        name = tag.casefold()
+        values = {key.casefold(): value or "" for key, value in attrs}
+        classes = values.get("class", "").split()
+        if name == "ul" and COUPON_LIST_CLASS in classes:
+            self.has_coupon_list = True
+        if name == "div" and _COUPON_BOX_CLASS in classes:
+            # A new box ends the previous one without needing to match depth,
+            # which keeps this immune to the page's nested left/right halves.
+            self._flush()
+            self._in_box = True
+        elif self._in_box and name == "span":
+            self._span_field = next(
+                (
+                    _COUPON_SPAN_FIELDS[name_]
+                    for name_ in classes
+                    if name_ in _COUPON_SPAN_FIELDS
+                ),
+                None,
+            )
+            self._span_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._span_field is not None:
+            self._span_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        name = tag.casefold()
+        if name == "span" and self._span_field is not None:
+            self._fields[self._span_field] = " ".join("".join(self._span_parts).split())
+            self._span_field = None
+        elif name == "ul" and self._in_box:
+            self._flush()
+            self._in_box = False
+
+    def close(self) -> None:
+        super().close()
+        self._flush()
+
+
+def parse_discount_coupon_page(html: str) -> DiscountCouponList:
+    """Parse the 할인쿠폰조회/등록 page ``/apa/selectListApa03020_n.do`` returns.
+
+    **The EMPTY state is live-verified** (2026-07-26, 77,056 bytes): an account
+    holding nothing gets ``ul.coupList`` with no boxes in it and a separate
+    ``보유한 쿠폰이 없습니다.`` panel. The POPULATED state is not verified here and
+    the docstring on :class:`~srt_mobile_api.models.DiscountCoupon` says exactly
+    what its field names rest on instead.
+
+    **"You hold none" and "we did not understand this page" are kept apart**, by
+    requiring the page to say one of the two things rather than inferring
+    emptiness from silence:
+
+    * no ``ul.coupList`` at all → :class:`SrtProtocolError`. This is not the
+      coupon page.
+    * no coupons AND no marker → :class:`SrtProtocolError`. A coupon list that
+      neither lists nor denies is a shape this parser has not seen.
+    * coupons AND the marker → :class:`SrtProtocolError`. A page cannot both
+      hold coupons and say it holds none; picking one would be guessing which
+      half of a contradiction to believe.
+
+    The registration half of this page is NOT touched here. The page carries a
+    ``dscp_no``/``dscp_pwd`` form, its submit is a POST to a different route
+    (``/arb/selectListArb02A01_n.do``) that this library does not implement, and
+    nothing in this parser reads those inputs.
+    """
+    page = parse_html_page(
+        html,
+        context="discount coupon page",
+        require_authenticated=True,
+    )
+    parser = _DiscountCouponParser()
+    parser.feed(html)
+    parser.close()
+    if not parser.has_coupon_list:
+        raise SrtProtocolError(
+            "SRT discount coupon page did not contain the coupon list",
+            raw=html,
+        )
+    says_empty = COUPON_EMPTY_MARKER in page.text
+    if parser.coupons and says_empty:
+        raise SrtProtocolError(
+            "SRT discount coupon page both listed coupons and said it held none",
+            raw=html,
+        )
+    if not parser.coupons and not says_empty:
+        raise SrtProtocolError(
+            "SRT discount coupon page listed no coupons and did not say it held "
+            "none",
+            raw=html,
+        )
+    return DiscountCouponList(
+        text=page.text,
+        raw=html,
+        coupons=tuple(parser.coupons),
     )
 
 

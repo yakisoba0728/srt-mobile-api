@@ -24,6 +24,7 @@ from .errors import (
 )
 from .http import SrtHttpClient
 from .models import (
+    DiscountCouponList,
     FarePage,
     HtmlPage,
     MutualVerificationResult,
@@ -63,6 +64,7 @@ from .netfunnel import (
 )
 from .parsers import (
     parse_card_payment_response,
+    parse_discount_coupon_page,
     parse_fare_page,
     parse_html_page,
     parse_mutual_verification_response,
@@ -102,6 +104,7 @@ from .payloads import (
     transfer_reservation_payload,
     unpaid_reservation_cancel_payload,
 )
+from .safety import COUPON_LIST_PATH
 from .session import SrtSessionClient
 
 
@@ -184,6 +187,45 @@ class SrtClient:
         with self._session_guard():
             raw = self.http.get_text("/atc/selectListAtc14017_n.do", params={"pageNo": str(page_no)})
             return parse_html_page(raw, context="ticket list", require_authenticated=True)
+
+    def get_discount_coupons(self) -> DiscountCouponList:
+        """Read the account's 할인쿠폰 (discount coupons).
+
+        ``GET /apa/selectListApa03020_n.do``, no parameters — the app reaches it
+        from its own MY SRT menu as
+        ``pageMove('/apa/selectListApa03020_n.do')``, and ``pageMove`` is
+        ``window.location = url``.
+
+        **The route is 0-hit in the v2.0.41 offline bundle**, which contains no
+        ``/apa/`` route at all. It was found by reading a page this client
+        already fetches: the MY SRT menu is server-rendered into every
+        authenticated page, so ``/ara/ara0101v.do`` names it. That is the same
+        technique that opened the seat grid, applied to a menu instead of a
+        form.
+
+        **Live-verified 2026-07-26 for an account holding no coupons**: 77,056
+        bytes, ``ul.coupList`` present and empty, "보유한 쿠폰이 없습니다." A
+        populated list has not been read here; see
+        :class:`~srt_mobile_api.models.DiscountCoupon` for exactly what its
+        field names rest on.
+
+        **This is a read, and only a read.** The page it returns is also the
+        coupon REGISTRATION form, and registering a coupon is a mutation that
+        this library does not implement: the registration posts
+        ``{dscp_no, dscp_pwd}`` to a different route
+        (``/arb/selectListArb02A01_n.do``) which is in neither allowlist, and it
+        would belong to no member of
+        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`. Only ``GET``
+        is registered for this path, so a coupon number and its password cannot
+        travel here under a read either.
+        """
+        with self._session_guard():
+            return parse_discount_coupon_page(
+                self.http.get_text(
+                    COUPON_LIST_PATH,
+                    referer=f"{self.config.base_url}/ara/ara0101v.do",
+                )
+            )
 
     def get_reservations(self, page_no: int = 0) -> SrtReservationListResult:
         """Read the account's 예약/발권 목록 as structured rows.

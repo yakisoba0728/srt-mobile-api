@@ -967,6 +967,60 @@ class SeatGrid(HtmlPage):
 
 
 @dataclass(frozen=True)
+class DiscountCoupon:
+    """One 할인쿠폰 held by the account, exactly as the page prints it.
+
+    **Every field is display text, not a parsed value**, and that is deliberate.
+    The EMPTY state of this page is live-verified (2026-07-26: "보유한 쿠폰이
+    없습니다."); the populated ROW shape is not, because the account this project
+    tests with holds no coupons. What the field names come from is the coupon
+    page's own commented-out designer template, which is the nearest thing to a
+    populated row that exists anywhere we can read::
+
+        <span class="rate">23%</span>
+        <span class="boarding">탑승일기준</span>
+        <span class="date">2020.07.07 ~ 2021.07.07</span>
+        <span class="type"> 운임할인</span>
+        <span class="num">5503900624</span>
+        <span class="useCnt">이용가능 횟수 : 1</span>
+
+    Turning "23%" into a number or "이용가능 횟수 : 1" into an integer would be
+    inventing structure on top of a shape nobody here has seen the server
+    produce. When a populated page is finally read, deriving those becomes a
+    one-line change; asserting them now would be a guess wearing a type.
+
+    :attr:`discount_kind` is the page's own two-way distinction, stated at the
+    top of the page: 운임할인 discounts the 운임 portion of the fare, 특실할인
+    discounts the 특실 supplement.
+    """
+
+    coupon_number: str = ""
+    discount_kind: str = ""
+    discount_rate: str = ""
+    validity: str = ""
+    basis: str = ""
+    remaining_uses: str = ""
+
+
+@dataclass(frozen=True)
+class DiscountCouponList(HtmlPage):
+    """The 할인쿠폰조회/등록 page, read as rows.
+
+    An account with no coupons yields an EMPTY :attr:`coupons` — a real answer,
+    not a parse failure. A page that carries neither a coupon nor the page's own
+    "보유한 쿠폰이 없습니다." marker is refused by the parser instead of arriving
+    here as an empty list, so "you hold none" and "we did not understand this
+    page" can never look the same.
+    """
+
+    coupons: tuple[DiscountCoupon, ...] = ()
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.coupons
+
+
+@dataclass(frozen=True)
 class Notice:
     is_main: str
     page_id: str
