@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import re
 import time
 from collections.abc import Callable
@@ -1147,7 +1149,15 @@ class SrtClient:
             # PNR-bearing response rather than letting a strict-validation
             # failure orphan it, and refuses to manufacture one when the server
             # declared a failure.
-            return parse_reservation_hold_response(response)
+            hold = parse_reservation_hold_response(response)
+            # The form knows how many 여정 it just booked; the response does
+            # not say, and the hold is what cancel() will be handed later.
+            sent_journey_count = form.get("jrnyCnt", "1")
+            if sent_journey_count != hold.journey_count:
+                hold = dataclasses.replace(
+                    hold, journey_count=sent_journey_count
+                )
+            return hold
 
     def reserve(
         self,

@@ -220,6 +220,14 @@ _STANDBY_ROW_IMAGES = frozenset(
 # docs/IMPLEMENTATION_PROGRESS.md "단체 (group) booking: removed"), and this
 # floor survived that removal because the group SEARCH is still offered and the
 # app enforces the same number on it.
+#
+# The CEILING on personal searches is deliberately not enforced here, and the
+# asymmetry is worth stating because the paragraph above calls the boundary real
+# in both directions. ara0101v.js:562-567 does refuse a non-단체 search of 10 or
+# more. This builder cannot: search_page_payload hydrates the group flow too, so
+# a cap applied there would refuse the very searches GROUP_MIN_PARTY_SIZE exists
+# to allow. A caller who asks for a personal search of 10+ gets whatever the
+# server makes of it -- untested, since the app never sends one.
 GROUP_MIN_PARTY_SIZE = 10
 
 # WINDOW_SEAT mapping (srtgo srt.py:86): None -> "000" (no preference),
@@ -1941,11 +1949,17 @@ def unpaid_reservation_cancel_payload(
     :func:`~srt_mobile_api.parsers.parse_reservation_attempt_response`), so
     :class:`SrtReservationHold` exposes ``total_seat_count`` and nothing else
     countable; deriving ``jrnyCnt`` from it would be a category error (two seats
-    on one journey is still one journey). Defaulting to ``"1"`` is also what
-    every hold this library can create actually is: ``personal_reservation_payload``
-    only ever sends ``jrnyCnt="1"``. ``journey_count`` remains as the override
-    for the day a live SRT response does carry one — it is normalized
-    numerically and never refused (see :func:`_cancel_journey_count`).
+    on one journey is still one journey).
+
+    It used to say here that ``"1"`` is what every hold this library can create
+    actually is. That was false: ``transfer_reservation_payload`` sends
+    ``jrnyCnt="2"`` and ``reserve_transfer`` returns a hold made from it. The
+    hold now RECORDS the count it was created with
+    (:attr:`SrtReservationHold.journey_count`), so passing the hold is enough
+    and an explicit ``journey_count`` is only needed when cancelling by bare
+    PNR. It is still normalized numerically and never refused (see
+    :func:`_cancel_journey_count`), because a cancel form that cannot be built
+    is a hold that cannot be released.
     """
     # isinstance, not `type(...) is`: a SrtReservationHold subclass is still a
     # hold and a str subclass is still a PNR, and refusing one over its exact
@@ -1953,6 +1967,10 @@ def unpaid_reservation_cancel_payload(
     # int PNR stays refused, though — see _foreign_reservation_message.
     if isinstance(reservation, SrtReservationHold):
         pnr_no = reservation.pnr_no
+        # The hold knows what it was created as. An explicit journey_count still
+        # wins, so a caller who has better information is never overridden.
+        if journey_count is None:
+            journey_count = reservation.journey_count
     elif isinstance(reservation, str):
         pnr_no = reservation
     else:

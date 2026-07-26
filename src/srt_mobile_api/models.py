@@ -216,6 +216,17 @@ class TrainSearchQuery:
     def __post_init__(self) -> None:
         if not self.departure_station_code.strip() or not self.arrival_station_code.strip():
             raise ValueError("departure and arrival station codes are required")
+        if (
+            self.departure_station_code.strip()
+            == self.arrival_station_code.strip()
+        ):
+            # ara0101v.js:570-574 alerts "출발역과 도착역이 같습니다." and returns
+            # without sending. What the server does with such a search is
+            # unknown precisely because the app never asks it.
+            raise ValueError(
+                "departure and arrival stations must differ; got "
+                f"{self.departure_station_code!r} for both"
+            )
         if len(self.departure_date) != 8 or not self.departure_date.isdigit():
             raise ValueError("departure_date must use YYYYMMDD")
         if len(self.departure_time) != 6 or not self.departure_time.isdigit():
@@ -600,6 +611,13 @@ class SrtReservationHold:
     pnr_no: str = field(repr=False)
     journey_list_key: str = field(default="", repr=False)
     total_seat_count: str = ""
+    #: ``jrnyCnt`` as this hold was actually created: ``"1"`` for a direct or
+    #: round-trip reservation, ``"2"`` for a 환승 one (ara0101v.js:302-303).
+    #: Recorded because cancelling needs it and nothing else in the chain
+    #: remembered it -- ``reserve_transfer`` really does create ``jrnyCnt="2"``
+    #: holds, so ``cancel()`` defaulting to ``"1"`` had no way to be right
+    #: except by the caller knowing to say so.
+    journey_count: str = "1"
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
