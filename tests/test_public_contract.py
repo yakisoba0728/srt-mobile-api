@@ -23,6 +23,7 @@ def test_client_public_method_set_is_stable():
         "get_notice_list",
         "get_typed_notice_list",
         "get_passenger_selector",
+        "get_refund_ticket_info",
         "get_reservations",
         "get_seat_page",
         "get_seat_option_selector",
@@ -38,6 +39,8 @@ def test_client_public_method_set_is_stable():
         # safety.SRT_LIVE_MUTATION_CATEGORIES, so this method can only ever
         # return a redacted MutationPreview.
         "pay_with_card",
+        # Same posture as pay_with_card: gated, previewable, untransmittable.
+        "refund",
         "reserve",
         "search_group_trains",
         "search_trains",

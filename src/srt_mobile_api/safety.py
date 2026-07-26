@@ -86,6 +86,30 @@ READ_ONLY_ROUTES = frozenset(
         # (ajax) are two different reads of one path; here we simply do not need
         # the HTML one, since get_ticket_list already reads the atc14017 page.
         ReadOnlyRoute("POST", "app", "/atc/selectListAtc14016_n.do"),
+        # 환불 1단계: 원승차권 정보 조회 (refund step 1). Registered as a READ, and
+        # that classification is an inference this comment states rather than
+        # hides. What supports it: the request carries NO body at all, the
+        # response is pure identity data (sale date / window / sequence /
+        # return password / purchaser), the reference implementation calls it
+        # `reserve_info` and uses it only to gather fields for the step-2 form,
+        # and the `getList` prefix is the app's read-shaped naming. What does
+        # NOT support it: nothing here can prove the server treats it as
+        # side-effect free, and the app's own naming is not decisive --
+        # /ard/selectListArd02045_n.do is a CANCEL despite the selectList
+        # prefix.
+        #
+        # It is also 0-hit across all 21,673 files of our v2.0.41 offline bundle
+        # (as is `Atc14087`; the nearest real routes are Atc14016/Atc14017), and
+        # it is single-sourced: ryanking13/SRT has no refund at all, so unlike
+        # the payment this is not even a claim two libraries make.
+        #
+        # Registering it does not put it in a refund's path by accident:
+        # SrtClient.refund takes an already-fetched SrtRefundTicketInfo and
+        # never calls this itself, precisely so that a refund -- which can never
+        # be transmitted -- cannot cause a live request as a side effect of
+        # being refused. Reaching this route requires calling
+        # get_refund_ticket_info deliberately.
+        ReadOnlyRoute("POST", "app", "/atc/getListAtc14087.do"),
         ReadOnlyRoute("GET", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10007_n.do"),
         ReadOnlyRoute("POST", "app", "/ara/selectListAra10130_n.do"),

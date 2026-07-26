@@ -4,6 +4,7 @@ from .models import (
     PassengerCounts,
     SeatType,
     SrtPaymentCard,
+    SrtRefundTicketInfo,
     SrtReservationHold,
     SrtReservationSummary,
     TrainSearchQuery,
@@ -1181,4 +1182,102 @@ def card_payment_payload(
         "pageNo": "-",
         "rowCnt": "-",
         "pageUrl": "",
+    }
+
+
+# --- Refund (환불) -------------------------------------------------------------
+
+# The cancellation-reason literal the refund form carries verbatim.
+REFUND_CANCEL_REASON = "승차권 환불로 취소"
+
+
+def refund_payload(info: SrtRefundTicketInfo) -> dict[str, str]:
+    """Build the refund (환불) form for an already-issued ticket — step 2 of 2.
+
+    Step 1 is :meth:`~srt_mobile_api.client.SrtClient.get_refund_ticket_info`,
+    which produces the ``info`` this consumes. The two are separate methods on
+    purpose; see that method for why they are not fused into one call.
+
+    **UNVERIFIED, and by a thinner margin than the payment.** The payment route
+    at least has one implementation copied into two libraries. This one exists
+    in exactly ONE: ryanking13/SRT has no refund at all — no ``reserve_info``,
+    no ``getListAtc14087``, no ``selectListAtc02063``, no ``tkRetPwd`` — and
+    srtgo added both steps from scratch four days after vendoring its SRT
+    support (2024-12-17, "FIX: SRT refund needs new API"). There is no upstream
+    to have agreed with it. ``Atc02063`` is 0-hit across all 21,673 files of our
+    v2.0.41 offline decompile; there is no ``Atc02*`` family in the bundle at
+    all.
+
+    **THE FIELD NAMES ARE DISPUTED, AND THIS LIBRARY HAS BEEN BURNED HERE
+    BEFORE.** Two of the seven are spelled differently by the only two sources
+    we have:
+
+    * ``tkRetPwd`` (srtgo's request field) against ``retPwd`` — the spelling our
+      OWN app uses at ``analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:645``.
+    * ``psgNm`` (srtgo) against ``buyPsNm`` — our app's spelling at the same
+      site, ``b.java:648``.
+
+    A CACHE FIELD NAME IS NOT AN API FIELD NAME, and here we can say exactly
+    what that b.java site is rather than guessing: it reads the SharedPreferences
+    key ``"ticketListOffline"``, base64-decodes it and parses it as JSON
+    (``b.java:613,624-632``), then copies keys out into a display model. It is
+    deserialisation of a LOCAL OFFLINE TICKET CACHE, not an outbound request. It
+    also spells the PNR ``pnrNo`` (camelCase) where srtgo's refund form says
+    ``pnr_no``, which is a third disagreement and one more reason not to read
+    the cache as an API schema.
+
+    So this is genuinely unresolved. We send srtgo's spelling, because srtgo's
+    is the only spelling attested by a live run of THIS endpoint, and the cache
+    is not evidence about this endpoint at all. The doubt is recorded rather
+    than resolved.
+
+    Why that caution is not theoretical: this project already shipped srtgo's
+    misspelling of a korail refund field — ``txtPrnNo`` for ``txtPnrNo`` — a
+    transposition that came from the same class of single-source trust. If this
+    route is ever exercised and rejected, the field names above are the first
+    place to look, and ``retPwd``/``buyPsNm``/``pnrNo`` are the first
+    alternatives to try.
+
+    Note also srtgo's own internal renaming, which is a hand-written fingerprint
+    rather than a server contract: step 1 returns ``ogtkRetPwd`` and ``buyPsNm``
+    while step 2 sends them as ``tkRetPwd`` and ``psgNm``, and the body mixes
+    snake_case (``pnr_no``, ``cnc_dmn_cont``) with camelCase (``saleDt``,
+    ``saleWctNo``, ``saleSqno``) in one dict.
+    """
+    if type(info) is not SrtRefundTicketInfo:
+        raise ValueError(
+            "refund requires an SrtRefundTicketInfo from get_refund_ticket_info"
+        )
+    if not isinstance(info.pnr_no, str) or not info.pnr_no.strip():
+        raise ValueError("refund requires a non-empty PNR")
+    # Every remaining field is required: each one is part of the ticket identity
+    # the server matches on, and a refund built from a partial identity is a
+    # request whose failure mode nobody here can predict. Refusing to build it
+    # costs nothing -- unlike the cancel form, a refund that cannot be built
+    # strands nothing.
+    missing = [
+        name
+        for name, value in (
+            ("saleDt", info.sale_date),
+            ("saleWctNo", info.sale_window_number),
+            ("saleSqno", info.sale_sequence_number),
+            ("tkRetPwd", info.return_password),
+            ("psgNm", info.buyer_name),
+        )
+        if not isinstance(value, str) or not value.strip()
+    ]
+    if missing:
+        raise ValueError(
+            "refund requires the complete step-1 ticket identity; missing: "
+            + ", ".join(missing)
+        )
+    return {
+        "pnr_no": info.pnr_no.strip(),
+        "cnc_dmn_cont": REFUND_CANCEL_REASON,
+        "saleDt": info.sale_date.strip(),
+        "saleWctNo": info.sale_window_number.strip(),
+        "saleSqno": info.sale_sequence_number.strip(),
+        # DISPUTED SPELLINGS -- see the docstring. srtgo's names, not our app's.
+        "tkRetPwd": info.return_password.strip(),
+        "psgNm": info.buyer_name.strip(),
     }

@@ -31,6 +31,8 @@ from .models import (
     SeatSelectionPage,
     SrtCancelResult,
     SrtPaymentResult,
+    SrtRefundResult,
+    SrtRefundTicketInfo,
     SrtReservationHold,
     SrtReservationListResult,
     SrtReservationSummary,
@@ -1168,6 +1170,59 @@ def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
     )
 
 
+def _parse_result_envelope(
+    data: dict[str, Any],
+    *,
+    context: str,
+    container_description: str = "resultMap",
+) -> tuple[str, str, str]:
+    """Read the shared SUCC/FAIL result envelope as ``(strResult, msgCd, msgTxt)``.
+
+    One implementation for the three mutation responses that share this
+    envelope — cancel, card payment and refund — rather than three near-copies
+    that drift apart. It deliberately routes through
+    :func:`normalize_result_row`, which accepts BOTH container spellings
+    (``outDataSets.dsOutput0`` first, ``resultMap`` as the fallback). That is
+    what lets the payment's odd ``dsOutput0`` envelope and the ordinary
+    ``resultMap`` ones share this code, and it means each parser tolerates the
+    other's container instead of hard-asserting a layout nobody has verified.
+
+    ``msgCd`` is optional throughout, matching the app's own habit of gating
+    purely on ``strResult``: refusing a response over a field nobody reads would
+    turn a real outcome into a parse error. Status POLARITY is deliberately NOT
+    decided here — each caller's result type does that, because a cancel and a
+    payment do not want the same answer to "is an unrecognised status a
+    success?".
+    """
+    if not isinstance(data, dict) or not data:
+        raise SrtProtocolError(
+            f"SRT {context} response must be a non-empty JSON object",
+            raw=data,
+        )
+    _validate_error_code_wrapper(data, context=context)
+    row = normalize_result_row(data)
+    if not row:
+        raise SrtProtocolError(
+            f"SRT {context} response must contain a {container_description} "
+            "result row",
+            raw=data,
+        )
+    status = row.get("strResult")
+    if not isinstance(status, str) or not status:
+        raise SrtProtocolError(
+            f"SRT {context} strResult must be a non-empty string",
+            raw=data,
+        )
+    code = row.get("msgCd", "")
+    message = row.get("msgTxt", "")
+    if not isinstance(code, str) or not isinstance(message, str):
+        raise SrtProtocolError(
+            f"SRT {context} msgCd and msgTxt must be strings",
+            raw=data,
+        )
+    return status, code, message
+
+
 def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
     """Parse the response of an unpaid-reservation cancel (예약취소).
 
@@ -1196,31 +1251,7 @@ def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
     cancel ``msgCd``; refusing a response over a field nobody reads would hide a
     real cancellation outcome.
     """
-    if not isinstance(data, dict) or not data:
-        raise SrtProtocolError(
-            "SRT cancel response must be a non-empty JSON object",
-            raw=data,
-        )
-    _validate_error_code_wrapper(data, context="cancel")
-    row = normalize_result_row(data)
-    if not row:
-        raise SrtProtocolError(
-            "SRT cancel response must contain a resultMap result row",
-            raw=data,
-        )
-    status = row.get("strResult")
-    if not isinstance(status, str) or not status:
-        raise SrtProtocolError(
-            "SRT cancel resultMap strResult must be a non-empty string",
-            raw=data,
-        )
-    code = row.get("msgCd", "")
-    message = row.get("msgTxt", "")
-    if not isinstance(code, str) or not isinstance(message, str):
-        raise SrtProtocolError(
-            "SRT cancel resultMap msgCd and msgTxt must be strings",
-            raw=data,
-        )
+    status, code, message = _parse_result_envelope(data, context="cancel")
     return SrtCancelResult(
         status=status,
         message_code=code,
@@ -1276,33 +1307,133 @@ def parse_card_payment_response(data: dict[str, Any]) -> SrtPaymentResult:
     reference implementation never reads would turn a real payment outcome into
     a parse error.
     """
+    status, code, message = _parse_result_envelope(
+        data,
+        context="card payment",
+        container_description="outDataSets.dsOutput0 (or resultMap)",
+    )
+    return SrtPaymentResult(
+        status=status,
+        message_code=code,
+        message=message,
+        raw=data,
+    )
+
+
+def parse_refund_ticket_info_response(
+    data: dict[str, Any],
+) -> SrtRefundTicketInfo:
+    """Parse refund step 1 — the issued ticket's identity.
+
+    **UNVERIFIED, and single-sourced.** ``/atc/getListAtc14087.do`` is 0-hit
+    across all 21,673 files of our v2.0.41 offline decompile (as is
+    ``Atc14087``; the nearest real routes are ``Atc14016`` and ``Atc14017``),
+    and unlike the card payment it is not even a claim two libraries make:
+    ryanking13/SRT has no refund at all, and srtgo added this route from
+    scratch. No response has ever been observed by this repository.
+
+    TWO SHAPE ODDITIES, both srtgo's and neither ours:
+
+    * the payload is at ``outDataSets.dsOutput1[0]`` — ``dsOutput1``, not the
+      ``dsOutput0`` every other ``outDataSets`` read in this library uses.
+    * success is the ``ErrorCode``/``ErrorMsg`` wrapper rather than
+      ``resultMap``, and the attested condition is STRICTER than this library's
+      usual one: ``ErrorCode == "0"`` **and** ``ErrorMsg == ""``, where
+      :func:`parse_mutual_verification_response` and
+      :meth:`~srt_mobile_api.http.SrtHttpClient.post_html_form` accept
+      ``ErrorCode`` in ``{"", "0"}`` and ignore the message.
+
+    The strict condition is implemented as documented rather than relaxed to
+    match the house style. On a route nobody has exercised, failing loudly on a
+    response we only half recognise is the cheap mistake — a refund that will
+    not build costs nothing, whereas proceeding from a misread identity is how
+    the wrong ticket gets refunded. Any deviation raises
+    :class:`~srt_mobile_api.errors.SrtAppError` carrying the server's own code
+    and message.
+    """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
-            "SRT card payment response must be a non-empty JSON object",
+            "SRT refund ticket info response must be a non-empty JSON object",
             raw=data,
         )
-    _validate_error_code_wrapper(data, context="card payment")
-    row = normalize_result_row(data)
-    if not row:
-        raise SrtProtocolError(
-            "SRT card payment response must contain an outDataSets.dsOutput0 "
-            "(or resultMap) result row",
-            raw=data,
-        )
-    status = row.get("strResult")
-    if not isinstance(status, str) or not status:
-        raise SrtProtocolError(
-            "SRT card payment strResult must be a non-empty string",
-            raw=data,
-        )
-    code = row.get("msgCd", "")
-    message = row.get("msgTxt", "")
+    code = data.get("ErrorCode")
+    message = data.get("ErrorMsg")
     if not isinstance(code, str) or not isinstance(message, str):
         raise SrtProtocolError(
-            "SRT card payment msgCd and msgTxt must be strings",
+            "SRT refund ticket info ErrorCode and ErrorMsg must be strings",
             raw=data,
         )
-    return SrtPaymentResult(
+    if code != "0" or message != "":
+        raise SrtAppError(
+            code,
+            message or "SRT refund ticket info request failed",
+            raw=data,
+        )
+    datasets = data.get("outDataSets")
+    if not isinstance(datasets, dict):
+        raise SrtProtocolError(
+            "SRT refund ticket info response missing outDataSets",
+            raw=data,
+        )
+    row = _first_row(datasets.get("dsOutput1"))
+    if not row:
+        raise SrtProtocolError(
+            "SRT refund ticket info response missing dsOutput1 payload",
+            raw=data,
+        )
+
+    def _text(name: str) -> str:
+        value = row.get(name, "")
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise SrtProtocolError(
+                f"SRT refund ticket info {name} must be a string",
+                raw=data,
+            )
+        return value
+
+    pnr_no = _text("pnrNo")
+    if not pnr_no.strip():
+        raise SrtProtocolError(
+            "SRT refund ticket info response carried no PNR",
+            raw=data,
+        )
+    return SrtRefundTicketInfo(
+        pnr_no=pnr_no,
+        sale_date=_text("ogtkSaleDt"),
+        sale_window_number=_text("ogtkSaleWctNo"),
+        sale_sequence_number=_text("ogtkSaleSqno"),
+        return_password=_text("ogtkRetPwd"),
+        buyer_name=_text("buyPsNm"),
+        raw=data,
+    )
+
+
+def parse_refund_response(data: dict[str, Any]) -> SrtRefundResult:
+    """Parse refund step 2 — the ordinary ``resultMap`` SUCC/FAIL envelope.
+
+    **NOTHING HAS EVER SEEN ONE.** No refund request has been sent from this
+    repository and none can be: ``refund`` is outside
+    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`.
+    ``/atc/selectListAtc02063_n.do`` is 0-hit across all 21,673 files of our
+    v2.0.41 offline decompile — the bundle has no ``Atc02*`` family at all — and
+    it is attested by exactly one reference implementation, with no upstream to
+    corroborate it. See :func:`~srt_mobile_api.payloads.refund_payload` for the
+    disputed field names on the request side.
+
+    Note the contrast worth keeping straight: this envelope is the ORDINARY
+    ``resultMap`` one, the same as cancel's, while the card payment on the very
+    same flow answers in ``outDataSets.dsOutput0``. Both go through
+    :func:`_parse_result_envelope`, which accepts either container, so neither
+    parser hard-asserts a layout nobody has verified.
+
+    A business failure is RETURNED, not raised, matching cancel: a caller asking
+    "was my ticket refunded?" must be able to read the answer without exception
+    handling.
+    """
+    status, code, message = _parse_result_envelope(data, context="refund")
+    return SrtRefundResult(
         status=status,
         message_code=code,
         message=message,

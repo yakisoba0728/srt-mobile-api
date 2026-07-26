@@ -34,6 +34,8 @@ from .models import (
     SrtCancelResult,
     SrtPaymentCard,
     SrtPaymentResult,
+    SrtRefundResult,
+    SrtRefundTicketInfo,
     SrtReservationHold,
     SrtReservationListResult,
     SrtReservationSummary,
@@ -60,6 +62,8 @@ from .parsers import (
     parse_html_page,
     parse_mutual_verification_response,
     parse_notice_list_response,
+    parse_refund_response,
+    parse_refund_ticket_info_response,
     parse_reservation_hold_response,
     parse_reservation_list_response,
     parse_search_has_following_page,
@@ -76,6 +80,7 @@ from .payloads import (
     group_search_ajax_payload,
     passenger_selector_payload,
     personal_reservation_payload,
+    refund_payload,
     reservation_list_payload,
     search_ajax_payload,
     search_continuation_payload,
@@ -972,3 +977,129 @@ class SrtClient:
                 category="payment",
             )
             return parse_card_payment_response(response)
+
+    def get_refund_ticket_info(self, pnr_no: str) -> SrtRefundTicketInfo:
+        """Read an issued ticket's refund identity — step 1 of 2 of a 환불.
+
+        POSTs ``/atc/getListAtc14087.do`` with **no body**, gated by a
+        ``Referer`` of ``<base_url>/common/ATC/ATC0201L/view.do?pnrNo=<PNR>``,
+        and returns the ``outDataSets.dsOutput1[0]`` payload as an
+        :class:`~srt_mobile_api.models.SrtRefundTicketInfo`. Feed that to
+        :meth:`refund`.
+
+        **THIS ONE CAN ACTUALLY TRANSMIT**, unlike :meth:`refund`, because it is
+        classified as a read and registered in
+        :data:`~srt_mobile_api.safety.READ_ONLY_ROUTES`. That classification is
+        an inference, not a proof — see the comment on the route there for what
+        supports it and what does not — and the route is 0-hit in our v2.0.41
+        bundle and attested by exactly one reference implementation. Calling
+        this is a deliberate act against an unverified endpoint; nothing in the
+        refund path calls it for you.
+
+        ``pnr_no`` is restricted to alphanumerics and hyphens. It is
+        interpolated into a URL, so anything else could smuggle extra query
+        parameters into the ``Referer`` this endpoint gates on.
+
+        One deviation from the reference implementation, deliberate: it sets the
+        ``Referer`` as a PERSISTENT session header and never removes it, so
+        every later request on that session keeps carrying a PNR. Here it is
+        passed per-request, like every other referer in this client.
+        """
+        if not isinstance(pnr_no, str) or not pnr_no.strip():
+            raise ValueError("refund ticket info requires a non-empty PNR")
+        pnr = pnr_no.strip()
+        if not all(character.isalnum() or character == "-" for character in pnr):
+            raise ValueError(
+                "refund ticket info PNR must be alphanumeric (hyphens allowed); "
+                "it is interpolated into the Referer URL this endpoint gates on"
+            )
+        with self._session_guard():
+            return parse_refund_ticket_info_response(
+                self.http.post_form(
+                    "/atc/getListAtc14087.do",
+                    # No body. The reference implementation POSTs bare, and the
+                    # Referer is what identifies the ticket.
+                    None,
+                    accept="application/json, text/javascript, */*; q=0.01",
+                    referer=(
+                        f"{self.config.base_url}"
+                        f"/common/ATC/ATC0201L/view.do?pnrNo={pnr}"
+                    ),
+                )
+            )
+
+    def refund(
+        self,
+        ticket_info: SrtRefundTicketInfo,
+        *,
+        consent: MutationConsent,
+    ) -> MutationPreview | SrtRefundResult:
+        """Refund an issued ticket (환불) — step 2 of 2. **Cannot transmit.**
+
+        ``refund`` is not a member of
+        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, which holds
+        exactly ``{"reserve", "cancel"}``. A ``dry_run=False`` call is refused by
+        :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form` with
+        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` and nothing
+        reaches the network, however permissive the consent is. Implementing
+        this did not open that gate.
+
+        ``ticket_info`` comes from :meth:`get_refund_ticket_info`. **The two
+        steps are deliberately NOT fused into one method.** A combined call
+        would perform step 1 — a real network request — and only then discover
+        that step 2 is refused, so every attempt to refund would leave a live
+        request behind for an operation that can never complete. Keeping them
+        apart means a refused refund sends nothing at all, which is what the
+        tests assert.
+
+        It also means a dry run needs no network: the preview is built purely
+        from the ``ticket_info`` the caller already holds.
+
+        **PROVENANCE — thinner than the payment's.** The card payment at least
+        has one implementation copied into two libraries. This route exists in
+        exactly ONE: ryanking13/SRT has no refund at all, and srtgo added both
+        steps from scratch four days after vendoring its SRT support. There is
+        no upstream to have agreed with it, ``Atc02063`` is 0-hit across all
+        21,673 files of our v2.0.41 offline decompile, and the bundle has no
+        ``Atc02*`` family whatsoever.
+
+        **Two of the seven field names are disputed** — ``tkRetPwd`` against our
+        own app's ``retPwd``, and ``psgNm`` against ``buyPsNm``. We send srtgo's
+        spelling because it is the only one attested by a live run of this
+        endpoint, and this project has already been burned once by trusting a
+        single-source field name (srtgo's ``txtPrnNo`` for korail's
+        ``txtPnrNo``). See
+        :func:`~srt_mobile_api.payloads.refund_payload` for the full argument
+        and the alternatives to try first if it is ever rejected.
+
+        Gated by ``require_mutation_consent(consent, "refund")``. With the
+        default ``dry_run=True`` it returns a
+        :class:`~srt_mobile_api.consent.MutationPreview` — the return password,
+        the purchaser name and the PNR redacted, the sale identifiers legible —
+        and performs NO network I/O.
+        """
+        require_mutation_consent(consent, "refund")
+        if self.session.current is None:
+            raise SrtAuthError("SRT refund requires an authenticated session")
+        route = "/atc/selectListAtc02063_n.do"
+        # Built before the dry-run branch so a preview validates exactly what a
+        # live send would transmit, matching cancel and pay_with_card.
+        form = refund_payload(ticket_info)
+        if consent.dry_run:
+            return MutationPreview(
+                category="refund",
+                method="POST",
+                route=route,
+                payload=form,
+            )
+        with self._session_guard():
+            # Refused here, every time, by the live-enablement gate. Kept as a
+            # real call rather than a raise so the refusal stays the transport
+            # layer's single decision.
+            response = self.http.post_mutation_form(
+                route,
+                form,
+                consent=consent,
+                category="refund",
+            )
+            return parse_refund_response(response)

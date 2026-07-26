@@ -20,8 +20,12 @@ A third consent-gated method, `pay_with_card`, exists and **cannot transmit**.
 redacted preview; implementing it did not open that gate, and a test pins that a
 consent opting into everything — including one that acknowledges a real,
 chargeable card — still sends nothing. Its wire format is the least corroborated
-in this repository: see "Card payment" below before trusting any of it. `refund`
-remains unimplemented and untransmittable.
+in this repository: see "Card payment" below before trusting any of it.
+
+`refund` and its step-1 read `get_refund_ticket_info` exist on the same terms,
+with evidence thinner still — see "Refund" below. `refund` cannot transmit
+either, and a refused refund makes **no request at all**, not even the step-1
+read, because the two steps are deliberately separate methods.
 
 Which mutations may reach the network at all is enforced at the transport
 layer, by two different mechanisms which are worth keeping distinct:
@@ -51,15 +55,16 @@ one has done, and which this library cannot do for itself. The
 retained APK specification and smoke tooling remain the evidence context for
 that package.
 
-The reviewed safety boundary contains 21 routes. The integrated 0.2.0 gate
+The reviewed safety boundary contains 22 routes. The integrated 0.2.0 gate
 recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
 surface, the two-category live enablement, the operator scripts, the
 reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
-real-card acknowledgement gate and the consent-gated card-payment surface
+real-card acknowledgement gate and the consent-gated card-payment and refund
+surfaces
 landed, the current offline suite at HEAD is
-`1201 passed, 1 deselected`. The deselected case is the
+`1249 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -287,6 +292,70 @@ own `userMap.MB_CRD_NO` rather than asked of the caller.
 
 The PAN, PIN, expiry, birthdate, membership number and PNR are all redacted in
 the preview and hidden from every `repr`.
+
+### Refund (two steps, preview only, and the thinnest evidence here)
+
+A 환불 is two calls, exposed as two methods:
+
+1. `SrtClient.get_refund_ticket_info(pnr)` POSTs `/atc/getListAtc14087.do` with
+   **no body**, gated by a `Referer` of
+   `<base_url>/common/ATC/ATC0201L/view.do?pnrNo=<PNR>`, and returns
+   `outDataSets.dsOutput1[0]` — note `dsOutput1`, not the `dsOutput0` every other
+   `outDataSets` read here uses — as an `SrtRefundTicketInfo`;
+2. `SrtClient.refund(ticket_info, consent=...)` POSTs
+   `/atc/selectListAtc02063_n.do`. **It cannot transmit**: `refund` is not in
+   `SRT_LIVE_MUTATION_CATEGORIES`.
+
+**They are deliberately not fused into one method.** A combined call would
+perform step 1 — a real network request — and only *then* discover step 2 is
+refused, leaving a live request behind for an operation that can never complete.
+Kept apart, a refused refund sends nothing at all, and a dry run needs no
+network because the preview is built from the `ticket_info` the caller already
+holds. A test pins the zero-request property.
+
+Step 1 *can* transmit: it is classified as a read and registered in
+`READ_ONLY_ROUTES`. That classification is an **inference, not a proof** — the
+request carries no body, the response is pure identity data, and the reference
+implementation uses it only to gather step-2 fields, but nothing here can prove
+the server treats it as side-effect free, and the app's own naming is not
+decisive (`/ard/selectListArd02045_n.do` is a *cancel* despite its `selectList`
+prefix). Nothing in the refund path calls it for you.
+
+**Provenance is thinner than the payment's.** The payment at least has one
+implementation copied into two libraries. This route exists in exactly **one**:
+ryanking13/SRT has no refund at all — no `reserve_info`, no `getListAtc14087`,
+no `selectListAtc02063`, no `tkRetPwd` — and srtgo added both steps from scratch
+four days after vendoring its SRT support (2024-12-17). There is no upstream to
+have agreed with it. `Atc02063` and `Atc14087` are 0-hit across all 21,673 files
+of our v2.0.41 decompile; the bundle has **no `Atc02*` family whatsoever**, and
+the nearest real routes are `Atc14016`/`Atc14017`.
+
+**Two of the seven step-2 field names are disputed, and this project has been
+burned here before.** srtgo sends `tkRetPwd` and `psgNm`; our own app spells them
+`retPwd` and `buyPsNm` at
+`analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:645,648`. That site is
+**not an API schema**: it reads the SharedPreferences key `"ticketListOffline"`,
+base64-decodes it and parses it as JSON (`b.java:613,624-632`), then copies keys
+into a display model — deserialisation of a *local offline ticket cache*. It
+also spells the PNR `pnrNo` where srtgo's form says `pnr_no`, a third
+disagreement. We send srtgo's spelling, because it is the only one attested by a
+live run of *this* endpoint and a cache key is not evidence about it. The doubt
+is recorded rather than resolved: if this route is ever exercised and rejected,
+`retPwd`/`buyPsNm`/`pnrNo` are the first alternatives to try. The precedent is
+concrete — this project already shipped srtgo's misspelling of a korail refund
+field, `txtPrnNo` for `txtPnrNo`, from the same class of single-source trust.
+
+Step 1's success condition is **stricter** than this library's usual wrapper
+check: `ErrorCode == "0"` **and** `ErrorMsg == ""`, where
+`parse_mutual_verification_response` accepts `ErrorCode` in `{"", "0"}` and
+ignores the message. Implemented as documented rather than relaxed to house
+style — on a route nobody has exercised, failing loudly on a half-recognised
+response is the cheap mistake. Step 2's envelope is the *ordinary* `resultMap`
+SUCC/FAIL one, the same as cancel's and unlike the payment's.
+
+The return password, the purchaser name and the PNR are redacted in the preview
+and hidden from every `repr`; the sale identifiers stay legible, because with
+the password masked they authorise nothing.
 
 ### NetFunnel queue protocol
 

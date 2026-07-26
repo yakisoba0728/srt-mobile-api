@@ -444,7 +444,7 @@ car/seat response or availability contract.
   consent-gated mutation port, the transport-layer live-mutation gate, the
   consent-gated cancel surface, the reservation-list read, the NetFunnel
   queue protocol, the error taxonomy, the real-card acknowledgement gate and the
-  consent-gated card-payment surface: `1201 passed, 1 deselected`; the
+  consent-gated card-payment and refund surfaces: `1249 passed, 1 deselected`; the
   deselected case remains the explicit live-service opt-in. No live mutation
   was ever run.
 - Prior offline gate after the mutation port and its transport-layer gate, before

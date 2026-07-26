@@ -146,7 +146,10 @@ def test_selector_policy_rejects_wrong_method_legacy_neighbor_and_seat_page(meth
 
 
 def test_route_registry_has_exact_expanded_size():
-    assert len(READ_ONLY_ROUTES) == 21
+    # 22 since the refund's step-1 read (/atc/getListAtc14087.do) was
+    # registered. That route is classified as a read by inference, not by
+    # proof -- see the comment on it in safety.py.
+    assert len(READ_ONLY_ROUTES) == 22
 
 
 @pytest.mark.parametrize(

@@ -500,6 +500,60 @@ class SrtPaymentResult:
 
 
 @dataclass(frozen=True)
+class SrtRefundTicketInfo:
+    """The issued-ticket identity a 환불 needs, from refund step 1.
+
+    Read from ``POST /atc/getListAtc14087.do`` (no body, Referer-gated) at
+    ``outDataSets.dsOutput1[0]`` — note ``dsOutput1``, not the ``dsOutput0``
+    every other read here uses. See
+    :func:`~srt_mobile_api.parsers.parse_refund_ticket_info_response` for the
+    provenance, which is thinner than the payment's: this route exists in ONE
+    reference library, not two.
+
+    :attr:`return_password` is the credential that authorises the refund and is
+    hidden from ``repr``; it and :attr:`buyer_name` and :attr:`pnr_no` are
+    redacted by :func:`~srt_mobile_api.redaction.redact_payload`. The three sale
+    identifiers are deliberately not, because with the password masked they
+    authorise nothing and a fully-redacted preview says nothing at all.
+    """
+
+    pnr_no: str = field(repr=False)
+    sale_date: str = ""  # ogtkSaleDt
+    sale_window_number: str = ""  # ogtkSaleWctNo
+    sale_sequence_number: str = ""  # ogtkSaleSqno
+    return_password: str = field(default="", repr=False)  # ogtkRetPwd
+    buyer_name: str = field(default="", repr=False)  # buyPsNm
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class SrtRefundResult:
+    """The parsed envelope of a paid-ticket refund (환불).
+
+    **UNVERIFIED, and by a thinner margin than anything else here.** Unlike the
+    payment — which at least has one implementation copied into two libraries —
+    this route exists in exactly ONE reference implementation, was added there
+    four days after it vendored its SRT support from elsewhere, and has no
+    upstream at all. The route is 0-hit across all 21,673 files of our v2.0.41
+    offline decompile, and no request has ever been sent from this repository.
+
+    The envelope itself is the ordinary SRT ``resultMap`` SUCC/FAIL one — the
+    same as cancel's, and unlike the payment's ``outDataSets.dsOutput0``. A
+    business failure is RETURNED, not raised: a caller asking "was my ticket
+    refunded?" must be able to read the answer without exception handling.
+    """
+
+    status: str
+    message_code: str = ""
+    message: str = field(default="", repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status == "SUCC"
+
+
+@dataclass(frozen=True)
 class HtmlPage:
     text: str = field(repr=False)
     raw: str = field(repr=False)
