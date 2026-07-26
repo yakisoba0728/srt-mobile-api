@@ -1073,3 +1073,30 @@ booking could be a ten-seat hold this library cannot release. That risk needs
 an explicit decision before anyone sends one, and the first live attempt should
 capture the raw response (including from a raised `SrtProtocolError`) to settle
 `pnrNo` versus `tmpJobSqno1` before anything else.
+
+## 환승 live verification (2026-07-26) — search AND reservation
+
+**Verified end to end, no payment.** 동대구 (0015) → 광주송정 (0036), 20260812.
+
+- The direct search raised `SrtNoDirectTrainError` / `WRD000061`. Same code,
+  same meaning as korail.
+- `search_transfer_trains` returned five itineraries, paired by `trnOrdrNo`
+  exactly as the earlier probe showed.
+- **SRT's transfer search mixes operators.** Legs came back with
+  `service_class_code` `17` (SRT), `00` and `07` — the first itinerary offered
+  had a non-SRT second leg. `reserve_transfer` refused it, correctly, before
+  sending anything. Only an all-`17` itinerary is reservable here, and callers
+  must filter for that.
+- The all-SRT itinerary — train 316 동대구→오송 then 655 오송→광주송정 —
+  reserved successfully: `SUCC` / `IRR000018`, `jrnyCnt=2`, `jrnySqno2=002`.
+- `cancel(pnr, journey_count="2")` released it first try, `SUCC` / `IRG000000`,
+  and the account returned to zero reservations.
+
+**This settles the request side.** The five slot-2 fields that were graded
+INFERRED — `stlbTrnClsfCd2`, `dptStnConsOrdr2`, `arvStnConsOrdr2`,
+`dptStnRunOrdr2`, `arvStnRunOrdr2` — were accepted by the live server, as was
+`reserveType="11"`. Declining to guess `"14"` there was right. The evidence
+grades in `TRANSFER_SLOT2_FIELD_EVIDENCE` can now be read as live-accepted
+rather than inferred, though acceptance of a form is weaker evidence than
+seeing the app send it: the server may simply ignore a field it does not need.
+
