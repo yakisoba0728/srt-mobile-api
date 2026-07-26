@@ -1185,7 +1185,10 @@ direct, so `chtnDvCd=2` would return nothing and prove nothing.
    `dsOutput1` represents two legs*: one row per leg (paired, ordered — check
    `trnOrdrNo` and `chtnDvCd` on each) or one row per itinerary with `...2`
    columns. Also record whether `dsOutput0.fllwPgExt2` is non-null here, since it
-   is null in every direct search captured so far.
+   is null in every direct search captured so far. **An `SrtProtocolError` here
+   is a result, not a failure** — the rows go through the same parser as a direct
+   search, so a differently shaped transfer row raises rather than being coerced,
+   and the exception's `raw` is exactly the capture this step is for.
 2. **Compare against a direct search of the same pair.** `search_trains` on
    동대구→광주송정 should come back empty (`WRG000000` / "조회 결과가 없습니다.",
    which surfaces as `SrtNoResultsError`). If it does not, the pair is not a

@@ -563,6 +563,14 @@ class SrtClient:
         :class:`~srt_mobile_api.models.TransferItinerary` — which refuses a pair
         that does not connect — and pass that to :meth:`reserve_transfer`.
 
+        The rows go through the SAME parser as a direct search, so if a transfer
+        row is shaped differently — a missing ``trnNo``, a leg pair delivered as
+        one row with ``...2`` columns — this raises
+        :class:`~srt_mobile_api.errors.SrtProtocolError` rather than coercing the
+        response into a shape it is not. That is the intended outcome: the
+        exception carries ``raw``, and a first live transfer search is a capture
+        exercise before it is anything else.
+
         NOT LIVE-VERIFIED. Read-only and consent-free like the other searches,
         so trying it costs nothing but a query; see the README for the station
         pairs that make a transfer itinerary exist at all.
