@@ -1,14 +1,23 @@
-"""The 할인쿠폰 read: its route registration, its parser, and its client method."""
+"""The 할인 reads: route registration, parsers, and client methods."""
 
 import httpx
 import pytest
 
 from srt_mobile_api import SrtClient, SrtConfig
 from srt_mobile_api.errors import SrtProtocolError, SrtSessionExpiredError
-from srt_mobile_api.models import DiscountCoupon, DiscountCouponList, SrtSession
-from srt_mobile_api.parsers import parse_discount_coupon_page
+from srt_mobile_api.models import (
+    DiscountCoupon,
+    DiscountCouponList,
+    PublicDiscountPage,
+    SrtSession,
+)
+from srt_mobile_api.parsers import (
+    parse_discount_coupon_page,
+    parse_public_discount_page,
+)
 from srt_mobile_api.safety import (
     COUPON_LIST_PATH,
+    PUBLIC_DISCOUNT_PAGE_PATH,
     READ_ONLY_ROUTES,
     ReadOnlyRoute,
     SRT_MUTATION_ROUTE_CATEGORIES,
@@ -18,6 +27,7 @@ from srt_mobile_api.safety import (
 
 
 COUPON_REGISTRATION_ROUTE = "/arb/selectListArb02A01_n.do"
+DISCOUNT_SEARCH_ROUTE = "/ara/selectListAra10131_n.do"
 
 
 def _authenticated(client: SrtClient) -> SrtClient:
@@ -210,5 +220,188 @@ def test_expired_session_on_the_coupon_read_clears_session_and_cookies():
     client.http.cookies.set("JSESSIONID", "session-cookie")
     with pytest.raises(SrtSessionExpiredError):
         client.get_discount_coupons()
+    assert client.session.current is None
+    assert "JSESSIONID" not in client.http.cookies
+
+
+# --------------------------------------------------------------------------
+# 공공할인 (할인 승차권) page
+# --------------------------------------------------------------------------
+
+
+def test_public_discount_page_is_registered_as_a_read_and_only_as_GET():
+    assert PUBLIC_DISCOUNT_PAGE_PATH == "/common/ARA/ARA0301V/view.do"
+    assert ReadOnlyRoute("GET", "app", PUBLIC_DISCOUNT_PAGE_PATH) in READ_ONLY_ROUTES
+    # POST is how every OTHER /common/ARA/ route in this allowlist is reached
+    # (the selector popups), which is exactly why it is worth pinning that this
+    # one is not: this page is a search FORM, not a popup.
+    assert (
+        ReadOnlyRoute("POST", "app", PUBLIC_DISCOUNT_PAGE_PATH) not in READ_ONLY_ROUTES
+    )
+    assert all(
+        route.path != PUBLIC_DISCOUNT_PAGE_PATH for route in SRT_MUTATION_ROUTES
+    )
+
+
+def test_the_discount_search_target_is_registered_nowhere():
+    """`/ara/selectListAra10131_n.do` is the 할인 승차권 search, and is not implemented.
+
+    It exists — a bare live GET answered 200 with a 조회결과 shell on 2026-07-26,
+    where a nonexistent sibling answered 404 — but exercising it needs an
+    approved 공공할인 nobody here holds, so no builder, route or method exists.
+    """
+    for method in ("GET", "POST"):
+        assert (
+            ReadOnlyRoute(method, "app", DISCOUNT_SEARCH_ROUTE) not in READ_ONLY_ROUTES
+        )
+    assert all(route.path != DISCOUNT_SEARCH_ROUTE for route in SRT_MUTATION_ROUTES)
+    assert DISCOUNT_SEARCH_ROUTE not in SRT_MUTATION_ROUTE_CATEGORIES
+    with pytest.raises(SrtProtocolError):
+        assert_mutation_route("POST", DISCOUNT_SEARCH_ROUTE)
+
+
+def test_unapproved_live_page_is_an_answer_and_not_an_error(load_text_fixture):
+    result = parse_public_discount_page(load_text_fixture("public_discount_none.html"))
+    assert isinstance(result, PublicDiscountPage)
+    assert result.is_eligible is False
+    assert result.approved == ()
+    assert len(result.entitlements) == 8
+    assert [entry.code for entry in result.entitlements] == [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+    ]
+    assert [entry.name for entry in result.entitlements] == [
+        "다자녀",
+        "임산부",
+        "기초생활",
+        "청소년",
+        "모범 납세자",
+        "3세대 동행할인",
+        "",
+        "",
+    ]
+    assert all(entry.approved is False for entry in result.entitlements)
+
+
+def test_the_pages_own_comparisons_are_not_mistaken_for_declarations(load_text_fixture):
+    """`data1Check != "Y"` appears nine more times than `var data1Check`.
+
+    The flag regex is anchored on `var` for exactly this reason. If it were not,
+    the unapproved page would read as approved, because its very next line
+    compares every flag to the literal "Y".
+    """
+    html = load_text_fixture("public_discount_none.html")
+    assert html.count('data1Check != "Y"') >= 1
+    assert html.count('data1Check == "Y"') >= 1
+    assert parse_public_discount_page(html).is_eligible is False
+
+
+def test_approved_flags_are_read_by_slot(load_text_fixture):
+    result = parse_public_discount_page(
+        load_text_fixture("public_discount_approved.html")
+    )
+    assert result.is_eligible is True
+    assert [entry.code for entry in result.approved] == ["01", "06"]
+    assert [entry.name for entry in result.approved] == ["다자녀", "3세대 동행할인"]
+    assert {entry.code for entry in result.entitlements if not entry.approved} == {
+        "02",
+        "03",
+        "04",
+        "05",
+        "07",
+        "08",
+    }
+
+
+def test_page_without_the_PBL_DISC_CD_field_is_refused():
+    with pytest.raises(SrtProtocolError):
+        parse_public_discount_page(
+            '<html><body><script>var data1Check="";</script></body></html>'
+        )
+
+
+def test_page_without_exactly_eight_flags_is_refused():
+    seven = "".join(f'var data{slot}Check="";' for slot in range(1, 8))
+    with pytest.raises(SrtProtocolError):
+        parse_public_discount_page(
+            f'<html><body><input name="PBL_DISC_CD" value="">'
+            f"<script>{seven}</script></body></html>"
+        )
+
+
+def test_duplicate_flag_declaration_is_refused():
+    eight = "".join(f'var data{slot}Check="";' for slot in range(1, 9))
+    with pytest.raises(SrtProtocolError):
+        parse_public_discount_page(
+            f'<html><body><input name="PBL_DISC_CD" value="">'
+            f'<script>{eight}var data1Check="Y";</script></body></html>'
+        )
+
+
+def test_flag_value_that_is_neither_blank_nor_Y_is_not_approved():
+    eight = "".join(
+        f'var data{slot}Check="{"N" if slot == 3 else ""}";' for slot in range(1, 9)
+    )
+    result = parse_public_discount_page(
+        f'<html><body><input name="PBL_DISC_CD" value="">'
+        f"<script>{eight}</script></body></html>"
+    )
+    assert result.is_eligible is False
+
+
+def test_get_public_discounts_issues_one_parameterless_GET(load_text_fixture):
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, text=load_text_fixture("public_discount_none.html"))
+
+    client = _authenticated(SrtClient(SrtConfig(), transport=httpx.MockTransport(handler)))
+    result = client.get_public_discounts()
+    assert result.is_eligible is False
+    assert len(calls) == 1
+    assert calls[0].method == "GET"
+    assert calls[0].url.path == PUBLIC_DISCOUNT_PAGE_PATH
+    assert calls[0].url.query == b""
+    assert not calls[0].content
+
+
+def test_get_public_discounts_never_touches_the_search_or_netfunnel(load_text_fixture):
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            200, text=load_text_fixture("public_discount_approved.html")
+        )
+
+    client = _authenticated(SrtClient(SrtConfig(), transport=httpx.MockTransport(handler)))
+    result = client.get_public_discounts()
+    assert [entry.code for entry in result.approved] == ["01", "06"]
+    # The page it just read contains the search target and an act_10 call. Both
+    # stay inert: reading a form is not submitting it.
+    assert DISCOUNT_SEARCH_ROUTE in result.raw
+    assert "act_10" in result.raw
+    assert [request.url.path for request in calls] == [PUBLIC_DISCOUNT_PAGE_PATH]
+
+
+def test_expired_session_on_the_public_discount_read_clears_session():
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text='<form action="/apb/selectListApb01080_n.do">'
+            '<input name="hmpgPwdCphd"></form>',
+        )
+
+    client = _authenticated(SrtClient(SrtConfig(), transport=httpx.MockTransport(handler)))
+    client.http.cookies.set("JSESSIONID", "session-cookie")
+    with pytest.raises(SrtSessionExpiredError):
+        client.get_public_discounts()
     assert client.session.current is None
     assert "JSESSIONID" not in client.http.cookies

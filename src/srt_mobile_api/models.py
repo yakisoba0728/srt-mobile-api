@@ -967,6 +967,69 @@ class SeatGrid(HtmlPage):
 
 
 @dataclass(frozen=True)
+class PublicDiscountEntitlement:
+    """One 공공할인 type and whether THIS account has been approved for it.
+
+    :attr:`code` is a ``PBL_DISC_CD`` (``"01"``..``"08"``); :attr:`name` is what
+    ``discounts.public_discount_name`` resolves it to, and is ``""`` for ``07``
+    and ``08``, which have branches on the page and a name nowhere.
+
+    **The code-to-slot mapping is an inference, and this is it.** The page
+    server-renders eight flags, ``data1Check`` through ``data8Check``, and never
+    writes a ``PBL_DISC_CD`` next to any of them. What ties them together is the
+    page's own comment on the one branch that reads two of them at once:
+    *"다자녀(01)와 임산부(02)가 신청이 승인된 경우"*, guarding
+    ``if(data1Check == "Y" && data2Check == "Y")``. So slot 1 is code ``01``,
+    slot 2 is code ``02``, there are exactly eight of each, and the eight
+    ``PBL_DISC_CD`` branches further down run ``01``..``08`` in order. Nothing
+    read here contradicts it and nothing read here proves it beyond those two.
+    """
+
+    code: str
+    name: str = ""
+    approved: bool = False
+
+
+@dataclass(frozen=True)
+class PublicDiscountPage(HtmlPage):
+    """The 할인 승차권 page, read as "which 공공할인 does this account hold".
+
+    **An account approved for nothing is a real answer here, not an error.**
+    The page reacts to that case by alerting ``Sr.msgs.notice006``
+    ("할인승차권은 홈페이지를 통해 인증된 고객만 이용이 가능합니다…") and bouncing to
+    the main page, which looks like the sold-out seat page's refusal and is not
+    the same thing. There, the refusal means the seat map a caller asked for
+    does not exist, so the parser raises. Here, "you hold none" IS the thing a
+    caller asked, so it is returned: :attr:`is_eligible` is ``False`` and every
+    :attr:`entitlements` row is ``approved=False``.
+
+    What this deliberately does NOT carry: the approved discount's management
+    number (``PBL_DISC_MG_NO``) and its confirmation/expiry dates. Those are
+    server-rendered into the branch bodies of the page's own ``if/else if``
+    chain, and every one of them was EMPTY on the only account this project can
+    read — so their populated shape is unknown, and a parser written against
+    eight empty strings would be a guess. :attr:`raw` carries the page for a
+    caller who has an approved account and wants to look; see
+    docs/IMPLEMENTATION_PROGRESS.md for the one fetch that would settle it.
+    """
+
+    entitlements: tuple[PublicDiscountEntitlement, ...] = ()
+
+    @property
+    def approved(self) -> tuple[PublicDiscountEntitlement, ...]:
+        return tuple(entry for entry in self.entitlements if entry.approved)
+
+    @property
+    def is_eligible(self) -> bool:
+        """True when the account holds at least one approved 공공할인.
+
+        This is the page's own gate, spelled the same way: it shows the search
+        form when any of the eight flags is ``"Y"`` and refuses otherwise.
+        """
+        return bool(self.approved)
+
+
+@dataclass(frozen=True)
 class DiscountCoupon:
     """One 할인쿠폰 held by the account, exactly as the page prints it.
 

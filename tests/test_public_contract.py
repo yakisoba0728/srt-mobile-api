@@ -28,6 +28,10 @@ def test_client_public_method_set_is_stable():
         "get_notice_list",
         "get_typed_notice_list",
         "get_passenger_selector",
+        # 공공할인 entitlements, read from the 할인 승차권 page. It reads which
+        # discounts the ACCOUNT holds; it does not run the 할인 승차권 search,
+        # whose target (Ara10131) is registered nowhere and has no builder.
+        "get_public_discounts",
         "get_refund_ticket_info",
         "get_reservations",
         "get_seat_page",

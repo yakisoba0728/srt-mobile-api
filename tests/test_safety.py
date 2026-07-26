@@ -146,17 +146,20 @@ def test_selector_policy_rejects_wrong_method_legacy_neighbor_and_seat_page(meth
 
 
 def test_route_registry_has_exact_expanded_size():
-    # 24 since the 할인쿠폰 list (GET /apa/selectListApa03020_n.do) was registered.
-    # That one is a page the app's own MY SRT menu links to, live-read
-    # 2026-07-26, and it is registered as GET ONLY because the same page is also
-    # the coupon REGISTRATION form -- whose submit is a POST to a different
-    # route that is in neither allowlist.
+    # 25 since the 할인 승차권 / 공공할인 page (GET /common/ARA/ARA0301V/view.do).
+    # GET only, and unlike every other /common/ARA/ route here it is NOT a POST
+    # selector popup: it is a search FORM, whose submit target
+    # /ara/selectListAra10131_n.do is registered nowhere at all.
+    # The 24th is the 할인쿠폰 list (GET /apa/selectListApa03020_n.do): a page the
+    # app's own MY SRT menu links to, live-read 2026-07-26, registered as GET
+    # ONLY because the same page is also the coupon REGISTRATION form -- whose
+    # submit is a POST to a different route that is in neither allowlist.
     # The 23rd is the 좌석배치도 (/arc/selectListArc02011_n.do): a read on the
     # evidence of what it returns -- a seat map, live-read 2026-07-26 -- with
     # its own exact form contract, like the seat page.
     # The 22nd is the refund's step-1 read (/atc/getListAtc14087.do), which is
     # classified as a read by inference, not by proof; see safety.py.
-    assert len(READ_ONLY_ROUTES) == 24
+    assert len(READ_ONLY_ROUTES) == 25
 
 
 @pytest.mark.parametrize(

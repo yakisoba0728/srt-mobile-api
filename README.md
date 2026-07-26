@@ -70,7 +70,7 @@ reversal, verified as one round trip so nothing could be stranded paid. Adding a
 is the only thing membership in that set has ever meant. The retained APK
 specification and smoke tooling remain the evidence context for that package.
 
-The reviewed safety boundary contains 24 routes on the read side, plus 4
+The reviewed safety boundary contains 25 routes on the read side, plus 4
 mutation routes, one per consent category. It was 5 until 2026-07-26: the 단체
 reservation endpoint `arc/selectListArc06014_n.do` was **unregistered** when
 group booking was removed, because a route no client method can reach must not
@@ -87,9 +87,9 @@ reservation variants (standby, round trip), the 환승 (transfer)
 search and reservation, the 좌석배치도 (seat grid) read and the 좌석지정
 (seat-designated) reservation
 landed — and after 단체 (group) booking was removed again, and after the
-할인 (discount) code tables and the 할인쿠폰 read —
+할인 (discount) code tables, the 할인쿠폰 read and the 공공할인 read —
 the current offline suite at HEAD is
-`1485 passed, 1 deselected`. The deselected case is the
+`1497 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -962,6 +962,52 @@ route (`/arb/selectListArb02A01_n.do`) which is in neither allowlist and would
 need a fifth entry in `SRT_LIVE_MUTATION_CATEGORIES` — pinned to four by its own
 canary. Only `GET` is registered for the coupon path, so a coupon number and its
 password cannot travel there under a read either.
+
+### 공공할인 (welfare discounts) — live-verified unapproved, 2026-07-26
+
+`SrtClient.get_public_discounts() -> PublicDiscountPage`, one parameterless
+`GET /common/ARA/ARA0301V/view.do` — the 할인 승차권 page, named on the same
+server-rendered MY SRT menu as the coupon route. `READ_ONLY_ROUTES` 24 → 25.
+
+It answers one question: **which 공공할인 has this account been approved for**.
+The page server-renders eight flags, `var data1Check` … `var data8Check`, and
+`PublicDiscountPage.entitlements` is those eight resolved to codes `01`–`08` and
+names. **Live-verified for an account approved for nothing**: 206,268 bytes,
+all eight flags empty, `is_eligible` `False`.
+
+**That is returned, not raised**, and the distinction is worth stating because
+the page behaves like a refusal — it alerts `Sr.msgs.notice006` ("할인승차권은
+홈페이지를 통해 인증된 고객만 이용이 가능합니다…") and bounces to the main page. The
+sold-out seat page raises on its alert because there the refusal means the seat
+map a caller asked for does not exist. Here, "you hold none" *is* the answer.
+
+**The code-to-slot mapping is an inference and is labelled one.** Nothing on the
+page writes a `PBL_DISC_CD` next to a `dataNCheck`. What ties them is the page's
+own comment on the one branch that reads two flags at once —
+*"다자녀(01)와 임산부(02)가 신청이 승인된 경우"*, guarding
+`if(data1Check == "Y" && data2Check == "Y")`. Slot 1 is `01`, slot 2 is `02`,
+there are eight of each, and the `PBL_DISC_CD` branches below run `01`–`08` in
+order.
+
+Refused rather than interpreted: a page with no `PBL_DISC_CD` field, and a page
+that does not declare exactly eight distinct flags. The flag regex is anchored
+on `var` because the same identifiers appear nine more times as `!= "Y"` /
+`== "Y"` comparisons — an unanchored match would read the unapproved page as
+approved.
+
+**This does not run the 할인 승차권 search and cannot.** The page it reads *is*
+that search's form: `#rsvForm`, the booking page's ~140 fields plus
+`PBL_DISC_CD` / `PBL_DISC_NM` / `PBL_DISC_MG_NO` / `TGT_DTRM_YN`, submitting to
+`/ara/selectListAra10131_n.do` behind a NetFunnel `act_10` gate. That route
+exists — a bare live GET answered `200` where a nonexistent sibling answered
+`404` — and is registered nowhere here, has no builder and no method. Exercising
+it needs an approved 공공할인 that nobody on this project holds.
+
+Also not carried: the approved discount's `PBL_DISC_MG_NO` and its
+confirmation/expiry dates. They are server-rendered into the branch bodies of
+the page's own `if/else if` chain and every one was empty on the only account
+readable here, so their populated shape is unknown and no parser is written
+against it. `raw` carries the page.
 
 ### Mutual verification
 

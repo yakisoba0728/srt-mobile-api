@@ -1,0 +1,122 @@
+<!--
+  REDACTED reproduction of a REAL response, live-read 2026-07-26 from
+  GET /common/ARA/ARA0301V/view.do (할인 승차권) for an account approved for no
+  공공할인. The live body was 206,268 bytes: the shared MY SRT menu, the whole
+  ~140-field #rsvForm, and this script. Both are shrunk here to the parts the
+  parser and its claims depend on.
+
+  What it demonstrates:
+
+    * the eight approval flags are server-rendered as `var dataNCheck="";` and
+      are ALL EMPTY for an unapproved account. That is the live-verified state
+      and the reason PublicDiscountPage returns it instead of raising;
+    * the same eight identifiers appear NINE more times as comparisons
+      (`data1Check != "Y"`, `data1Check == "Y"`), which is why the flag regex is
+      anchored on `var` rather than on the name;
+    * the page's own comment ties slot 1 to code 01 and slot 2 to code 02 --
+      "다자녀(01)와 임산부(02)" -- and that single comment is the whole evidence
+      for the code-to-slot mapping. It is reproduced verbatim;
+    * PBL_DISC_CD / PBL_DISC_NM / PBL_DISC_MG_NO / TGT_DTRM_YN are the four
+      fields this page adds to the ordinary booking form, and they are what
+      makes it the 할인 승차권 form rather than the booking form;
+    * the eight branch bodies that would carry an approved discount's code, name
+      and management number are EMPTY here, which is why none of them is parsed;
+    * goSubmit() targets /ara/selectListAra10131_n.do behind NetFunnel act_10.
+      That route is registered nowhere in this library and has no builder; it is
+      kept in the fixture so the thing that is NOT implemented is visible.
+
+  Enough of #rsvForm is kept to show it is the booking form plus four fields.
+-->
+<div data-role="page" id="ara0101v_page" class="jqm-demos">
+	<div data-role="header" class="type2 ui-header" role="banner" id="srtContents">
+		<h1 class="ui-title" role="heading" aria-level="1">할인 승차권</h1>
+	</div>
+
+	<script language="JavaScript">
+		var contextPath = "";
+
+		$(function() {
+			var data1Check="";
+			var data2Check="";
+			var data3Check="";
+			var data4Check="";
+			var data5Check="";
+			var data6Check="";
+			var data7Check="";
+			var data8Check="";
+			if(data1Check != "Y" && data2Check != "Y" && data3Check != "Y" && data4Check != "Y" && data5Check != "Y" && data6Check != "Y" && data7Check != "Y" && data8Check != "Y"){
+				$("#inquiry1").hide();
+				srtAlertBoxDivShow("알림", Sr.msgs.notice006, null, "gotoMain();");
+				return;
+			}else{
+				//다자녀(01)와 임산부(02)가 신청이 승인된 경우,최근에 신청한 데이터로 출력해줌
+				//아니라면 기존 로직데로 흘러감
+				if(data1Check == "Y" && data2Check == "Y"){
+					$("#TGT_DTRM_YN").val("Y");
+				}else{
+					var PBL_DISC_CD="";
+					var PBL_DISC_NM="";
+					var PBL_DISC_MG_NO="";
+					if(data1Check == "Y"){
+						PBL_DISC_CD 			="";
+						PBL_DISC_NM 			="";
+						PBL_DISC_MG_NO 	="";
+					}else if(data2Check == "Y"){
+						PBL_DISC_CD 			="";
+						PBL_DISC_NM 			="";
+						PBL_DISC_MG_NO 	="";
+					}else if(data8Check == "Y"){
+						PBL_DISC_CD 			="";
+						PBL_DISC_NM 			="";
+						PBL_DISC_MG_NO 	="";
+					}
+					$("#PBL_DISC_CD").val(PBL_DISC_CD);
+					$("#PBL_DISC_NM").val(PBL_DISC_NM);
+					$("#PBL_DISC_MG_NO").val(PBL_DISC_MG_NO);
+					$("#TGT_DTRM_YN").val("Y");
+				}
+			}
+		});
+
+		function goSubmit(){
+			var frm = document.forms["rsvForm"];
+			$("#rsvForm").attr("action",contextPath + "/ara/selectListAra10131_n.do");
+			NetFunnel_Action({action_id:"act_10"}, function() {
+				frm.submit();
+			}.bind(this));
+		}
+	</script>
+
+	<div role="main" class="ui-content" data-ajax="false">
+		<ul class="inputList">
+			<li><label for="btn_seat">할인유형</label>
+				<div id="divCust2">
+					<a href="#pre-rendered-page15" class="info-radio l1em" id="discNmText">선택</a>
+				</div>
+			</li>
+			<li>
+				<label for="btn_ps_total">승차인원</label>
+				<input type="text" onclick="searchPassenger();" name="btn_ps_total" id="btn_ps_total" value="1명" readonly>
+			</li>
+		</ul>
+
+		<form id="rsvForm" name="rsvForm" method="get" data-ajax="false">
+			<input type="hidden" name="jobId" id="jobId" value="1101"/>
+			<input type="hidden" name="jrnyTpCd" id="jrnyTpCd" value="11"/>
+			<input type="hidden" name="dptRsStnCd1" id="dptRsStnCd1" value="0551" />
+			<input type="hidden" name="arvRsStnCd1" id="arvRsStnCd1" value="0020" />
+			<input type="hidden" name="totPrnb" id="totPrnb" value="1" />
+			<input type="hidden" name="psgGridcnt" id="psgGridcnt" value="1" />
+			<input type="hidden" name="psgTpCd1" id="psgTpCd1" value="1" />
+			<input type="hidden" name="psgInfoPerPrnb1" id="psgInfoPerPrnb1" value="1" />
+			<input type="hidden" name="psgTpCd6" id="psgTpCd6" value="0"/>
+			<input type="hidden" name="psgInfoPerPrnb6" id="psgInfoPerPrnb6" value="0" />
+			<input type='hidden' name='infantCnt' id='infantCnt' value='0' />
+			<input type="hidden" name="dcntKndCd" value="" />
+			<input type="hidden" name="PBL_DISC_CD" id="PBL_DISC_CD" value=""/>
+			<input type="hidden" name="PBL_DISC_NM" id="PBL_DISC_NM" value=""/>
+			<input type="hidden" name="PBL_DISC_MG_NO" id="PBL_DISC_MG_NO" value=""/>
+			<input type="hidden" name="TGT_DTRM_YN" id="TGT_DTRM_YN" value=""/>
+		</form>
+	</div>
+</div>

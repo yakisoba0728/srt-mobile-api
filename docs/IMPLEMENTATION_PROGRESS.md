@@ -123,12 +123,15 @@ under `## Unreleased` in `CHANGELOG.md`). Entries dated before that describe the
 - 할인쿠폰 list read returning `DiscountCouponList`
   (`get_discount_coupons()`, `/apa/selectListApa03020_n.do`,
   live-verified empty 2026-07-26)
+- 공공할인 entitlement read returning `PublicDiscountPage`
+  (`get_public_discounts()`, `/common/ARA/ARA0301V/view.do`,
+  live-verified unapproved 2026-07-26)
 
 The package also exports the offline `parse_reservation_attempt_response()`,
 `parse_reservation_hold_response()` and `parse_unpaid_cancel_response()`
 helpers; they perform no I/O and are not client routes.
 
-The transport currently allows 24 exact read-only app/NetFunnel routes.
+The transport currently allows 25 exact read-only app/NetFunnel routes.
 `act_19`, the app's own `Ard02017`/`Ard02018` WebView payment entry, other
 ATA/ARD flows, native bridges, callbacks, and external seat-map calls are not
 callable. Preview-by-default `reserve`, `reserve_transfer`, `cancel`,
@@ -182,7 +185,7 @@ See the next three sections.
   refund's step-1 read `get_refund_ticket_info`) and are live-enabled as of
   2026-07-26; see "Card Payment and Refund" below.
 - The state-changing routes are tiered in `safety.SRT_MUTATION_ROUTES` and
-  deliberately kept out of `READ_ONLY_ROUTES`, so the 24-route read-only
+  deliberately kept out of `READ_ONLY_ROUTES`, so the 25-route read-only
   allowlist and its guarantee are unchanged and `assert_read_only_request`
   refuses each of them. `SRT_MUTATION_ROUTE_CATEGORIES` binds each route to one
   consent category. There are **four routes across four categories**, one
@@ -864,10 +867,12 @@ car/seat response or availability contract.
   enablement, the bundle-evidenced reservation variants, the 환승
   (transfer) search and reservation, the 좌석배치도 (seat grid) read and the
   좌석지정 (seat-designated) reservation — and after 단체 (group) booking was
-  removed again, and after the 할인 code tables and the 할인쿠폰 read landed:
-  `1485 passed, 1 deselected`; the deselected case remains the
+  removed again, and after the 할인 code tables, the 할인쿠폰 read and the
+  공공할인 read landed:
+  `1497 passed, 1 deselected`; the deselected case remains the
   explicit live-service opt-in. Every mutation in the suite is against an
   `httpx.MockTransport`; the live runs are the operator scripts' job.
+- Prior offline gate before the 공공할인 read: `1485 passed, 1 deselected`.
 - Prior offline gate before the 할인쿠폰 read: `1471 passed, 1 deselected`.
 - Prior offline gate before the 할인 code tables: `1455 passed, 1 deselected`.
 - Prior offline gate with 단체 (group) booking still implemented:

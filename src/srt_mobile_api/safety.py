@@ -77,6 +77,20 @@ SEAT_GRID_PATH = "/arc/selectListArc02011_n.do"
 # absent from BOTH allowlists in this module: registering a coupon changes
 # account state, and it belongs to no member of SRT_LIVE_MUTATION_CATEGORIES.
 COUPON_LIST_PATH = "/apa/selectListApa03020_n.do"
+# 할인 승차권 (공공할인). Found the same way as COUPON_LIST_PATH and on the same
+# menu -- pageMove('/common/ARA/ARA0301V/view.do') -- so a plain GET, and
+# live-read 2026-07-26 (206,268 bytes).
+#
+# GET only, and this one has a sharper reason than the coupon page. The page it
+# returns is a SEARCH FORM: #rsvForm, the same ~140-field form the booking page
+# carries, plus PBL_DISC_CD / PBL_DISC_NM / PBL_DISC_MG_NO / TGT_DTRM_YN. Its
+# submit goes to /ara/selectListAra10131_n.do, which this library does not
+# implement and which is registered nowhere. Reading the page is a read;
+# nothing here can turn it into a search, let alone a reservation.
+#
+# 0-hit in the v2.0.41 bundle in every part: the route, PBL_DISC_CD, and every
+# one of its values.
+PUBLIC_DISCOUNT_PAGE_PATH = "/common/ARA/ARA0301V/view.do"
 SEAT_GRID_FIELDS = frozenset(
     {
         "trnGpCd",
@@ -199,6 +213,10 @@ READ_ONLY_ROUTES = frozenset(
         # (POST /arb/selectListArb02A01_n.do), which is a mutation and is not
         # registered anywhere in this module. See COUPON_LIST_PATH.
         ReadOnlyRoute("GET", "app", COUPON_LIST_PATH),
+        # 할인 승차권 (공공할인 entitlements). GET, and only GET: the page IS a
+        # search form, and its submit target /ara/selectListAra10131_n.do is
+        # registered nowhere. See PUBLIC_DISCOUNT_PAGE_PATH.
+        ReadOnlyRoute("GET", "app", PUBLIC_DISCOUNT_PAGE_PATH),
         ReadOnlyRoute("GET", "netfunnel", "/ts.wseq"),
     }
 )

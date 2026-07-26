@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- **공공할인 (welfare discount) entitlement READ — `get_public_discounts()`,
+  live-verified unapproved 2026-07-26.** One parameterless
+  `GET /common/ARA/ARA0301V/view.do` (할인 승차권) returning `PublicDiscountPage`
+  of `PublicDiscountEntitlement`, parsed by `parse_public_discount_page`.
+  `READ_ONLY_ROUTES` 24 → 25. Found on the same server-rendered MY SRT menu as
+  the coupon route; 0-hit in the v2.0.41 bundle in every part — the route,
+  `PBL_DISC_CD`, and every one of its values.
+  **Live-verified for an account approved for nothing**: 206,268 bytes, all
+  eight `var dataNCheck` flags empty, `is_eligible` `False`.
+  **That is returned, not raised.** The page reacts to it like a refusal —
+  alert `Sr.msgs.notice006`, bounce to main — which resembles the sold-out seat
+  page without being the same thing: there the refusal means the requested seat
+  map does not exist, here "you hold none" is the answer to the question asked.
+  **The code-to-slot mapping is an inference and says so in the model
+  docstring.** Nothing writes a `PBL_DISC_CD` next to a `dataNCheck`; what ties
+  them is the page's own comment on the one branch reading two flags at once,
+  "다자녀(01)와 임산부(02)가 신청이 승인된 경우", guarding
+  `if(data1Check == "Y" && data2Check == "Y")`.
+  **The flag regex is anchored on `var`** because those same identifiers appear
+  nine more times as `!= "Y"` / `== "Y"` comparisons; unanchored, the unapproved
+  page would read as approved. A test pins it. Also refused: a page with no
+  `PBL_DISC_CD` field, and one not declaring exactly eight distinct flags.
+  **The 할인 승차권 SEARCH is not implemented.** The page IS its form (`#rsvForm`
+  plus `PBL_DISC_CD`/`PBL_DISC_NM`/`PBL_DISC_MG_NO`/`TGT_DTRM_YN`), submitting
+  to `/ara/selectListAra10131_n.do` behind NetFunnel `act_10`. That route
+  exists — a bare live GET answered `200` where a nonexistent sibling answered
+  `404` — and is registered nowhere, with no builder and no method: exercising
+  it needs an approved 공공할인 nobody here holds. A test pins its absence from
+  both allowlists.
+  Not carried either: `PBL_DISC_MG_NO` and the confirmation/expiry dates, which
+  were empty in every branch of the only page readable here.
+  Offline gate: `1497 passed, 1 deselected` (was `1485`).
+
 - **할인쿠폰 (discount coupon) READ — `get_discount_coupons()`, live-verified
   empty 2026-07-26.** One parameterless `GET /apa/selectListApa03020_n.do`
   returning `DiscountCouponList` of `DiscountCoupon`, parsed by

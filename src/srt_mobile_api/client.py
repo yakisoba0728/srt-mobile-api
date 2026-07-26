@@ -30,6 +30,7 @@ from .models import (
     MutualVerificationResult,
     NoticeListResult,
     PassengerCounts,
+    PublicDiscountPage,
     SearchPageState,
     SeatDesignation,
     SeatGrid,
@@ -69,6 +70,7 @@ from .parsers import (
     parse_html_page,
     parse_mutual_verification_response,
     parse_notice_list_response,
+    parse_public_discount_page,
     parse_refund_response,
     parse_refund_ticket_info_response,
     parse_reservation_hold_response,
@@ -104,7 +106,7 @@ from .payloads import (
     transfer_reservation_payload,
     unpaid_reservation_cancel_payload,
 )
-from .safety import COUPON_LIST_PATH
+from .safety import COUPON_LIST_PATH, PUBLIC_DISCOUNT_PAGE_PATH
 from .session import SrtSessionClient
 
 
@@ -223,6 +225,46 @@ class SrtClient:
             return parse_discount_coupon_page(
                 self.http.get_text(
                     COUPON_LIST_PATH,
+                    referer=f"{self.config.base_url}/ara/ara0101v.do",
+                )
+            )
+
+    def get_public_discounts(self) -> PublicDiscountPage:
+        """Read which 공공할인 (public/welfare discounts) this account holds.
+
+        ``GET /common/ARA/ARA0301V/view.do``, the 할인 승차권 page, no parameters.
+        Found on the same server-rendered MY SRT menu as
+        :meth:`get_discount_coupons` and reached the same way
+        (``pageMove`` is ``window.location = url``).
+
+        **Live-verified 2026-07-26 for an account approved for nothing**:
+        206,268 bytes with all eight ``var dataNCheck`` flags empty. That is a
+        real answer and is returned as one —
+        :attr:`~srt_mobile_api.models.PublicDiscountPage.is_eligible` is
+        ``False`` — rather than raised, even though the page itself reacts by
+        alerting and bouncing to the main page. A page approved for something is
+        UNREAD here; nobody on this project holds a 공공할인.
+
+        **This does not perform the 할인 승차권 search and cannot.** The page it
+        reads IS that search's form: ``#rsvForm``, the booking page's ~140
+        fields plus ``PBL_DISC_CD``/``PBL_DISC_NM``/``PBL_DISC_MG_NO``/
+        ``TGT_DTRM_YN``, submitting to ``/ara/selectListAra10131_n.do`` behind a
+        NetFunnel ``act_10`` gate. That route is registered nowhere in
+        :mod:`~srt_mobile_api.safety` and has no builder, so this method returns
+        the entitlements and stops.
+
+        **The 공공할인 vocabulary is wider than `PassengerCounts`.** Under 청소년
+        (``04``) the app's own 승차인원선택 popup reveals a seventh counter and the
+        form sends ``psgTpCd6`` — a passenger type in neither copy of
+        ``commCode.js``. That is recorded in
+        :mod:`~srt_mobile_api.discounts` and deliberately not wired into the
+        reservation payload; see docs/IMPLEMENTATION_PROGRESS.md, "공공할인 is a
+        passenger vocabulary, not just a price".
+        """
+        with self._session_guard():
+            return parse_public_discount_page(
+                self.http.get_text(
+                    PUBLIC_DISCOUNT_PAGE_PATH,
                     referer=f"{self.config.base_url}/ara/ara0101v.do",
                 )
             )

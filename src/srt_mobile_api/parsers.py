@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from .config import APP_ORIGIN
+from .discounts import public_discount_name
 from .errors import (
     SrtAppError,
     SrtNetFunnelError,
@@ -25,6 +26,8 @@ from .models import (
     MutualVerificationResult,
     Notice,
     NoticeListResult,
+    PublicDiscountEntitlement,
+    PublicDiscountPage,
     ReservationAttemptResult,
     ReservationRecord,
     ReservationTrain,
@@ -667,6 +670,101 @@ def parse_discount_coupon_page(html: str) -> DiscountCouponList:
         text=page.text,
         raw=html,
         coupons=tuple(parser.coupons),
+    )
+
+
+# The 할인 승차권 page's eight server-rendered 공공할인 approval flags. Anchored on
+# `var` so the DECLARATION is matched and the page's own `data1Check != "Y"`
+# comparisons -- which appear nine more times -- are not.
+_PUBLIC_DISCOUNT_FLAG_RE = re.compile(
+    r'var\s+data([1-8])Check\s*=\s*"([^"]*)"\s*;'
+)
+_PUBLIC_DISCOUNT_APPROVED = "Y"
+PUBLIC_DISCOUNT_SLOT_COUNT = 8
+# The hidden input that identifies this page. Present whether or not the account
+# holds anything, and 0-hit in the v2.0.41 bundle.
+PUBLIC_DISCOUNT_FIELD = "PBL_DISC_CD"
+
+
+class _PublicDiscountMarkerParser(HTMLParser):
+    """True once the page's own PBL_DISC_CD input has been seen."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.found_marker = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() != "input":
+            return
+        values = {key.casefold(): value or "" for key, value in attrs}
+        if values.get("name") == PUBLIC_DISCOUNT_FIELD:
+            self.found_marker = True
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+
+def parse_public_discount_page(html: str) -> PublicDiscountPage:
+    """Parse the 할인 승차권 page ``/common/ARA/ARA0301V/view.do`` returns.
+
+    **Live-read 2026-07-26** (206,268 bytes) for an account approved for no
+    공공할인: all eight flags rendered as ``var dataNCheck="";``.
+
+    **A page approved for nothing is returned, not raised.** The page's reaction
+    to that state is an alert (``Sr.msgs.notice006``) and a bounce to the main
+    page, which resembles the sold-out seat page's refusal without being one:
+    there the refusal means the requested seat map does not exist, here "you
+    hold none" is the answer to the question. See
+    :class:`~srt_mobile_api.models.PublicDiscountPage`.
+
+    Two things ARE refused, so that a shape surprise cannot masquerade as a
+    negative answer:
+
+    * no ``PBL_DISC_CD`` input → :class:`SrtProtocolError`. Not this page.
+    * fewer than eight ``var dataNCheck`` declarations, or a duplicate slot →
+      :class:`SrtProtocolError`. The eight-slot layout is the only thing the
+      code-to-slot mapping rests on, so a page that no longer has eight is a
+      page this parser must not interpret.
+
+    A flag value other than ``""`` or ``"Y"`` is treated as not-approved rather
+    than refused: the page itself tests ``== "Y"`` and ``!= "Y"`` and never
+    enumerates the alternatives, so anything else is something it would also
+    treat as no.
+    """
+    page = parse_html_page(
+        html,
+        context="public discount page",
+        require_authenticated=True,
+    )
+    marker_parser = _PublicDiscountMarkerParser()
+    marker_parser.feed(html)
+    marker_parser.close()
+    if not marker_parser.found_marker:
+        raise SrtProtocolError(
+            "SRT public discount page did not contain the PBL_DISC_CD field",
+            raw=html,
+        )
+    matches = _PUBLIC_DISCOUNT_FLAG_RE.findall(html)
+    flags = dict(matches)
+    if len(flags) != PUBLIC_DISCOUNT_SLOT_COUNT or len(matches) != len(flags):
+        raise SrtProtocolError(
+            "SRT public discount page did not declare exactly eight "
+            f"공공할인 approval flags (saw {len(matches)})",
+            raw=html,
+        )
+    entitlements = tuple(
+        PublicDiscountEntitlement(
+            code=code,
+            name=public_discount_name(code),
+            approved=flags[str(slot)].strip() == _PUBLIC_DISCOUNT_APPROVED,
+        )
+        for slot in range(1, PUBLIC_DISCOUNT_SLOT_COUNT + 1)
+        for code in (f"{slot:02d}",)
+    )
+    return PublicDiscountPage(
+        text=page.text,
+        raw=html,
+        entitlements=entitlements,
     )
 
 
