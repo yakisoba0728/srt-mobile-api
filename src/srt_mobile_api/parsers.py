@@ -1508,20 +1508,36 @@ def _reservation_list_optional_string(
     row: dict[str, Any],
     key: str,
 ) -> str | None:
-    """A row field, or ``None`` when absent — never an exception.
+    """A row field as text, or ``None`` when absent — never an exception.
 
-    Deliberately more forgiving than :func:`_optional_row_string`, which raises
-    on a present non-string. The non-empty row shape here has never been
-    observed by this repository (see
-    :class:`~srt_mobile_api.models.SrtReservationSummary`), so a field arriving
-    as a number instead of a string is a live-shape unknown rather than a
-    protocol violation — and raising over one cosmetic field would cost the
-    caller the PNRs of every reservation in the list, which is the one outcome
-    this read exists to prevent. An unexpected type is dropped from the typed
-    field and stays readable through ``raw_train`` / ``raw_pay``.
+    LIVE 2026-07-26 settled what the non-empty row looks like, and several of
+    its fields are JSON NUMBERS where srtgo's attested shape implied strings::
+
+        {"pnrNo": "3202607...", "rcvdAmt": 7500, "jrnyCnt": 1,
+         "tkSpecNum": 1, "stlFlg": "N", "rsvChgTno": 0}
+
+    An earlier version dropped every non-string to ``None``, which was the safe
+    choice while the shape was unobserved but silently cost the caller the
+    amount: a card payment then refused to build because the reservation
+    "carried no amount", on a reservation that plainly carried 7500. Numbers are
+    now normalised to text.
+
+    Still deliberately more forgiving than :func:`_optional_row_string`, which
+    raises on a present non-string. Raising over one odd field would cost the
+    caller the PNRs of every reservation in the list, which is the outcome this
+    read exists to prevent, so a genuinely unusable type (a container, or a
+    bool masquerading as a number) is dropped and stays readable through
+    ``raw_train`` / ``raw_pay``.
     """
     value = row.get(key)
-    return value if isinstance(value, str) else None
+    if isinstance(value, str):
+        return value
+    # bool is an int subclass; a flag is not an identifier or an amount.
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return None
 
 
 def _reservation_list_count(

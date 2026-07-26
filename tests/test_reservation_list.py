@@ -294,22 +294,44 @@ def test_a_pnr_carried_on_the_pay_row_instead_is_still_found():
     assert result.pnr_numbers == (FAKE_PNR,)
 
 
-def test_a_non_string_field_is_dropped_rather_than_raising():
-    """One cosmetic field of the wrong type must not cost every PNR.
+def test_a_numeric_amount_is_read_as_text_not_dropped():
+    """LIVE 2026-07-26: the real row sends the amount as a JSON number.
 
-    The populated shape is unverified, so a number where a string was expected
-    is a live-shape unknown rather than a protocol violation.
+    The observed row was {"pnrNo": "3202607...", "rcvdAmt": 7500,
+    "jrnyCnt": 1, "tkSpecNum": 1}. An earlier version dropped every non-string
+    to None, which was safe while the shape was unobserved and silently cost
+    the caller the amount: a card payment refused to build for want of an
+    amount the reservation plainly carried.
     """
     result = parse_reservation_list_response(
-        _populated([{"pnrNo": FAKE_PNR, "rcvdAmt": 12000}], [{"trnNo": None}])
+        _populated([{"pnrNo": FAKE_PNR, "rcvdAmt": 7500}], [{"trnNo": None}])
+    )
+    assert result.pnr_numbers == (FAKE_PNR,)
+    assert result.reservations[0].received_amount == "7500"
+    assert result.reservations[0].train_no is None
+    assert result.reservations[0].raw_train["rcvdAmt"] == 7500
+
+
+def test_an_unusable_field_type_is_still_dropped_rather_than_raising():
+    """One cosmetic field must still never cost every PNR.
+
+    Numbers are now text, but a container or a bool is not an amount, and
+    raising over it would lose the whole list -- the outcome this read exists
+    to prevent.
+    """
+    result = parse_reservation_list_response(
+        _populated([{"pnrNo": FAKE_PNR, "rcvdAmt": {"nested": 1}}], [{"trnNo": True}])
     )
     assert result.pnr_numbers == (FAKE_PNR,)
     assert result.reservations[0].received_amount is None
     assert result.reservations[0].train_no is None
-    assert result.reservations[0].raw_train["rcvdAmt"] == 12000
 
 
-@pytest.mark.parametrize("pnr", [None, "", "   ", 12345])
+# 12345 was here while numbers were dropped; a numeric PNR is now readable,
+# which is right -- a recoverable identifier must never be thrown away. The
+# invariant being pinned is unchanged: if NO pnr can be read, say so loudly
+# rather than reporting an empty account.
+@pytest.mark.parametrize("pnr", [None, "", "   ", {"nested": 1}, ["x"]])
 def test_rows_with_no_readable_pnr_fail_loudly_instead_of_reporting_an_empty_account(
     pnr,
 ):
