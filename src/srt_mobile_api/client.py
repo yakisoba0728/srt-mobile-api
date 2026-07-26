@@ -8,7 +8,12 @@ from typing import Any, Iterator
 import httpx
 
 from .config import SrtConfig
-from .consent import MutationConsent, MutationPreview, require_mutation_consent
+from .consent import (
+    MutationConsent,
+    MutationPreview,
+    require_card_kind_claim,
+    require_mutation_consent,
+)
 from .errors import (
     SrtApiError,
     SrtAuthError,
@@ -27,8 +32,11 @@ from .models import (
     SeatSelectionPage,
     SeatType,
     SrtCancelResult,
+    SrtPaymentCard,
+    SrtPaymentResult,
     SrtReservationHold,
     SrtReservationListResult,
+    SrtReservationSummary,
     SrtSession,
     TimetablePage,
     TrainSearchQuery,
@@ -47,6 +55,7 @@ from .netfunnel import (
     queue_wait_seconds,
 )
 from .parsers import (
+    parse_card_payment_response,
     parse_fare_page,
     parse_html_page,
     parse_mutual_verification_response,
@@ -61,6 +70,7 @@ from .parsers import (
     parse_unpaid_cancel_response,
 )
 from .payloads import (
+    card_payment_payload,
     date_selector_payload,
     fare_payload,
     group_search_ajax_payload,
@@ -854,3 +864,111 @@ class SrtClient:
                 category="cancel",
             )
             return parse_unpaid_cancel_response(response)
+
+    def pay_with_card(
+        self,
+        reservation: SrtReservationSummary,
+        card: SrtPaymentCard,
+        *,
+        consent: MutationConsent,
+        passenger_count: str | None = None,
+        settlement_date: str | None = None,
+    ) -> MutationPreview | SrtPaymentResult:
+        """Build a card payment (카드결제) for an unpaid PNR — preview only, today.
+
+        **THIS METHOD CANNOT TRANSMIT.** ``payment`` is not a member of
+        :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, which holds
+        exactly ``{"reserve", "cancel"}``. With ``dry_run=False`` the call is
+        refused by :meth:`~srt_mobile_api.http.SrtHttpClient.post_mutation_form`
+        with :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` and
+        nothing reaches the network, no matter how permissive the consent is —
+        including one that acknowledges a real card. Implementing this method
+        did not open that gate; doing so is a separate decision, and a test
+        pins the refusal.
+
+        **PROVENANCE — the weakest in this library.** The route, the 32-field
+        body and the response envelope come from the reference implementations'
+        live runs and nothing else:
+
+        * ``/ata/selectListAta09036_n.do`` has ZERO hits across all 21,673 files
+          of our v2.0.41 offline decompile, as does every ``Ata09*`` route.
+        * Our own app does not use this path. It serialises ``#rsvForm`` to
+          ``/ard/selectListArd02017_n.do`` (personal) or ``Ard02018`` (group)
+          and charges through the TransKey secure keypad and RaonSecure FIDO —
+          not through plain HTTP form fields.
+        * The two reference libraries are ONE source. srtgo's payment code is a
+          character-for-character vendored copy of ryanking13/SRT's, so their
+          agreement corroborates nothing.
+
+        So this endpoint may be a legacy path the server still honours, or it
+        may be dead for our app version. Nobody has tested it, and this library
+        cannot.
+
+        ``reservation`` is a row from :meth:`get_reservations` — the read that
+        can name an unpaid PNR. Note that read's own limits: only its EMPTY
+        response is live-verified, so the row field names this form draws on
+        (``rcvdAmt``, ``tkSpecNum``, ``dptTm``, ``arvTm``) are srtgo-attested
+        too. ``settlement_date`` (``stlDmnDt``) defaults to today; both it and
+        ``passenger_count`` exist so a caller with ground truth can override,
+        and so a test can pin an exact body.
+
+        The AMOUNT is taken only from ``reservation.received_amount``
+        (``rcvdAmt``, the collectable 수납금액) and has no override — see
+        :func:`~srt_mobile_api.payloads.card_payment_payload` for why, and for
+        the korail bug that makes it worth stating.
+
+        Requires an authenticated session with a membership number, and is
+        gated by ``require_mutation_consent(consent, "payment")`` before
+        anything is built. With the default ``dry_run=True`` it returns a
+        :class:`~srt_mobile_api.consent.MutationPreview` whose payload is
+        redacted — the PAN, PIN, expiry, birthdate, membership number and PNR
+        all become ``[REDACTED]`` — and performs NO network I/O. With
+        ``dry_run=False`` the consent must additionally state which kind of card
+        it is (:func:`~srt_mobile_api.consent.require_card_kind_claim`: exactly
+        one of ``fake_card_only`` or ``real_card_acknowledged``) before the send
+        path refuses it anyway.
+        """
+        require_mutation_consent(consent, "payment")
+        session = self.session.current
+        if session is None:
+            raise SrtAuthError("SRT card payment requires an authenticated session")
+        membership_number = session.membership_number
+        if not membership_number:
+            raise SrtAuthError(
+                "SRT card payment requires the account's membership number "
+                "(userMap.MB_CRD_NO); the session carried none, which is how "
+                "the app itself spells 'not logged in'"
+            )
+        route = "/ata/selectListAta09036_n.do"
+        # Built before the dry-run branch so a preview validates exactly what a
+        # live send would transmit, matching cancel. stlDmnDt is resolved here
+        # rather than in the builder so payloads.py keeps no clock.
+        form = card_payment_payload(
+            reservation,
+            card,
+            membership_number=membership_number,
+            settlement_date=settlement_date or time.strftime("%Y%m%d"),
+            passenger_count=passenger_count,
+        )
+        if consent.dry_run:
+            return MutationPreview(
+                category="payment",
+                method="POST",
+                route=route,
+                payload=form,
+            )
+        # Only on the transmit path: a dry run sends nothing, so requiring the
+        # card-kind claim to PREVIEW would buy no safety and would just make
+        # previewing harder. post_mutation_form re-checks this itself.
+        require_card_kind_claim(consent)
+        with self._session_guard():
+            # Refused here, every time, by the live-enablement gate. Kept as a
+            # real call rather than a raise so the refusal is the transport
+            # layer's single decision and cannot drift out of sync with it.
+            response = self.http.post_mutation_form(
+                route,
+                form,
+                consent=consent,
+                category="payment",
+            )
+            return parse_card_payment_response(response)

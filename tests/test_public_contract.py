@@ -34,6 +34,10 @@ def test_client_public_method_set_is_stable():
         "login",
         "logout",
         "iter_train_search_pages",
+        # Present, gated, and unable to transmit: payment is outside
+        # safety.SRT_LIVE_MUTATION_CATEGORIES, so this method can only ever
+        # return a redacted MutationPreview.
+        "pay_with_card",
         "reserve",
         "search_group_trains",
         "search_trains",

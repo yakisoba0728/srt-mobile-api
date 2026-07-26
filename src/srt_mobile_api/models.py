@@ -3,6 +3,20 @@ from enum import Enum
 from typing import Any
 
 
+def _is_digits(value: object) -> bool:
+    """True for a non-empty ASCII decimal string.
+
+    ``str.isdigit`` is not enough on its own: it accepts superscripts and other
+    Unicode digit forms that are not wire-legal, and these values all end up in
+    a form body.
+    """
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and all("0" <= character <= "9" for character in value)
+    )
+
+
 class SeatType(Enum):
     """Seat-class preference for a reservation, mirroring srtgo (srt.py:413-417).
 
@@ -20,6 +34,31 @@ class SeatType(Enum):
 class SrtSession:
     login_id: str | None = field(default=None, repr=False)
     user_map: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def membership_number(self) -> str:
+        """The account's 회원번호, read from the login response's ``userMap``.
+
+        This is NOT newly captured: :class:`SrtSession` has always kept the whole
+        ``userMap`` the login returned, and ``MB_CRD_NO`` is one of its keys
+        (``docs/analysis/full-api-analysis-2026-07-20.md:431``, which also
+        records the app's own convention that an EMPTY ``MB_CRD_NO`` means "not
+        logged in"). This property only surfaces it, so a caller never has to
+        reach into ``user_map`` or supply the number by hand.
+
+        It exists because the card-payment form carries it as ``mbCrdNo``. Both
+        halves of that are worth separating: the NAME ``mbCrdNo`` is the app's
+        own — ``ara0101v.js:319,321`` reads a client-side ``mbCrdNo`` and
+        branches on its ``"11"`` prefix for 국회의원 후급 — while its presence on
+        the ``Ata09036`` payment body is attested only by the reference
+        implementations' live runs (see
+        :func:`~srt_mobile_api.payloads.card_payment_payload`).
+
+        Returns ``""`` when the key is absent or not a string, which is also how
+        the app spells "no membership number".
+        """
+        value = self.user_map.get("MB_CRD_NO")
+        return value if isinstance(value, str) else ""
 
 
 @dataclass(frozen=True)
@@ -354,6 +393,110 @@ class SrtCancelResult:
     @property
     def succeeded(self) -> bool:
         return self.status == "SUCC"
+
+
+#: Installment terms the payment form documents for ``ismtMnthNum1``: 일시불 (0)
+#: or 2..12 or 24 months. Kept as data so the validator and the tests read the
+#: same list.
+INSTALLMENT_MONTH_OPTIONS = frozenset({0, *range(2, 13), 24})
+
+
+@dataclass(frozen=True)
+class SrtPaymentCard:
+    """The card fields a 카드결제 puts on the wire, validated but never sent here.
+
+    **Nothing in this library can transmit these values.** ``payment`` is
+    outside :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`, so
+    :meth:`~srt_mobile_api.client.SrtClient.pay_with_card` can only ever return
+    a redacted preview. This type exists so the form can be BUILT and checked.
+
+    Every field is ``repr=False`` and every field NAME is registered in
+    :data:`~srt_mobile_api.redaction.SENSITIVE_KEYS`, so both ``repr()`` and
+    :func:`~srt_mobile_api.redaction.redact_value` mask them. Masking by name
+    rather than by pattern is deliberate: ``CARD_RE`` only matches a 13-19 digit
+    run, which a 2-digit PIN, a ``YYMM`` expiry and a ``YYMMDD`` birthdate all
+    slip past.
+
+    ``card_type`` is ``"J"`` (개인) or ``"S"`` (법인), and it decides what
+    ``card_validation_number`` must be: a ``YYMMDD`` birthdate for ``"J"``, a
+    10-digit 사업자등록번호 for ``"S"``. ``card_password`` is the FIRST TWO
+    DIGITS of the card PIN, not the whole PIN.
+    """
+
+    card_number: str = field(repr=False)
+    card_password: str = field(repr=False)
+    card_validation_number: str = field(repr=False)
+    card_expire_date: str = field(repr=False)
+    installment_months: int = 0
+    card_type: str = "J"
+
+    def __post_init__(self) -> None:
+        if self.card_type not in {"J", "S"}:
+            raise ValueError("card_type must be 'J' (개인) or 'S' (법인)")
+        if type(self.installment_months) is not int or (
+            self.installment_months not in INSTALLMENT_MONTH_OPTIONS
+        ):
+            raise ValueError(
+                "installment_months must be 0 (일시불), 2..12, or 24"
+            )
+        # The PAN travels in the clear, so it is checked for shape rather than
+        # by a Luhn digit: a deliberately synthetic test PAN must stay
+        # constructible, and this library must never be the thing that tells a
+        # caller whether a card number is real.
+        if not _is_digits(self.card_number) or not 12 <= len(self.card_number) <= 19:
+            raise ValueError("card_number must be 12-19 digits, no separators")
+        if not _is_digits(self.card_password) or len(self.card_password) != 2:
+            raise ValueError(
+                "card_password must be the first TWO digits of the card PIN"
+            )
+        if not _is_digits(self.card_expire_date) or len(self.card_expire_date) != 4:
+            raise ValueError("card_expire_date must use YYMM")
+        if not "01" <= self.card_expire_date[2:] <= "12":
+            raise ValueError("card_expire_date month must be 01..12")
+        expected = 6 if self.card_type == "J" else 10
+        if (
+            not _is_digits(self.card_validation_number)
+            or len(self.card_validation_number) != expected
+        ):
+            raise ValueError(
+                "card_validation_number must be a YYMMDD birthdate for card_type "
+                "'J' or a 10-digit 사업자등록번호 for 'S'"
+            )
+
+
+@dataclass(frozen=True)
+class SrtPaymentResult:
+    """The parsed envelope of a card payment (카드결제).
+
+    **UNVERIFIED, and differently unverified from every other envelope here.**
+    The route, the body and this envelope come from the reference
+    implementations' live runs only; the route ``Ata09036`` has zero hits across
+    all 21,673 files of our v2.0.41 offline decompile, and our own app does not
+    use this path at all (see
+    :func:`~srt_mobile_api.parsers.parse_card_payment_response`). No request has
+    ever been sent, so no response has ever been seen by this repository.
+
+    ``succeeded`` and ``failed`` are NOT complements, and that is the point. The
+    reference implementations treat only an explicit ``"FAIL"`` as a failure and
+    let every other value fall through as success; this type refuses to make
+    that call for an unrecognised status, because for a payment both mistakes
+    are expensive. A status that is neither ``"SUCC"`` nor ``"FAIL"`` means
+    **unknown**: read :attr:`raw`, confirm out of band whether the card was
+    charged, and do NOT retry blindly — a retried payment can charge twice.
+    """
+
+    status: str
+    message_code: str = ""
+    message: str = field(default="", repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status == "SUCC"
+
+    @property
+    def failed(self) -> bool:
+        return self.status == "FAIL"
 
 
 @dataclass(frozen=True)

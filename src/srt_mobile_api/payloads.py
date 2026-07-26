@@ -3,7 +3,9 @@ import re
 from .models import (
     PassengerCounts,
     SeatType,
+    SrtPaymentCard,
     SrtReservationHold,
+    SrtReservationSummary,
     TrainSearchQuery,
     TrainSummary,
 )
@@ -936,4 +938,247 @@ def unpaid_reservation_cancel_payload(
         "pnrNo": pnr_no.strip(),
         "jrnyCnt": _cancel_journey_count(journey_count),
         "rsvChgTno": CANCEL_RESERVATION_CHANGE_NUMBER,
+    }
+
+
+# --- Card payment (카드결제) --------------------------------------------------
+#
+# PROVENANCE, and it is weaker than anything else in this module. Read this
+# before trusting a single field name below.
+#
+# THE ROUTE IS NOT IN OUR APP. `/ata/selectListAta09036_n.do` has ZERO hits
+# across all 21,673 files of our v2.0.41 offline decompile; so does the token
+# `Ata09036`, and so does every `Ata09*` route. The only `/ata/` route the
+# bundle contains at all is `/ata/selectListAta01032_n.do`. What our app
+# actually does to pay is a different flow entirely: ara1001l.js:1550 serialises
+# `#rsvForm` and :1599/:1608 point it at `/ard/selectListArd02018_n.do` (group)
+# or `/ard/selectListArd02017_n.do` (personal), which are server-rendered
+# WebView pages, and the app then runs the charge through the TransKey secure
+# keypad (com.softsecurity.transkey, AndroidManifest.xml:143;
+# bridge.js:2,31,66-68) and RaonSecure FIDO (com.raon.fido.*,
+# AndroidManifest.xml:315). None of that is HTTP form fields.
+#
+# So this plaintext endpoint may be a legacy path the server still honours, or
+# it may be dead for our app version. NOBODY HAS TESTED IT. No request has ever
+# been sent from this repository, and payment is not live-enabled
+# (safety.SRT_LIVE_MUTATION_CATEGORIES), so none can be.
+#
+# THE TWO REFERENCE LIBRARIES ARE ONE SOURCE, NOT TWO. This was verified rather
+# than assumed, by diffing their payment bodies directly: srtgo's 32-field dict
+# is character-for-character identical to ryanking13/SRT's once the latter's
+# Korean trailing comments are stripped -- same keys, same values, same
+# non-alphabetical ORDER, same local variable names, same indentation, and the
+# same method signature down to its unusual parameter order. srtgo's git history
+# says why: it depended on `SRTrain` (ryanking13/SRT's PyPI name) until commit
+# 8423f90 "Internalize SRT" (2024-12-13) deleted the dependency and added
+# srtgo/srt.py in one move, with the payment dict already fully formed. srtgo's
+# README credits ryanking13 under MIT; ryanking13/SRT credits nobody. Their
+# agreement therefore corroborates NOTHING -- it is one implementation counted
+# twice. (srtgo_plus is a third copy: its srt.py is byte-identical to srtgo's.)
+#
+# WHAT THE BUNDLE DOES AND DOES NOT CORROBORATE. The blanket claim "every field
+# name is 0-hit" is FALSE, and the precise version is more useful. Three of the
+# 32 names do appear in our own bundle, all in the reservation JS and none of
+# them on an Ata09036 form:
+#   * `mbCrdNo`  -- ara0101v.js:319,321, a client-side variable holding the
+#                   회원카드번호, branched on its "11" prefix for 국회의원 후급.
+#   * `totPrnb`  -- ara1001l.js:104,368,1511,1655 and ara0101v.js:114,501,...,
+#                   the 총인원수 the booking screen already sends.
+#   * `jrnyCnt`  -- ara0101v.js:92,311, the 여정건수, hard-coded "1".
+# The other 29 -- including every card field (stlCrCrdNo1, vanPwd1, crdVlidTrm1,
+# athnVal1, athnDvCd1, crdInpWayCd1, ismtMnthNum1), every settlement field
+# (stlDmnDt, stlMnsSqno1, ststlGridcnt, totNewStlAmt, mnsStlAmt1, stlMnsCd1),
+# and ctlDvCd/cgPsId/strJobId/inrecmnsGridcnt/chgMcs/dptStnConsOrdr2/
+# arvStnConsOrdr2 -- are genuinely 0-hit. So the three that hit tell us the app
+# uses those NAMES for those CONCEPTS; they say nothing about this form.
+
+# Fixed values the payment form carries, with the meaning each documents. Kept
+# as named data rather than inline literals so a test can assert the constant
+# set without re-listing magic strings, and so the "1 고정값인듯" guesswork in
+# the reference implementation is not silently promoted to fact here.
+PAYMENT_MEANS_CREDIT_CARD = "02"  # 결제수단코드 (02 신용카드, 11 전자지갑, 12 포인트)
+PAYMENT_CARD_INPUT_WAY = "@"  # 카드입력방식 (@ 신용카드/OK포인트, "" 전자지갑)
+PAYMENT_CONTROL_DIVISION_CODE = "3102"  # ctlDvCd / strJobId
+PAYMENT_CHARGE_PERSON_ID = "korail"  # cgPsId
+PAYMENT_TRAIN_GROUP_CODE = "300"  # trnGpCd
+PAYMENT_STATION_CONSIST_ORDER = "000000"  # dptStnConsOrdr2 / arvStnConsOrdr2
+
+
+def _payment_amount(value: object, name: str) -> str:
+    """Normalise a settlement amount, refusing anything that is not one.
+
+    AMOUNT FIDELITY. This is the field korail got wrong: it sent a DISPLAY total
+    instead of the amount actually collectable, and the gap only showed up on a
+    special-class ticket (``h_tot_prc`` 59,800 against ``h_tot_rcvd_amt``
+    83,700). The same trap is available here -- the reference implementation's
+    own ticket model parses ``rcvdAmt`` (수납금액, post-discount, collectable)
+    alongside ``stdrPrc`` (기준운임, the list price) and ``dcntPrc`` (할인) --
+    so which one feeds the payment is a real choice and not a formality.
+
+    We take ``rcvdAmt``, the collectable one, and only ever that; see
+    :func:`card_payment_payload` for where it comes from and why no override
+    exists. The list price is reachable in this library only through the fare
+    page, a completely different read, and it is deliberately not wired to this
+    builder.
+
+    Leading zeros are stripped. The server sends this value zero-padded
+    (``"00000036900"``) and the two reference implementations diverge on what to
+    do about it: ryanking13/SRT posts the padded string back verbatim, while
+    srtgo casts it to ``int`` and therefore posts ``36900``. Only srtgo's form
+    is attested by the live runs this whole route rests on, so that is the one
+    reproduced. UNRESOLVED, and recorded as such.
+
+    Refuses a missing, non-numeric or zero amount rather than substituting a
+    default. Unlike the cancel form -- where refusing to build means a hold that
+    cannot be released, so the builder never raises -- refusing to build a
+    payment means no payment, which is the safe outcome.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"card payment requires {name}; the reservation carried none, and "
+            "an amount is never defaulted or inferred"
+        )
+    amount = _required_digits(value.strip(), f"card payment {name}").lstrip("0")
+    if not amount:
+        raise ValueError(f"card payment {name} must not be zero")
+    return amount
+
+
+def _payment_passenger_count(
+    reservation: SrtReservationSummary,
+    passenger_count: str | None,
+) -> str:
+    """Resolve ``totPrnb`` (승차인원) for the payment form.
+
+    Sourced from ``SrtReservationSummary.ticket_special_number`` (``tkSpecNum``),
+    which is what the reference implementation uses. Its fallback is NOT copied:
+    it reads ``tkSpecNum or int(seatNum)``, and ``seatNum`` is modelled here as
+    ``seat_number``, a seat IDENTIFIER. Substituting a seat number for a
+    passenger count is the same category error as deriving a journey count from
+    a seat count, and on a payment form it would mis-state how many people are
+    being settled for. So a missing ``tkSpecNum`` is refused, and
+    ``passenger_count`` is the explicit override for a caller who knows the true
+    figure -- the same shape as ``cancel``'s ``journey_count``.
+    """
+    if passenger_count is not None:
+        count = _required_digits(passenger_count, "passenger_count").lstrip("0")
+        if not count:
+            raise ValueError("passenger_count must be a positive integer string")
+        return count
+    value = reservation.ticket_special_number
+    if not isinstance(value, str) or not value.strip().isdigit():
+        raise ValueError(
+            "card payment requires the reservation's ticket_special_number "
+            "(tkSpecNum) as totPrnb, or an explicit passenger_count; "
+            "seat_number is a seat identifier and is never substituted for a "
+            "passenger count"
+        )
+    count = _required_digits(value.strip(), "ticket_special_number").lstrip("0")
+    if not count:
+        raise ValueError("card payment totPrnb must not be zero")
+    return count
+
+
+def card_payment_payload(
+    reservation: SrtReservationSummary,
+    card: SrtPaymentCard,
+    *,
+    membership_number: str,
+    settlement_date: str,
+    passenger_count: str | None = None,
+) -> dict[str, str]:
+    """Build the card-payment (카드결제) form for a reserved-but-unpaid PNR.
+
+    **UNVERIFIED. Read the module comment above this function before relying on
+    any field here.** In short: the route has zero hits in our v2.0.41 bundle,
+    our app pays through a WebView page plus a TransKey keypad and FIDO instead,
+    the two reference libraries that document this form are one vendored source
+    counted twice, and nobody has ever sent this request. Nothing in this
+    library can send it either — ``payment`` is outside
+    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`.
+
+    Every value goes on the wire as a string. The 32 fields, their order and
+    their constants reproduce what the reference implementation's live runs
+    used.
+
+    ``reservation`` is an
+    :class:`~srt_mobile_api.models.SrtReservationSummary`, i.e. one row of
+    :meth:`~srt_mobile_api.client.SrtClient.get_reservations`, which is the read
+    that can actually name an unpaid PNR. Four of its fields feed this form —
+    ``pnr_no``, ``received_amount``, ``ticket_special_number``,
+    ``departure_time`` and ``arrival_time`` — and that read has its OWN
+    provenance problem worth restating: only its EMPTY response is live-verified
+    (2026-07-26, ``trainListMap: []`` / ``payListMap: []``), so every populated
+    row field name below is srtgo-attested too. Both containers' field names are
+    unconfirmed against a real populated response.
+
+    Each of those is required and none is defaulted. ``SrtReservationSummary``
+    makes every field but ``pnr_no`` optional because a missing field there
+    means "the server did not send this name", and guessing an amount, a
+    passenger count or a departure time onto a payment form is exactly how a
+    caller ends up settling the wrong figure.
+
+    ``membership_number`` is ``mbCrdNo``; take it from
+    :attr:`~srt_mobile_api.models.SrtSession.membership_number` rather than from
+    the caller. ``settlement_date`` is ``stlDmnDt``, ``yyyyMMdd``, passed in
+    rather than read from a clock here so this module stays pure and a test can
+    pin an exact body.
+    """
+    if type(reservation) is not SrtReservationSummary:
+        raise ValueError(
+            "card payment requires an SrtReservationSummary row from "
+            "get_reservations"
+        )
+    if type(card) is not SrtPaymentCard:
+        raise ValueError("card payment requires an SrtPaymentCard")
+    pnr_no = reservation.pnr_no
+    if not isinstance(pnr_no, str) or not pnr_no.strip():
+        raise ValueError("card payment requires a non-empty PNR")
+    if not isinstance(membership_number, str) or not membership_number.strip():
+        raise ValueError(
+            "card payment requires the account's membership number (mbCrdNo)"
+        )
+    settlement_date = _required_digits(settlement_date, "settlement_date", length=8)
+    departure_time = _required_digits(
+        reservation.departure_time, "departure_time", length=6
+    )
+    arrival_time = _required_digits(reservation.arrival_time, "arrival_time", length=6)
+    # ONE amount, used for both fields, exactly as the reference implementation
+    # does: totNewStlAmt (총 신규 결제금액) and mnsStlAmt1 (결제수단별 결제금액)
+    # are the same figure because there is exactly one payment means on this
+    # form (ststlGridcnt / inrecmnsGridcnt / stlMnsSqno1 are all "1"). Computing
+    # them independently would invent a split this form cannot express.
+    amount = _payment_amount(reservation.received_amount, "received_amount (rcvdAmt)")
+    return {
+        "stlDmnDt": settlement_date,
+        "mbCrdNo": membership_number.strip(),
+        "stlMnsSqno1": "1",
+        "ststlGridcnt": "1",
+        "totNewStlAmt": amount,
+        "athnDvCd1": card.card_type,
+        "vanPwd1": card.card_password,
+        "crdVlidTrm1": card.card_expire_date,
+        "stlMnsCd1": PAYMENT_MEANS_CREDIT_CARD,
+        "rsvChgTno": "0",
+        "chgMcs": "0",
+        "ismtMnthNum1": str(card.installment_months),
+        "ctlDvCd": PAYMENT_CONTROL_DIVISION_CODE,
+        "cgPsId": PAYMENT_CHARGE_PERSON_ID,
+        "pnrNo": pnr_no.strip(),
+        "totPrnb": _payment_passenger_count(reservation, passenger_count),
+        "mnsStlAmt1": amount,
+        "crdInpWayCd1": PAYMENT_CARD_INPUT_WAY,
+        "athnVal1": card.card_validation_number,
+        "stlCrCrdNo1": card.card_number,
+        "jrnyCnt": _SINGLE_JOURNEY_COUNT,
+        "strJobId": PAYMENT_CONTROL_DIVISION_CODE,
+        "inrecmnsGridcnt": "1",
+        "dptTm": departure_time,
+        "arvTm": arrival_time,
+        "dptStnConsOrdr2": PAYMENT_STATION_CONSIST_ORDER,
+        "arvStnConsOrdr2": PAYMENT_STATION_CONSIST_ORDER,
+        "trnGpCd": PAYMENT_TRAIN_GROUP_CODE,
+        "pageNo": "-",
+        "rowCnt": "-",
+        "pageUrl": "",
     }

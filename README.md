@@ -13,8 +13,15 @@ account**, which the caller then owns. **One live reserve->cancel round trip was
 performed on 2026-07-25** and both halves succeeded — reserve
 `strResult=SUCC`/`msgCd=IRR000018`, cancel `strResult=SUCC`/`msgCd=IRG000000`,
 with no trace of the reservation left in the ticket list. It covered one adult,
-one journey, a general seat, one train; nothing broader is claimed, and payment
-and refund remain unimplemented and untransmittable.
+one journey, a general seat, one train; nothing broader is claimed.
+
+A third consent-gated method, `pay_with_card`, exists and **cannot transmit**.
+`payment` is not in `SRT_LIVE_MUTATION_CATEGORIES`, so it can only ever return a
+redacted preview; implementing it did not open that gate, and a test pins that a
+consent opting into everything — including one that acknowledges a real,
+chargeable card — still sends nothing. Its wire format is the least corroborated
+in this repository: see "Card payment" below before trusting any of it. `refund`
+remains unimplemented and untransmittable.
 
 Which mutations may reach the network at all is enforced at the transport
 layer, by two different mechanisms which are worth keeping distinct:
@@ -25,8 +32,10 @@ layer, by two different mechanisms which are worth keeping distinct:
 - `post_mutation_form`, the only method that can send a state-changing request,
   refuses every category outside `safety.SRT_LIVE_MUTATION_CATEGORIES`, which
   holds **exactly `{"reserve", "cancel"}`**. So `payment` and `refund` are
-  rejected however permissive the caller's consent is, and neither has a client
-  method to begin with. It separately refuses a `dry_run=True` consent, so a
+  rejected however permissive the caller's consent is — including a consent
+  that acknowledges a real card — and that refusal, not the presence or absence
+  of a client method, is what holds the line. It separately refuses a
+  `dry_run=True` consent, so a
   preview can never be transmitted either. `_send_mutation_request`, the
   function that actually calls `send`, re-asserts the same membership.
 
@@ -36,8 +45,9 @@ one reversible operation: reserve creates an unpaid hold, cancel releases one
 crash mid-flow strands a real reservation with no programmatic way out. Opening
 that gate was a decision about **recoverability, not evidence** — it is what
 made the operator-run reserve->cancel round trip possible, and that round trip
-has since been run once (2026-07-25, see below). Adding `payment` or `refund` would require
-implementing each (neither exists) and live-verifying its own wire format. The
+has since been run once (2026-07-25, see below). Adding `payment` or `refund` to
+that set would require live-verifying each one's own wire format — a thing no
+one has done, and which this library cannot do for itself. The
 retained APK specification and smoke tooling remain the evidence context for
 that package.
 
@@ -46,10 +56,10 @@ recorded `587 passed, 1 deselected` (historical); after the additive
 reservation-attempt response parser, the consent-gated reserve mutation
 surface, the transport-layer live-mutation gate, the consent-gated cancel
 surface, the two-category live enablement, the operator scripts, the
-reservation-list read, the NetFunnel queue protocol, the error taxonomy and the
-real-card acknowledgement gate
+reservation-list read, the NetFunnel queue protocol, the error taxonomy, the
+real-card acknowledgement gate and the consent-gated card-payment surface
 landed, the current offline suite at HEAD is
-`1134 passed, 1 deselected`. The deselected case is the
+`1201 passed, 1 deselected`. The deselected case is the
 explicitly opted-in live-service test.
 
 Internal editable installation and offline verification:
@@ -201,6 +211,82 @@ permissively: only `pnrNo` is required, an unexpected field type is dropped
 rather than raised on, asymmetric containers do not truncate the tail, and a
 response carrying rows we cannot read a PNR out of fails loudly rather than
 reporting an empty account.
+
+### Card payment (preview only, and the weakest evidence here)
+
+`SrtClient.pay_with_card(reservation, card, consent=...)` builds the 카드결제
+form for `POST /ata/selectListAta09036_n.do` from an `SrtReservationSummary` row
+and an `SrtPaymentCard`. **It cannot transmit.** `payment` is not in
+`SRT_LIVE_MUTATION_CATEGORIES`, so the method returns a redacted
+`MutationPreview` and a `dry_run=False` call is refused at the transport layer.
+
+**Read this before trusting a single field.** This surface is less corroborated
+than anything else in the repository, in three separate ways:
+
+- **the route is not in our app.** `/ata/selectListAta09036_n.do` has zero hits
+  across all 21,673 files of our v2.0.41 offline decompile, as does the token
+  `Ata09036` and every `Ata09*` route. The only `/ata/` route the bundle
+  contains is `/ata/selectListAta01032_n.do`;
+- **our app pays a different way.** `ara1001l.js:1550` serialises `#rsvForm` and
+  `:1599`/`:1608` point it at `/ard/selectListArd02018_n.do` (group) or
+  `/ard/selectListArd02017_n.do` (personal) — server-rendered WebView pages —
+  and the charge then goes through the TransKey secure keypad
+  (`AndroidManifest.xml:143`, `bridge.js:2,31,66-68`) and RaonSecure FIDO
+  (`AndroidManifest.xml:315`). None of that is plain HTTP form fields. So this
+  endpoint may be a legacy path the server still honours, or it may be dead for
+  our app version. **Nobody has tested it**;
+- **the two reference libraries are one source, not two.** This was verified,
+  not assumed. srtgo's 32-field payment dict is character-for-character
+  identical to ryanking13/SRT's once the latter's Korean trailing comments are
+  stripped — same keys, same values, same non-alphabetical order, same local
+  variable names, same method signature. srtgo depended on `SRTrain`
+  (ryanking13/SRT on PyPI) until commit `8423f90` "Internalize SRT"
+  (2024-12-13) deleted the dependency and added `srtgo/srt.py` in one move, with
+  the payment dict already fully formed; srtgo's README credits ryanking13 under
+  MIT. Their agreement corroborates nothing. (`srtgo_plus` is a third copy.)
+
+What the bundle *does* corroborate is narrower than "nothing", and the blanket
+claim that every field name is 0-hit is **false**. Three of the 32 names appear
+in our own bundle, all in the reservation JS and none of them on this form:
+`mbCrdNo` (`ara0101v.js:319,321`, a client-side 회원카드번호 branched on its
+`"11"` prefix), `totPrnb` (`ara1001l.js:104,368,1511,1655`, the 총인원수) and
+`jrnyCnt` (`ara0101v.js:92,311`). The other 29 — every card field, every
+settlement field, and `ctlDvCd`/`cgPsId`/`strJobId`/`inrecmnsGridcnt`/`chgMcs`/
+`dptStnConsOrdr2`/`arvStnConsOrdr2` — are genuinely absent.
+
+**The response envelope is the odd one out.** Every other SRT mutation here
+answers in `resultMap`; this one answers in `outDataSets.dsOutput0[0]`, reading
+`strResult`/`msgTxt` from there. Supporting that cost no new code path —
+`normalize_result_row` already accepted both spellings — and a test pins the
+difference side by side with the cancel envelope. `SrtPaymentResult.succeeded`
+and `.failed` are deliberately **not** complements: an unrecognised status means
+*unknown*, because for a payment a wrong guess in either direction is expensive
+and a blind retry can charge twice.
+
+**Amount fidelity was a deliberate choice, not a formality.** korail was found
+sending a display total instead of the collectable amount, and the gap only
+appeared on a special-class ticket (`h_tot_prc` 59,800 vs `h_tot_rcvd_amt`
+83,700). The same trap exists here: the reference ticket model parses `rcvdAmt`
+(수납금액, post-discount, collectable) alongside `stdrPrc` (기준운임, list price)
+and `dcntPrc` (할인). This builder takes `rcvdAmt` and only `rcvdAmt`, feeding
+both `totNewStlAmt` and `mnsStlAmt1`, and there is **no caller override** — an
+override is exactly the seam a display total slips through. A missing or zero
+amount is refused rather than defaulted. One divergence is unresolved and
+recorded: the server sends the amount zero-padded, ryanking13/SRT posts it back
+padded, srtgo casts to `int`; we reproduce srtgo's bare digits because only
+srtgo's form is attested by the live runs this route rests on.
+
+Its inputs come from `get_reservations`, whose own populated-row shape is
+srtgo-attested (only the EMPTY response is live-verified), so `rcvdAmt`,
+`tkSpecNum`, `dptTm` and `arvTm` inherit that uncertainty. `totPrnb` comes from
+`tkSpecNum`; the reference implementation's `int(seatNum)` fallback is
+deliberately **not** copied, because `seatNum` is a seat identifier and
+substituting it would mis-state how many people are being settled for — a
+`passenger_count` override exists instead. `mbCrdNo` is read from the session's
+own `userMap.MB_CRD_NO` rather than asked of the caller.
+
+The PAN, PIN, expiry, birthdate, membership number and PNR are all redacted in
+the preview and hidden from every `repr`.
 
 ### NetFunnel queue protocol
 

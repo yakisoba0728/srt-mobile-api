@@ -1,6 +1,11 @@
 from .client import SrtClient
 from .config import SrtConfig
-from .consent import MutationConsent, MutationPreview, require_mutation_consent
+from .consent import (
+    MutationConsent,
+    MutationPreview,
+    require_card_kind_claim,
+    require_mutation_consent,
+)
 from .errors import (
     SrtApiError,
     SrtAppError,
@@ -33,6 +38,8 @@ from .models import (
     SeatSelectionPage,
     SeatType,
     SrtCancelResult,
+    SrtPaymentCard,
+    SrtPaymentResult,
     SrtReservationHold,
     SrtReservationListResult,
     SrtReservationSummary,
@@ -45,6 +52,7 @@ from .models import (
     TrainSummary,
 )
 from .parsers import (
+    parse_card_payment_response,
     parse_reservation_attempt_response,
     parse_reservation_hold_response,
     parse_reservation_list_response,
@@ -56,6 +64,7 @@ __all__ = [
     "SrtConfig",
     "MutationConsent",
     "MutationPreview",
+    "require_card_kind_claim",
     "require_mutation_consent",
     "SrtApiError",
     "SrtAppError",
@@ -79,6 +88,7 @@ __all__ = [
     "Notice",
     "NoticeListResult",
     "PassengerCounts",
+    "parse_card_payment_response",
     "parse_reservation_attempt_response",
     "parse_reservation_hold_response",
     "parse_reservation_list_response",
@@ -90,6 +100,8 @@ __all__ = [
     "SeatSelectionPage",
     "SeatType",
     "SrtCancelResult",
+    "SrtPaymentCard",
+    "SrtPaymentResult",
     "SrtReservationHold",
     "SrtReservationListResult",
     "SrtReservationSummary",

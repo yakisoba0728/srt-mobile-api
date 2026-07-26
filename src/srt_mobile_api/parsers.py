@@ -30,6 +30,7 @@ from .models import (
     SeatCarOption,
     SeatSelectionPage,
     SrtCancelResult,
+    SrtPaymentResult,
     SrtReservationHold,
     SrtReservationListResult,
     SrtReservationSummary,
@@ -1221,6 +1222,87 @@ def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
             raw=data,
         )
     return SrtCancelResult(
+        status=status,
+        message_code=code,
+        message=message,
+        raw=data,
+    )
+
+
+def parse_card_payment_response(data: dict[str, Any]) -> SrtPaymentResult:
+    """Parse the response of a card payment (카드결제).
+
+    **NOTHING HAS EVER SEEN ONE OF THESE.** No payment request has been sent
+    from this repository and none can be — ``payment`` is outside
+    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`. The shape below
+    is what the reference implementations' live runs read, and their agreement
+    is not corroboration: srtgo's payment code is a vendored copy of
+    ryanking13/SRT's (see
+    :func:`~srt_mobile_api.payloads.card_payment_payload`), so this is one
+    source, not two. The route itself is 0-hit across all 21,673 files of our
+    v2.0.41 offline decompile, and our own app pays through a WebView page and a
+    secure keypad instead, so it is entirely possible this endpoint is dead for
+    our app version.
+
+    THE ENVELOPE IS THE ODD ONE OUT, and that is the one genuinely interesting
+    fact here. Every other SRT mutation this library parses answers in
+    ``resultMap`` — reserve (``ara1001l.js:1562``), cancel (the ticket-list
+    page's own inline ``cncConfirm``), the reservation list. The payment answers
+    in ``outDataSets.dsOutput0[0]``, reading ``strResult`` and ``msgTxt`` from
+    THERE, and both reference implementations deliberately bypass their own
+    ``resultMap`` response wrapper to do it.
+
+    That difference costs nothing to support, because
+    :func:`normalize_result_row` has always accepted both container spellings —
+    ``outDataSets.dsOutput0`` first, ``resultMap`` as the fallback. So this
+    reuses it rather than adding a third envelope path, which also means a
+    payment that answered in ``resultMap`` after all would still parse. A test
+    pins both directions.
+
+    POLARITY IS NOT INHERITED. The reference implementations fail only on an
+    explicit ``"FAIL"`` and treat everything else as success;
+    :class:`~srt_mobile_api.models.SrtPaymentResult` refuses to guess for an
+    unrecognised status, exposing ``succeeded`` and ``failed`` as
+    non-complementary properties. A business failure is RETURNED, not raised —
+    a caller asking "was my card charged?" must be able to read the answer
+    without exception handling, and for a payment an exception that hides a
+    successful charge is how a card gets charged twice. Only a malformed
+    envelope (:class:`~srt_mobile_api.errors.SrtProtocolError`) or an
+    app-level ``ERROR_CODE`` rejection
+    (:class:`~srt_mobile_api.errors.SrtAppError`) raises.
+
+    ``msgCd`` is optional: the documented ``dsOutput0`` payload names only
+    ``strResult`` and ``msgTxt``, and refusing a response over a field the
+    reference implementation never reads would turn a real payment outcome into
+    a parse error.
+    """
+    if not isinstance(data, dict) or not data:
+        raise SrtProtocolError(
+            "SRT card payment response must be a non-empty JSON object",
+            raw=data,
+        )
+    _validate_error_code_wrapper(data, context="card payment")
+    row = normalize_result_row(data)
+    if not row:
+        raise SrtProtocolError(
+            "SRT card payment response must contain an outDataSets.dsOutput0 "
+            "(or resultMap) result row",
+            raw=data,
+        )
+    status = row.get("strResult")
+    if not isinstance(status, str) or not status:
+        raise SrtProtocolError(
+            "SRT card payment strResult must be a non-empty string",
+            raw=data,
+        )
+    code = row.get("msgCd", "")
+    message = row.get("msgTxt", "")
+    if not isinstance(code, str) or not isinstance(message, str):
+        raise SrtProtocolError(
+            "SRT card payment msgCd and msgTxt must be strings",
+            raw=data,
+        )
+    return SrtPaymentResult(
         status=status,
         message_code=code,
         message=message,
