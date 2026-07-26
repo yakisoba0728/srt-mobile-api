@@ -13,6 +13,24 @@ code was run and no network call was made.
   `srtgo/srtgo.py`. `srtgo/__init__.py` is empty.
 - All `srt.py:NNN` citations below are line numbers in that file.
 
+> **Status note (2026-07-26).** This report is a source analysis dated at its
+> commit and is left as written. Two of its columns have since gone stale in the
+> same direction, and both are worth flagging rather than editing in place. The
+> "our **EXCLUDED** payment / refund" labels in §2's table describe this
+> library's scope at the time; `SrtClient.pay_with_card`,
+> `SrtClient.get_refund_ticket_info` and `SrtClient.refund` now exist, are
+> live-enabled, and were verified against the real server on 2026-07-26
+> (`SUCC`/`IRT000000` for the charge, `SUCC`/`IRT200277` for the refund; 7,500 KRW,
+> 수서→동탄, one adult, refunded and confirmed gone). And its "UNBLOCKED /
+> RESOLVED" verdicts for `Ata09036` and `Atc02063` were **premature when written**
+> — `cross-validation-2026-07-21.md` correctly downgraded both to
+> srtgo-attested-only after finding them 0-hit in our v2.0.41 bundle, which they
+> still are. The live run is what actually resolved them, and it resolved the
+> single-journey one-adult case only. The `tkRetPwd` → `ogtkRetPwd` and `psgNm` →
+> `buyPsNm` remap recorded in §5 is confirmed: those are the names the live
+> server took. Current state: `README.md`, `CHANGELOG.md` (Unreleased) and
+> `docs/IMPLEMENTATION_PROGRESS.md`.
+
 ---
 
 ## 0. License and reuse posture (READ THIS FIRST)
