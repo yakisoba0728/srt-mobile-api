@@ -136,17 +136,30 @@ section.
   `SrtReservationHold` carrying the PNR.
 - `reserve(train, standby=True, consent=...)` — 예약대기 (`jobId=1102`).
 - `reserve(train, round_trip=True, consent=...)` — 왕복 (`rtnDv=1`); two ordinary
-  calls, one per leg, and the caller owns both PNRs.
+  calls, one per leg, and the caller owns both PNRs. Refused for a Korail-only
+  station or a 국회의원 후급 membership, because the app refuses both before it
+  sends (`ara0101v.js:317-326`, `:337-341`).
+- `reserve(train, seat_attr_code="021", consent=...)` — 휠체어석; `"028"` is
+  전동휠체어 and `"015"` (the default) is an ordinary seat. The same three codes
+  the search accepts, so a search for wheelchair inventory and the reservation
+  that follows it now agree.
 - `reserve(train, designated_seats=..., consent=...)` — 좌석지정 (`jobId=1103`),
   taking a `SeatDesignation` built by `SeatGrid.choose("1B", "2C")`.
 - `reserve_transfer(itinerary, consent=...)` — 환승; one request, two journeys.
-- `cancel(hold_or_pnr, consent=...)` — release an unpaid hold. Pass
-  `journey_count="2"` for a transfer hold; the default is wrong for that shape.
+- `cancel(hold_or_pnr, consent=...)` — release an unpaid hold. A hold records
+  the `jrnyCnt` it was created with, so a 환승 hold cancels correctly without
+  being told; pass `journey_count` yourself only when cancelling by bare PNR.
 - `pay_with_card(reservation, card, consent=...)` — 카드결제. **Charges a real
   card.**
 - `get_refund_ticket_info(pnr)` then `refund(ticket_info, consent=...)` — 환불,
   deliberately two calls so nothing is fetched implicitly.
 - `register_discount_coupon(number, password, consent=...)` — 할인쿠폰 등록.
+
+Reserve, the reservation list and cancel were re-run against the real server on
+2026-07-27 after this round of fixes: a hold was created, read back with its
+amount and its six-digit departure and arrival times intact, and released with
+`SUCC` / `IRG000000`. Payment and refund were live-verified on 2026-07-26 and
+are unchanged since.
 
 Failures arrive as named exceptions, not as message-text matching: `SrtApiError`
 at the root, with `SrtSessionExpiredError` (log in again), `SrtNoResultsError`
