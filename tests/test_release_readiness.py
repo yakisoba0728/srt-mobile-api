@@ -1131,7 +1131,7 @@ def test_repository_truth_and_full_mutation_policy() -> None:
         "src/srt_mobile_api/",
         "tests/",
         "docs/IMPLEMENTATION_PROGRESS.md",
-        "docs/superpowers/specs/",
+        "docs/internal/superpowers/specs/",
         "README.md",
         "scripts/srt_app_api_smoke.py",
     ):

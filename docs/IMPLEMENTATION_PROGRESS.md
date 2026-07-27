@@ -1,16 +1,16 @@
 # SRT Python Package Implementation Progress
 
-Last updated: 2026-07-27 KST (version `0.2.0`; the consent-gated mutation port,
+Last updated: 2026-07-27 KST (version `1.0.0`; the consent-gated mutation port,
 its transport-layer gate and the four-category live enablement are recorded
-under `## Unreleased` in `CHANGELOG.md`). Entries dated before that describe the state at HEAD
-`955de306` and are kept as the historical record.
+under `## 1.0.0 - 2026-07-27` in `CHANGELOG.md`). Entries dated before that describe the state at HEAD
+`851f9eb` and are kept as the historical record.
 
 ## Current State
 
 ### 2026-07-27 — audit round, then verification of the audit round
 
 The 2026-07-27 sweep of the decompiled app produced 57 confirmed findings; the
-fixes are recorded per-item in `CHANGELOG.md` under `## Unreleased`, and the
+fixes are recorded per-item in `CHANGELOG.md` under `## 1.0.0 - 2026-07-27`, and the
 short version is that six correctness defects and two new refusals landed, and
 a follow-up verification pass over those fixes found four more.
 
@@ -75,9 +75,9 @@ a column added to the table without a case fails the suite.
   Prepared-request validation requires no query and exactly thirteen unique
   allowlisted form fields before the single POST is sent.
 - The manual mutual-verification method and repr-safe result are implemented.
-- Version `0.2.0` adds
-  `iter_train_search_pages(query, *, group=False, max_pages=10)` as a bounded,
-  lazy personal/group search-page iterator. Existing personal and group search
+- `iter_train_search_pages(query, *, group=False, max_pages=10)` was added
+  (first released in `0.2.0`, per `CHANGELOG.md`) as a bounded, lazy
+  personal/group search-page iterator. Existing personal and group search
   methods remain first-page-only and signature-compatible.
 - Pagination preserves the hydrated form, unknown inputs, passenger state,
   `dptTm1`, and NetFunnel key. It advances only with the statically evidenced
@@ -88,11 +88,13 @@ a column added to the table without a case fails the suite.
   each value caller-accessible. Wrapper and business `SrtAppError` rendering
   now uses fixed local messages; the original response remains available via
   the repr-hidden `raw` attribute.
-- The read-only transport boundary allows 22 exact read-only app/NetFunnel
-  routes; every mutation route is excluded from it, so
-  `assert_read_only_request` refuses all five. The 22nd is the refund's step-1
-  read (`/atc/getListAtc14087.do`), classified as a read by inference rather
-  than by proof -- see the comment on it in `safety.py`.
+- The read-only transport boundary allows only an exact, allowlisted set of
+  read-only app/NetFunnel routes (`len(READ_ONLY_ROUTES)` in `safety.py` is
+  the current count, and `test_safety.py` pins it); every mutation route is
+  excluded from it, so `assert_read_only_request` refuses all five. The
+  refund's step-1 read (`/atc/getListAtc14087.do`) was the 22nd route added to
+  that boundary, classified as a read by inference rather than by proof -- see
+  the comment on it in `safety.py`.
 - A consent-gated mutation surface was subsequently added (see "Consent-gated
   mutation surface" below). All four categories are live-enabled at the
   transport layer: `reserve` and `cancel` as a pair (live-verified 2026-07-25),
@@ -115,10 +117,9 @@ a column added to the table without a case fails the suite.
   see "좌석배치도 (Seat Grid) Read" below. Physical seats are typed as
   `SeatGridSeat`; the read allowlist grew by one route and the mutation boundary
   is still untouched.
-- Schema v2 introduces no public API or package-version change; the package
-  remains `0.2.0`. Its exact operation budget remains one login, one personal
-  search operation, and zero or one seat-page read for the first complete SRT
-  row.
+- Schema v2 introduced no public API change and no package-version bump of its
+  own. Its exact operation budget remains one login, one personal search
+  operation, and zero or one seat-page read for the first complete SRT row.
 - The exact safe offline-replay report is retained as
   `tests/fixtures/seat_page_schema_v2_evidence.json`. Tests lock its full nested
   schema, canonical digest, zero offline call counts, and fail-closed safety
@@ -924,7 +925,7 @@ car/seat response or availability contract.
   `1285 passed, 1 deselected`.
 - Prior offline gate after the mutation port and its transport-layer gate, before
   cancel: `717 passed, 1 deselected`.
-- Prior full offline gate at `955de306`, including the additive
+- Prior full offline gate at `851f9eb`, including the additive
   reservation-attempt parser tests: `625 passed, 1 deselected`.
 - Prior integrated full offline gate: `587 passed, 1 deselected`. Offline
   replay of the retained runtime bodies passes for typed notices, timetable

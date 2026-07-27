@@ -305,7 +305,7 @@ def test_default_user_agent_impersonates_the_app_on_every_login_request(
     The ``537.36SRT-APP-Android`` assertion is deliberate and is NOT a typo to
     be tidied: the app concatenates its suffix onto the WebView UA with no
     separator (``SRWebActivity.java:2642-2645``; confirmed as faithful, not a
-    defect, in ``docs/audit-2026-07-27/phase1/08-misc.md:134``), and srtgo
+    defect, in ``docs/internal/audit-2026-07-27/phase1/08-misc.md:134``), and srtgo
     matches (``srt.py:20-23``). ``test_models.py`` only checks that the suffix is
     present somewhere, which passes with or without the space.
     """

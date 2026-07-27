@@ -1,0 +1,35 @@
+srt-mobile-api
+Copyright 2026 yakisoba0728
+
+This product is licensed under the Apache License, Version 2.0. See LICENSE
+for the full license text.
+
+This product contains no source code copied from any third-party project.
+Every route, field name, request payload and response shape implemented here
+was independently recovered by decompiling the official SRT Android app
+(v2.0.41) and by reading pages the live SRT server renders to an authenticated
+session — see docs/IMPLEMENTATION_PROGRESS.md and docs/VERIFICATION.md for the
+evidence trail.
+
+During development, two third-party open-source SRT clients were consulted
+as a reference for wire-format facts that neither the decompiled app nor the
+live server settled on their own — specifically the card-payment and refund
+request shapes, which are absent from the decompiled app's offline bundle:
+
+  - srtgo (lapis42) and its fork srtgo_plus (DKim / "dion"), MIT License.
+  - ryanking13/SRT, MIT License — the origin srtgo itself vendored its SRT
+    client from (srtgo's own README credits it under MIT), so the two are one
+    source rather than two independent ones.
+
+This use was read-only source analysis, recorded in
+docs/analysis/ref-srtgo_plus.md: what was taken from those projects is facts
+about a third party's HTTP protocol (endpoint paths, field names, fixed field
+values, response-key names, and request sequencing) — not copyrightable
+expression — and every field this library sends for card payment and refund
+was independently re-implemented from that field list, not copied from either
+project's source. No file, function body, class, docstring or constant table
+from srtgo, srtgo_plus or ryanking13/SRT is reproduced here.
+
+This project is not affiliated with, endorsed by, or sponsored by SR
+(수서고속철도) or Korail, and is not affiliated with the authors of srtgo,
+srtgo_plus or ryanking13/SRT.

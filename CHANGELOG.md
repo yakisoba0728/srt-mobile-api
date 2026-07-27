@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-07-27
 
 - **Added: Apache-2.0, owner metadata, canonical URL, and `1.0.0`.** The
   repository now carries a verbatim `LICENSE`, and `pyproject.toml` states the

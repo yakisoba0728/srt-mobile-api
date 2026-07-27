@@ -33,13 +33,16 @@ before you call anything in the second half of the API.
 
 Python **3.11 or newer**. One runtime dependency, `httpx`.
 
-There is no PyPI release and the project declares no canonical URL — a license,
-owner metadata, a URL and an explicit authorization are all outstanding public
-release blockers ([docs/RELEASE.md](docs/RELEASE.md)). Install from a clone of
-this repository:
+There is no PyPI release. Install straight from GitHub:
 
 ```bash
-git clone <this repository>
+python3 -m pip install "srt-mobile-api @ git+https://github.com/yakisoba0728/srt-mobile-api"
+```
+
+Or from a clone, if you want the tests and docs alongside it:
+
+```bash
+git clone https://github.com/yakisoba0728/srt-mobile-api
 cd srt-mobile-api
 python3 -m pip install -e ".[test]"
 ```
@@ -94,6 +97,19 @@ Station codes come from `srt_mobile_api.stations`
 `SrtClient()` needs no configuration; `SrtConfig` exists only to adjust the
 timeout, user agent and device key, and refuses to point at anything other than
 the two canonical SRT origins.
+
+**If you also use `korail-mobile-api` in the same project, two names collide.**
+This package and its KORAIL sibling each export a `TrainSearchQuery` and a
+`DiscountCoupon`, and the two are not interchangeable — they are different
+types with different shapes, and importing the wrong one type-checks but
+builds the wrong request. Here, `TrainSearchQuery.passengers` is a
+`PassengerCounts` and `departure_time` defaults to `"060000"`; KORAIL's
+`TrainSearchQuery.passengers` is a plain `int` (default `1`) and its default
+departure time is `"000000"`. They keep these names because each reads
+naturally inside its own package; import both in one module and use the
+package-qualified form (`srt_mobile_api.TrainSearchQuery` vs.
+`korail_mobile_api.TrainSearchQuery`) rather than a bare `from ... import
+TrainSearchQuery` on both.
 
 ## What it can do
 
@@ -291,9 +307,12 @@ none of it was dropped.
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | **The audit log.** Every live run, its date, the server's own confirmation codes, what each run did *not* settle, the static provenance of every route, and corrections kept in place rather than deleted. |
 | [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md) | The implementer's running log: what exists, what is deferred, and the reasoning behind each surface as it was built. |
 | [docs/analysis/](docs/analysis/) | Dated static-analysis output, including the merged library specification `srt-app-api-library-spec-2026-07-09.md` and the cross-validation against reference clients. |
-| [docs/RELEASE.md](docs/RELEASE.md) | The internal build-and-verify gate, and the public-release blockers. |
+| [docs/RELEASE.md](docs/RELEASE.md) | The build-and-verify gate this repository runs before every release, and the record of what it took to clear the public-release blockers. |
+| [docs/internal/](docs/internal/) | Development history — audits, superseded plans and design specs. Not user documentation; see its own `README.md`. |
 | [SECURITY.md](SECURITY.md) | Credential handling, what must never be committed, and how to report a problem. |
 | [CHANGELOG.md](CHANGELOG.md) | Historical record, superseded in place rather than rewritten. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | The offline test gate, the evidence tiers a change needs, and what changing the mutation-consent safety model specifically requires. |
+| [NOTICE](NOTICE) | What this project studied in reference clients, and why nothing was copied from them. |
 
 Operator tooling lives in `scripts/`: `srt_app_api_smoke.py` (read-only smoke
 run), `capture_live_read_surface.py` (raw-response capture, refuses to write
@@ -309,3 +328,9 @@ loop risks an IP ban for you and queue pollution for everyone else. Do not
 store credentials, cookies, NetFunnel keys, raw response bodies, PNRs or
 card-shaped values in this repository. Reservations, charges and refunds you
 make are yours, and so is anything you strand.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE). This project is not affiliated
+with, endorsed by, or sponsored by SR (수서고속철도), and "SRT" is used here
+only to describe interoperability.

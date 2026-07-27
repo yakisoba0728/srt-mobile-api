@@ -1,7 +1,10 @@
-# Internal Release Gate
+# Release Gate
 
-This is an internal-only build and verification workflow. It does not authorize
-a public release or any production-service request.
+This is the build and verification workflow this repository runs before every
+release. It does not by itself authorize a production-service request — that
+authorization is a separate, explicit decision recorded below — and it never
+runs a live test: "verification" here means the offline suite plus a clean
+package build, never a request to `app.srail.or.kr`.
 
 ## Preconditions
 
@@ -77,13 +80,36 @@ Finish with `git status --short` and `git diff --check`.
 
 ## Version policy
 
-Before `1.0.0`, use `0.y.z`: increment the patch component for compatible
-fixes, the minor component for new backward-compatible read APIs, and the major
-component for breaking public contracts. The project does not claim semantic
-version stability before `1.0.0`.
+From `1.0.0`, this project follows semantic versioning: patch for compatible
+fixes, minor for backward-compatible additions to the public API, major for a
+breaking change to it.
+
+That promise is about **this library's Python API only** —
+`srt_mobile_api.__all__`, the shape of the objects it returns, the exceptions
+it raises. It is not, and cannot be, a promise about SRT (에스알) itself. The
+mobile app's routes, field names, response shapes and business rules can
+change without notice on their side, since SR offers no documented API and
+owes this project no compatibility. A patch release here can be forced by a
+change on their end that this project had no part in and did not choose.
 
 ## Public-release blockers
 
-Every public release remains blocked until all four items exist and are
-reviewed: a license, owner metadata, a canonical URL, and explicit authorization.
-Internal verification does not satisfy any of these blockers.
+Every public release was blocked until four items existed and were reviewed: a
+license, owner metadata, a canonical URL, and explicit authorization. All four
+are satisfied as of 2026-07-27:
+
+- **License.** `LICENSE` carries the verbatim Apache-2.0 text, and
+  `pyproject.toml` states `license = "Apache-2.0"` / `license-files =
+  ["LICENSE"]` in PEP 639 SPDX form.
+- **Owner metadata.** `pyproject.toml`'s `authors` names the repository owner
+  (`yakisoba0728`) and a contact address.
+- **Canonical URL.** `pyproject.toml`'s `[project.urls]` states the GitHub
+  Homepage, Repository, Issues and Changelog URLs under
+  `github.com/yakisoba0728/srt-mobile-api`.
+- **Explicit authorization.** The repository owner explicitly authorized a
+  public release of this repository under Apache-2.0 on GitHub on 2026-07-27.
+
+`scripts/verify_distribution.py` enforces the first three of these as part of
+this gate: it checks the built wheel and sdist against the exact license,
+author and URL values in `pyproject.toml`, so a distribution that drifts from
+them fails the gate rather than shipping quietly.

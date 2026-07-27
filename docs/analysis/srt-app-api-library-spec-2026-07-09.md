@@ -659,7 +659,7 @@ design specifications, the root README, and bounded smoke tooling.
 | `src/srt_mobile_api/` | Installable read-only package source. |
 | `tests/` | Offline contract tests and sanitized synthetic fixtures. |
 | `docs/IMPLEMENTATION_PROGRESS.md` | Current implementation and verification evidence. |
-| `docs/superpowers/specs/` | Retained design decisions and completion status. |
+| `docs/internal/superpowers/specs/` | Retained design decisions and completion status. |
 | `scripts/srt_app_api_smoke.py` | Re-runnable smoke/negative test harness. |
 | `README.md` | Package entry point, evidence map, and safety notes. |
 

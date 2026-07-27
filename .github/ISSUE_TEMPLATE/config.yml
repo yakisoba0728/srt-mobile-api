@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/yakisoba0728/srt-mobile-api/security/advisories/new
+    about: >-
+      Use GitHub Security Advisories, not a public issue, for anything that
+      could be used to defeat the mutation-consent safety model or that
+      involves a real credential, PNR, or response body.
