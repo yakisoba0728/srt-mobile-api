@@ -1262,6 +1262,14 @@ class SrtClient:
         a search row) is UNVERIFIED; treat them as two independent holds until a
         live run says otherwise.
 
+        Two more preconditions are refused before anything is built, mirroring
+        the app's own 왕복 checkbox handler (``ara0101v.js:317-341``): a
+        Korail-only departure or arrival station, and (inferred binding — see
+        the docstring on :func:`~srt_mobile_api.payloads.personal_reservation_payload`)
+        an account whose membership number starts with ``"11"`` (국회의원
+        후급). ``membership_number`` is read from ``self.session.current`` and
+        passed through automatically; there is no parameter for it here.
+
         **designated_seats** (좌석지정, ``jobId=1103``) reserves NAMED seats
         instead of letting the server assign them. Build it from a grid this
         library read:
@@ -1312,6 +1320,10 @@ class SrtClient:
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
+            # membership_number is read here, not defaulted, because
+            # _submit_reservation only calls this closure after it has already
+            # confirmed self.session.current is not None (both the dry-run and
+            # the live branch build_form calls happen after that check).
             lambda key: personal_reservation_payload(
                 train,
                 passengers or PassengerCounts(),
@@ -1322,6 +1334,7 @@ class SrtClient:
                 round_trip=round_trip,
                 designated_seats=designated_seats,
                 seat_attr_code=seat_attr_code,
+                membership_number=self.session.current.membership_number,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,

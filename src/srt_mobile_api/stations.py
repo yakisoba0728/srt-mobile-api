@@ -358,6 +358,43 @@ STATION_NAMES_BY_CODE: dict[str, str] = {
 }
 
 
+#: The 17 station codes ``stationList`` flags ``gubun == "SRT"``
+#: (``js/stationInfo.js:29-45``). Every other code in
+#: :data:`STATION_NAMES_BY_CODE` -- including ones SRT trains physically pass
+#: through -- is ``gubun == "korail"`` there instead.
+#:
+#: This is the SAME set the app's own ``lfn_isKorailStn`` (offline
+#: ``sub/main.html:568-578``) tests: it scans ``stationList`` for an entry
+#: with ``gubun == "SRT"`` matching the code and returns ``False`` (i.e. "not
+#: Korail") only on a hit, ``True`` otherwise -- so a code absent from this
+#: set counts as "코레일" for that function, regardless of whether
+#: :data:`STATION_NAMES_BY_CODE` happens to know its name. It gates the 왕복
+#: (round trip) checkbox: ``ara0101v.js:337-341`` calls ``lfn_isKorailStn`` on
+#: both the departure and arrival station and refuses the round trip if
+#: either comes back ``True``.
+SRT_STATION_CODES: frozenset[str] = frozenset(
+    {
+        "0036",  # 광주송정
+        "0507",  # 김천구미
+        "0514",  # 공주
+        "0037",  # 나주
+        "0010",  # 대전
+        "0015",  # 동대구
+        "0552",  # 동탄
+        "0041",  # 목포
+        "0020",  # 부산
+        "0551",  # 수서
+        "0508",  # 신경주
+        "0297",  # 오송
+        "0509",  # 울산
+        "0030",  # 익산
+        "0033",  # 정읍
+        "0553",  # 지제
+        "0502",  # 천안아산
+    }
+)
+
+
 def station_name_by_code(code: str | None) -> str:
     """Return the station name for ``code``, or ``""`` if unknown.
 
