@@ -38,6 +38,12 @@ srt_mobile_api = ["py.typed"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+# Test the checkout pytest is run FROM. Without this the suite passes only
+# because an editable install happens to point here; run it from a worktree,
+# or against a plain `pip install`, and 1600+ tests silently grade a different
+# copy of the package. The sibling korail repo hit exactly that and pinned it
+# the same way.
+pythonpath = ["src"]
 markers = [
   "live: tests that call live SRT services and require explicit opt-in",
 ]

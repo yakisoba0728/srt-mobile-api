@@ -408,3 +408,78 @@ def test_client_treats_a_returned_login_form_as_an_expired_session():
         client.get_reservations()
 
     assert client.session.current is None
+
+
+# --------------------------------------------------------------------------
+# The int-typed row. _ZERO_PADDED_RESERVATION_COLUMNS exists because a JSON
+# number arrives with its leading zeros already gone, and until now NOTHING
+# forced that repair to run: every test above hands these five columns
+# pre-padded string literals. The 2026-07-27 sweep proved the gap by emptying
+# the table at runtime and watching the whole suite stay green -- i.e. the
+# repair could have been deleted wholesale and no test would have noticed.
+# That is the shape of the korail bug that made every hold unpayable while
+# 2340 tests passed, so it gets pinned here from both sides.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "sent", "expected", "attribute"),
+    [
+        ("dptTm", 63000, "063000", "departure_time"),
+        ("arvTm", 82500, "082500", "arrival_time"),
+        ("iseLmtTm", 93000, "093000", "payment_limit_time"),
+        ("dptRsStnCd", 551, "0551", "departure_station_code"),
+        ("arvRsStnCd", 20, "0020", "arrival_station_code"),
+    ],
+)
+def test_a_numeric_identifier_column_keeps_its_width(key, sent, expected, attribute):
+    """A 06:30 departure sent as the number 63000 must read back as "063000".
+
+    Without the repair this is "63000", five characters, and
+    ``card_payment_payload``'s ``_required_digits(..., length=6)`` -- an exact
+    length check, not a minimum -- refuses every departure before 10:00.
+    """
+    result = parse_reservation_list_response(
+        _populated(
+            [{"pnrNo": FAKE_PNR, "rcvdAmt": "12000"}],
+            [{"stlbTrnClsfCd": "17", "trnNo": "00301", key: sent}],
+        )
+    )
+
+    assert getattr(result.reservations[0], attribute) == expected
+
+
+def test_a_numeric_quantity_column_is_not_padded():
+    """The other half of the rule: only IDENTIFIERS get a width.
+
+    ``rcvdAmt`` is a quantity, so 7500 is "7500" and not "007500". This is why
+    the table is an explicit list rather than a blanket "pad anything numeric".
+    """
+    result = parse_reservation_list_response(
+        _populated(
+            [{"pnrNo": FAKE_PNR, "rcvdAmt": 7500}],
+            [{"stlbTrnClsfCd": "17", "trnNo": "00301"}],
+        )
+    )
+
+    assert result.reservations[0].received_amount == "7500"
+
+
+def test_every_padded_column_is_covered_by_a_test():
+    """Guard the guard: a new entry in the table needs a case above.
+
+    The defect this file is pinning was not a wrong width, it was a repair
+    nothing exercised. A column added to _ZERO_PADDED_RESERVATION_COLUMNS
+    without a case in the parametrize list would reproduce exactly that, so
+    the omission fails here instead of passing silently.
+    """
+    from srt_mobile_api import parsers
+
+    covered = {
+        case[0]
+        for case in test_a_numeric_identifier_column_keeps_its_width.pytestmark[
+            0
+        ].args[1]
+    }
+
+    assert covered == set(parsers._ZERO_PADDED_RESERVATION_COLUMNS)

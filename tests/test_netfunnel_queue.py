@@ -525,3 +525,66 @@ def test_the_live_release_reply_is_accepted():
 
     assert token.raw_type == "5004" and token.code == "200"
     assert token.params["ip"] == "rnf14.letskorail.com"
+
+
+# --------------------------------------------------------------------------
+# Acquisition and release must stay symmetric on EVERY exit, including the
+# ones that raise. A key recorded only after the poll loop finishes is a slot
+# the server keeps holding for a caller who has already given up.
+# --------------------------------------------------------------------------
+
+
+def test_a_key_held_when_the_bounded_wait_expires_is_still_ours_to_release():
+    def queue(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_result("5101:201:key=QUEUED-KEY&ttl=1&nwait=9"))
+
+    now = [0.0]
+
+    def clock():
+        return now[0]
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    client = SrtClient(
+        SrtConfig(),
+        transport=httpx.MockTransport(queue),
+        clock=clock,
+        sleep=sleep,
+    )
+
+    with pytest.raises(SrtNetFunnelError, match="bounded wait"):
+        client._get_act10_key("https://app.srail.or.kr/ara/ara0101v.do")
+
+    # The raise happens with a key already issued to us. Before, the append
+    # below the loop had not run yet and the slot was simply abandoned.
+    assert client._netfunnel_slots == ["QUEUED-KEY"]
+
+
+def test_the_poll_loop_supersedes_its_key_rather_than_accumulating_slots():
+    keys = iter(["FIRST-KEY", "SECOND-KEY", "THIRD-KEY"])
+    replies = [
+        "5101:201:key=FIRST-KEY&ttl=1&nwait=3",
+        "5002:201:key=SECOND-KEY&ttl=1&nwait=2",
+        "5002:200:key=THIRD-KEY&ttl=1&nwait=0",
+    ]
+    sent = iter(replies)
+
+    def queue(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_result(next(sent)))
+
+    now = [0.0]
+    client = SrtClient(
+        SrtConfig(),
+        transport=httpx.MockTransport(queue),
+        clock=lambda: now[0],
+        sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+
+    key = client._get_act10_key("https://app.srail.or.kr/ara/ara0101v.do")
+
+    # One slot, the current one -- not one per poll. Releasing three keys for
+    # one place in line would be its own kind of wrong.
+    assert key == "THIRD-KEY"
+    assert client._netfunnel_slots == ["THIRD-KEY"]
+    assert list(keys) == ["FIRST-KEY", "SECOND-KEY", "THIRD-KEY"]

@@ -378,13 +378,19 @@ def test_search_uses_act10_and_search_endpoint(load_json_fixture, load_text_fixt
         transport=httpx.MockTransport(handler),
         clock=lambda: 1712345678.901,
     )
-    # A group search requires totPrnb >= 10 (ara0101v.js:551-554); use a valid group-size
-    # query so search_group_trains builds a payload the app would actually send.
+    # The party size is the discriminant, so the two searches cannot share one
+    # query: a group search requires totPrnb >= 10 (ara0101v.js:551-554) and a
+    # personal search requires < 10 (:562-567). Sending ten through
+    # search_trains is precisely the call the app refuses, so it is refused
+    # here too -- see test_a_personal_search_of_ten_is_refused_as_a_group_one.
     query = TrainSearchQuery(
+        "0551", "0020", "20260710", passengers=PassengerCounts(adult=2)
+    )
+    group_query = TrainSearchQuery(
         "0551", "0020", "20260710", passengers=PassengerCounts(adult=10)
     )
     result = client.search_trains(query)
-    group = client.search_group_trains(query)
+    group = client.search_group_trains(group_query)
     assert result.trains[0].train_no == "303"
     assert result.trains[0].departure_station_name == "수서"
     assert result.trains[0].arrival_station_name == "부산"
@@ -1224,3 +1230,52 @@ def test_timetable_and_fare_stn_course_resolved_from_codes_only(load_text_fixtur
     client.get_fare(train, PassengerCounts(adult=1))
     assert captured["/ara/selectListAra12009_n.do"]["stnCourseNm"] == ["수서-부산"]
     assert captured["/ara/selectListAra13010_n.do"]["stnCourseNm"] == ["수서-부산"]
+
+
+def test_a_personal_search_of_ten_is_refused_as_a_group_one(load_text_fixture):
+    """The ceiling half of the 10-person rule, previously unenforced.
+
+    ara0101v.js:562-567 refuses a non-단체 search of 10 or more with "10명
+    이상은 단체 예약입니다." and returns. The floor (a group search of fewer
+    than 10) was already reproduced; the ceiling was written off as
+    unenforceable because search_page_payload hydrates both flows. It is
+    enforceable one layer up, where `group` is already known.
+    """
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise AssertionError(f"nothing should be sent: {request.url}")
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    query = TrainSearchQuery(
+        "0551", "0020", "20260710", passengers=PassengerCounts(adult=10)
+    )
+
+    with pytest.raises(ValueError, match="단체"):
+        client.search_trains(query)
+
+    # Refused before the NetFunnel key is acquired, so a rejected search never
+    # takes a place in the queue.
+    assert calls == []
+
+
+def test_nine_is_still_a_personal_search(load_json_fixture, load_text_fixture):
+    """The boundary is >= 10, not > 10 -- nine passengers stays personal."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "nf.letskorail.com":
+            return httpx.Response(200, text=load_text_fixture("netfunnel_act10.js"))
+        if (
+            request.url.path == "/ara/selectListAra10007_n.do"
+            and request.method == "POST"
+        ):
+            return httpx.Response(200, json=load_json_fixture("search_success.json"))
+        return httpx.Response(200, text=load_text_fixture("search_page.html"))
+
+    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler))
+    query = TrainSearchQuery(
+        "0551", "0020", "20260710", passengers=PassengerCounts(adult=9)
+    )
+
+    assert client.search_trains(query).trains[0].train_no == "303"

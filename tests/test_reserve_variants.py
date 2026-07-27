@@ -817,3 +817,136 @@ def test_the_mutation_send_path_now_refuses_the_group_route_outright():
     assert_mutation_route("POST", RESERVE_ROUTE)
     with pytest.raises(SrtProtocolError, match="not allowed"):
         assert_mutation_route("POST", REMOVED_GROUP_RESERVE_ROUTE)
+
+
+# --------------------------------------------------------------------------
+# The 2026-07-27 sweep: standby resolved the cabin BEFORE overriding it, and
+# reserve() discarded the row's own 요구좌석속성.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("seat_type", list(SeatType))
+def test_standby_works_on_a_row_that_carried_no_availability_string(seat_type):
+    """A waitlistable row that dropped gnrmRsvPsbStr must still be waitlistable.
+
+    _require_availability refuses a *_FIRST seat type when the row states no
+    availability, which is right where that string decides the cabin -- and
+    wrong here, where nothing reads it. The app settles a 예약대기 row's cabin
+    from the IMAGE field alone (ara1001l.js:1430-1432), and standby forces
+    일반실 regardless. Resolving the class before applying the override made
+    the raise reachable past it, so this refused a train SRT would have queued.
+
+    _refuse_ineligible_standby's own contract already says a row which dropped
+    columns is still eligible; this is the same row shape, one function later.
+    """
+    train = dataclasses.replace(
+        _standby_train(),
+        general_seat_availability=None,
+        special_seat_availability=None,
+    )
+
+    form = personal_reservation_payload(
+        train,
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+        seat_type=seat_type,
+        standby=True,
+    )
+
+    assert form["psrmClCd1"] == "1"
+    assert form["jobId"] == "1102"
+
+
+def test_a_non_standby_row_without_availability_is_still_refused():
+    """The override is scoped to standby; M-2's fail-closed rule is untouched.
+
+    Without this, "make standby work" would read as "make the availability
+    requirement optional", and the 특실-on-missing-data booking M-2 closed
+    would come straight back.
+    """
+    train = dataclasses.replace(
+        _eligible_train(),
+        general_seat_availability=None,
+        special_seat_availability=None,
+    )
+
+    with pytest.raises(SrtProtocolError, match="gnrmRsvPsbStr"):
+        personal_reservation_payload(
+            train, PassengerCounts(adult=1), netfunnel_key=SYNTHETIC_NF
+        )
+
+
+def test_a_reservation_inherits_the_seat_attr_code_its_row_was_found_with():
+    """Searching 021 and reserving the result must not send 015.
+
+    The builder-level discard was closed by validating the value; this is the
+    other half, one layer up. reserve()'s argument defaulted to the literal
+    "015", so the row's own seatAttCd -- which the parser stores precisely so
+    the row remembers what it was found with -- was overwritten by the default
+    on every call that did not restate it. Wheelchair inventory was searchable
+    and then quietly booked as an ordinary seat.
+    """
+    wheelchair_row = dataclasses.replace(_eligible_train(), seat_attr_code="021")
+
+    form = personal_reservation_payload(
+        wheelchair_row, PassengerCounts(adult=1), netfunnel_key=SYNTHETIC_NF
+    )
+
+    assert form["rqSeatAttCd1"] == "021"
+
+
+def test_an_explicit_seat_attr_code_still_beats_the_row():
+    form = personal_reservation_payload(
+        dataclasses.replace(_eligible_train(), seat_attr_code="021"),
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+        seat_attr_code="015",
+    )
+
+    assert form["rqSeatAttCd1"] == "015"
+
+
+def test_a_row_that_carried_no_seat_attr_code_falls_back_to_015():
+    form = personal_reservation_payload(
+        dataclasses.replace(_eligible_train(), seat_attr_code=None),
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+    )
+
+    assert form["rqSeatAttCd1"] == "015"
+
+
+def test_a_guard_that_fires_after_the_queue_key_still_releases_the_slot():
+    """The form is built INSIDE the try that releases the NetFunnel slot.
+
+    Every client-side refusal this builder owns -- 국회의원 후급, 코레일
+    전용역, the seat-attr whitelist, the availability requirement, the cabin
+    cross-check -- runs during build_form, which happened one line above the
+    try. Any of them raising left a real act_10 key acquired and never
+    completed, and the dominant case (a script stopped by a guard) never
+    flushes afterwards either.
+    """
+    client, recorder = _client({})
+    client.session.current = SrtSession(
+        login_id="synthetic", user_map={"MB_CRD_NO": "1198765432"}
+    )
+
+    # 국회의원 후급 (mbCrdNo starting "11") on a round trip: refused by the
+    # builder, i.e. after the key exists.
+    with pytest.raises(ValueError):
+        client.reserve(
+            _eligible_train(),
+            consent=_live(allow_reserve=True),
+            passengers=PassengerCounts(adult=1),
+            round_trip=True,
+        )
+
+    assert client._netfunnel_slots == []
+    # 5101 acquired it, 5004 gave it back, and no reservation was posted.
+    opcodes = [
+        request.url.params["opcode"]
+        for request in recorder.requests
+        if request.url.path == NETFUNNEL_PATH
+    ]
+    assert opcodes == ["5101", "5004"]
+    assert RESERVE_ROUTE not in recorder.paths

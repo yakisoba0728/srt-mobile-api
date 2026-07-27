@@ -92,6 +92,7 @@ from .parsers import (
     parse_unpaid_cancel_response,
 )
 from .payloads import (
+    GROUP_MIN_PARTY_SIZE,
     card_payment_payload,
     coupon_registration_payload,
     date_selector_payload,
@@ -458,7 +459,12 @@ class SrtClient:
             referer,
         )
         token = parse_queue_response(body, action="act_10")
-        key = token.key
+        # Recorded the moment it exists, not once the loop finishes. Both raises
+        # below happen with a key already issued to us, and a key recorded after
+        # them is a queue slot the server keeps holding for a caller who has
+        # given up. Only ever ONE key is registered -- the current one -- because
+        # the poll loop supersedes rather than accumulates.
+        key = self._hold_netfunnel_key(None, token.key)
         deadline = self._clock() + QUEUE_WAIT_LIMIT_SECONDS
         polls = 0
         while is_queued(token):
@@ -473,7 +479,7 @@ class SrtClient:
             # The key to poll with is the one the queue last echoed
             # (chkEnterCont(retval.getValue("key"))); a 201 that omits it leaves
             # the previously held key in place rather than aborting.
-            key = token.key or key
+            key = self._hold_netfunnel_key(key, token.key or key)
             if not key:
                 raise SrtNetFunnelError(
                     token.code,
@@ -489,7 +495,21 @@ class SrtClient:
                 referer,
             )
             token = parse_queue_response(body, action="act_10")
-            key = token.key or key
+            key = self._hold_netfunnel_key(key, token.key or key)
+        return key
+
+    def _hold_netfunnel_key(self, previous: str | None, key: str | None) -> str | None:
+        """Register ``key`` as the slot we hold, retiring ``previous``.
+
+        Kept separate so that acquisition and release stay symmetric no matter
+        which path leaves :meth:`_get_act10_key`: whatever this has recorded is
+        exactly what :meth:`_release_netfunnel_slots` will send ``setComplete``
+        for.
+        """
+        if previous == key:
+            return key
+        if previous is not None and previous in self._netfunnel_slots:
+            self._netfunnel_slots.remove(previous)
         if key:
             self._netfunnel_slots.append(key)
         return key
@@ -546,6 +566,27 @@ class SrtClient:
         group: bool,
         transfer: bool = False,
     ) -> tuple[str, dict[str, str]]:
+        # The ceiling half of the 10-person boundary, mirroring the floor
+        # group_search_ajax_payload already enforces. ara0101v.js:562-567
+        # refuses a non-단체 search of 10 or more with "10명 이상은 단체
+        # 예약입니다." and returns, so this is a client-enforced rule in both
+        # directions and only one of the two was reproduced.
+        #
+        # It lives HERE rather than in the payload builder because the builder
+        # cannot tell the two flows apart -- search_page_payload hydrates the
+        # group flow too, so a cap applied there would refuse the very searches
+        # the floor exists to allow. This layer already knows: `group` is the
+        # discriminant every entry point passes down, and this is the one place
+        # all five of them funnel through.
+        #
+        # Refused BEFORE _get_act10_key, so a rejected search never takes a
+        # place in the queue.
+        if not group and query.passengers.total >= GROUP_MIN_PARTY_SIZE:
+            raise ValueError(
+                f"a personal search is limited to {GROUP_MIN_PARTY_SIZE - 1} "
+                f"passengers; {query.passengers.total} is a 단체 search "
+                "(ara0101v.js:562-567). Use search_group_trains()."
+            )
         referer = f"{self.config.base_url}/ara/ara0101v.do"
         key = self._get_act10_key(referer)
         state = self._hydrate_search(query, key, transfer=transfer)
@@ -1121,8 +1162,18 @@ class SrtClient:
                 if netfunnel_key
                 else self._get_act10_key(booking_referer)
             )
-            form = build_form(key)
+            # INSIDE the try, not above it. build_form runs every client-side
+            # refusal this builder owns -- 국회의원 후급, 코레일 전용역, the seat
+            # attr whitelist, the availability requirement, the cabin
+            # cross-check -- and any of them raises with a queue slot already
+            # acquired two lines up. Outside the try, that slot was never
+            # released: the finally below is the only thing that returns it, and
+            # the dominant case (a script stopped by a guard) never flushes at
+            # all. The sibling paths already do it this way -- _search_once
+            # builds inside its guard, _search_public_discount_once builds
+            # before acquiring.
             try:
+                form = build_form(key)
                 response = self.http.post_mutation_form(
                     route,
                     form,
@@ -1171,7 +1222,7 @@ class SrtClient:
         standby: bool = False,
         round_trip: bool = False,
         designated_seats: SeatDesignation | None = None,
-        seat_attr_code: str = "015",
+        seat_attr_code: str | None = None,
     ) -> MutationPreview | SrtReservationHold:
         """Create a personal (개인예약) SRT reservation hold under explicit consent.
 
@@ -1349,7 +1400,7 @@ class SrtClient:
         seat_type: SeatType = SeatType.GENERAL_FIRST,
         window_seat: bool | None = None,
         netfunnel_key: str | None = None,
-        seat_attr_code: str = "015",
+        seat_attr_code: str | None = None,
     ) -> MutationPreview | SrtReservationHold:
         """Create a 환승 (transfer) reservation hold: BOTH legs, in ONE request.
 

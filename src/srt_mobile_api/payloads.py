@@ -221,13 +221,14 @@ _STANDBY_ROW_IMAGES = frozenset(
 # floor survived that removal because the group SEARCH is still offered and the
 # app enforces the same number on it.
 #
-# The CEILING on personal searches is deliberately not enforced here, and the
-# asymmetry is worth stating because the paragraph above calls the boundary real
-# in both directions. ara0101v.js:562-567 does refuse a non-단체 search of 10 or
-# more. This builder cannot: search_page_payload hydrates the group flow too, so
-# a cap applied there would refuse the very searches GROUP_MIN_PARTY_SIZE exists
-# to allow. A caller who asks for a personal search of 10+ gets whatever the
-# server makes of it -- untested, since the app never sends one.
+# The CEILING on personal searches is enforced too, but NOT in this module.
+# ara0101v.js:562-567 refuses a non-단체 search of 10 or more, and no builder
+# here can reproduce that: search_page_payload hydrates the group flow as well,
+# so a cap applied at this layer would refuse the very searches this floor
+# exists to allow. The check therefore lives one layer up, in
+# SrtClient._prepare_search, which receives the `group: bool` that tells the two
+# flows apart. This comment used to read as though the ceiling could not be
+# enforced at all, which is what kept it on the deferred list.
 GROUP_MIN_PARTY_SIZE = 10
 
 # WINDOW_SEAT mapping (srtgo srt.py:86): None -> "000" (no preference),
@@ -1130,6 +1131,26 @@ def _require_availability(value: str | None, *, seat_type: SeatType, field: str)
 SRT_REQUEST_SEAT_ATTR_CODES = frozenset({"015", "021", "028"})
 
 
+def _inherited_seat_attr_code(train: TrainSummary, explicit: str | None) -> str:
+    """The 요구좌석속성 to reserve with: the caller's, else the row's, else 015.
+
+    Closing the OTHER half of the discard :func:`_validated_seat_attr_code`
+    describes. Validating the value fixed the builders, but the API above them
+    still defaulted the argument to the literal "015", so
+    ``search_trains(query(seat_attr_code="021"))`` followed by ``reserve(row)``
+    went on quietly booking an ordinary seat out of wheelchair inventory --
+    the same silent substitution, moved up one layer.
+
+    ``TrainSummary.seat_attr_code`` is parsed from the row's own ``seatAttCd``
+    (parsers.py), so the row remembers what it was found with. A caller who
+    passes the argument still wins outright; ``None`` means "whatever this row
+    is", and only a row that carried nothing falls back to 015.
+    """
+    if explicit is not None:
+        return explicit
+    return train.seat_attr_code or "015"
+
+
 def _validated_seat_attr_code(value: str) -> str:
     """Check a 요구좌석속성 code before it goes into a reservation body.
 
@@ -1139,6 +1160,10 @@ def _validated_seat_attr_code(value: str) -> str:
     silently sent "015": the same value respected on the way in and discarded on
     the way out, with no warning. Wheelchair and powered-wheelchair seats were
     unreachable through reserve() and reserve_transfer() as a result.
+
+    Note this closes the BUILDER layer only; :func:`_inherited_seat_attr_code`
+    is what stops the API layer from re-introducing the same discard through
+    its default argument.
     """
     if value not in SRT_REQUEST_SEAT_ATTR_CODES:
         raise SrtProtocolError(
@@ -1306,7 +1331,7 @@ def personal_reservation_payload(
     standby: bool = False,
     round_trip: bool = False,
     designated_seats: SeatDesignation | None = None,
-    seat_attr_code: str = "015",
+    seat_attr_code: str | None = None,
     membership_number: str = "",
 ) -> dict[str, str]:
     """Build the 개인예약 / 예약대기 reservation form (``/arc/selectListArc05013_n.do``).
@@ -1332,9 +1357,17 @@ def personal_reservation_payload(
       the 특실 branch on the next line tests only the two 예약가능 images, so a
       특실-standby simply has no representation in the app. Forcing matters
       because the default ``SeatType.GENERAL_FIRST`` resolves to 특실 whenever
-      the general cabin is not "예약가능" -- which is exactly what a standby row
-      looks like. Without the override, asking for standby would silently order
+      the general cabin reads as not "예약가능" -- which is exactly what a
+      standby row looks like. Without the override, asking for standby ordered
       a first-class seat.
+
+      The override is applied BEFORE the class is resolved, not after. Once
+      ``_require_availability`` landed, a standby row that carried no
+      ``gnrmRsvPsbStr`` at all stopped resolving to 특실 and started RAISING
+      instead -- past an override placed below it. Deciding first is what
+      makes both failure modes impossible; nothing on this path reads the
+      availability string, because the app settles a 예약대기 row's cabin
+      from the image field alone.
     * ``reserveType`` is DROPPED. srtgo sets it only for a personal reservation
       (srt.py:990-991). The field is 0-hit in our bundle, so srtgo is the only
       source there is and it is followed rather than guessed past.
@@ -1562,10 +1595,31 @@ def personal_reservation_payload(
         train.arrival_station_code
     )
 
-    # Resolved unconditionally, even when standby overrides the answer below, so
-    # that seat_type is still type-validated on every path (_resolve_special_seat
-    # is where that check lives).
-    special_seat = _resolve_special_seat(train, seat_type)
+    if standby:
+        # 예약대기 is a 일반실 waitlist in this app: ara1001l.js:1431 assigns
+        # sPsrmClCd=1 for the 예약대기 image, and the 특실 branch immediately
+        # after tests only the two 예약가능 images. See the docstring for why
+        # this has to override rather than defer to seat_type.
+        #
+        # Decided BEFORE _resolve_special_seat rather than after it, because
+        # _resolve_special_seat does not merely return the wrong answer for a
+        # standby row -- it can RAISE past the override. A *_FIRST seat_type
+        # (GENERAL_FIRST is the default) sends it through _require_availability,
+        # which refuses a row that carried no gnrmRsvPsbStr. That refusal is
+        # right when the field decides the class and wrong here, where nothing
+        # reads it: the app settles a 예약대기 row's cabin from the IMAGE field
+        # alone (ara1001l.js:1430-1432), and _refuse_ineligible_standby's own
+        # contract is that a row which dropped columns is still waitlistable.
+        # Resolving first refused a train the app would have queued.
+        #
+        # seat_type is still type-validated, since the raise below is the same
+        # one _resolve_special_seat performs.
+        if not isinstance(seat_type, SeatType):
+            raise ValueError("seat_type must be a SeatType")
+        _refuse_ineligible_standby(train)
+        special_seat = False
+    else:
+        special_seat = _resolve_special_seat(train, seat_type)
     # type(...) is SeatDesignation, not truthiness: a wrong type must still
     # reach the dedicated validator below and get its own message.
     if type(designated_seats) is SeatDesignation and designated_seats.cabin_class:
@@ -1588,14 +1642,6 @@ def personal_reservation_payload(
                 "the cabin you intend to book, or pass "
                 "seat_type=SeatType.SPECIAL_ONLY / GENERAL_ONLY to match it."
             )
-    if standby:
-        _refuse_ineligible_standby(train)
-        # 예약대기 is a 일반실 waitlist in this app: ara1001l.js:1431 assigns
-        # sPsrmClCd=1 for the 예약대기 image, and the 특실 branch immediately
-        # after tests only the two 예약가능 images. See the docstring for why
-        # this has to override rather than defer to seat_type.
-        special_seat = False
-
     # Seat fields are built BEFORE the form, so a party/seat-count mismatch or a
     # non-selectable seat raises while nothing exists yet -- the same reason
     # every other validation in this builder runs before the dict is assembled.
@@ -1669,7 +1715,7 @@ def personal_reservation_payload(
             passengers,
             special_seat=special_seat,
             window_seat=window_seat,
-            seat_attr_code=seat_attr_code,
+            seat_attr_code=_inherited_seat_attr_code(train, seat_attr_code),
         )
     )
     # LAST, so that a body without designated seats is byte-for-byte and
@@ -1781,7 +1827,7 @@ def transfer_reservation_payload(
     seat_type: SeatType = SeatType.GENERAL_FIRST,
     netfunnel_key: str,
     window_seat: bool | None = None,
-    seat_attr_code: str = "015",
+    seat_attr_code: str | None = None,
 ) -> dict[str, str]:
     """Build the 환승 (transfer) reservation form: ONE body, TWO journey slots.
 
@@ -1868,6 +1914,13 @@ def transfer_reservation_payload(
             "transfer reservation requires a TransferItinerary carrying both "
             f"legs — {TRANSFER_BOTH_LEGS_MESSAGE}"
         )
+    # Resolved ONCE, here, off the first leg. Both slots must carry the same
+    # 요구좌석속성 (below), so leaving it None for each of the two call sites
+    # would let them inherit from different rows -- slot 1 from first_leg and
+    # slot 2 from nothing at all.
+    resolved_seat_attr_code = _inherited_seat_attr_code(
+        itinerary.first_leg, seat_attr_code
+    )
     payload = personal_reservation_payload(
         itinerary.first_leg,
         passengers,
@@ -1877,7 +1930,7 @@ def transfer_reservation_payload(
         # Both legs of one reservation carry the same 요구좌석속성: the app's
         # seat-option callback writes rqSeatAttCd1 AND rqSeatAttCd2 from the
         # same obj.seatOption (ara0101v.js:759-778).
-        seat_attr_code=seat_attr_code,
+        seat_attr_code=resolved_seat_attr_code,
     )
     if itinerary.second_leg.service_class_code != _SRT_TRAIN_CLASS_CODE:
         raise ValueError(
@@ -1900,7 +1953,7 @@ def transfer_reservation_payload(
             # own values for exactly this reason.
             special_seat=payload["psrmClCd1"] == "2",
             window_seat=window_seat,
-            seat_attr_code=seat_attr_code,
+            seat_attr_code=resolved_seat_attr_code,
         )
     )
     return payload
