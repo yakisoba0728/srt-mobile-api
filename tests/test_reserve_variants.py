@@ -477,6 +477,151 @@ def test_round_trip_emits_no_second_journey_slot():
     assert "psgTpCd2" not in form
 
 
+# --- round trip pre-submission guards ----------------------------------------
+#
+# Both reproduce the app's own 왕복 checkbox handler (ara0101v.js:317-341),
+# which force-unchecks #chk_rtrp and alerts BEFORE the code that ever sets
+# rtnDv="1" (:381) -- the same uncheck-alert-return shape already used to
+# implement the 환승×왕복 exclusion (:296-299, :331-334).
+
+
+def test_round_trip_refuses_a_korail_only_departure_station():
+    # ara0101v.js:337-341: lfn_isKorailStn(sDptStn) is checked first. "0001"
+    # (서울) is gubun=="korail" in stationInfo.js, never "SRT".
+    train = dataclasses.replace(
+        _eligible_train(),
+        departure_station_code="0001",
+        departure_station_name="서울",
+    )
+    with pytest.raises(ValueError, match="Korail-only"):
+        personal_reservation_payload(
+            train,
+            PassengerCounts(adult=1),
+            netfunnel_key=SYNTHETIC_NF,
+            round_trip=True,
+        )
+
+
+def test_round_trip_refuses_a_korail_only_arrival_station():
+    # Same handler, the || half: lfn_isKorailStn(sArvStn). "0115" (강릉) is
+    # korail-only too.
+    train = dataclasses.replace(
+        _eligible_train(),
+        arrival_station_code="0115",
+        arrival_station_name="강릉",
+    )
+    with pytest.raises(ValueError, match="Korail-only"):
+        personal_reservation_payload(
+            train,
+            PassengerCounts(adult=1),
+            netfunnel_key=SYNTHETIC_NF,
+            round_trip=True,
+        )
+
+
+def test_one_way_ignores_a_korail_only_station():
+    # The app's guard lives inside the 왕복 checkbox handler; a 편도 booking
+    # never reaches it, so this must NOT raise. A wrong pre-check here would
+    # block ordinary one-way reservations, which the task guards against.
+    train = dataclasses.replace(
+        _eligible_train(), departure_station_code="0001", departure_station_name="서울"
+    )
+    form = personal_reservation_payload(
+        train, PassengerCounts(adult=1), netfunnel_key=SYNTHETIC_NF
+    )
+    assert form["rtnDv"] == "0"
+
+
+def test_round_trip_allows_two_srt_served_stations():
+    # The negative case: both _eligible_train and _return_train already use
+    # SRT-only pairs (수서/부산), so this must keep working exactly as before.
+    assert _default_form(round_trip=True)["rtnDv"] == "1"
+    inbound = personal_reservation_payload(
+        _return_train(), PassengerCounts(adult=1), netfunnel_key=SYNTHETIC_NF,
+        round_trip=True,
+    )
+    assert inbound["rtnDv"] == "1"
+
+
+def test_round_trip_refuses_a_national_assembly_discount_member():
+    # ara0101v.js:319-326: mbCrdNo.substr(0,2) == "11".
+    with pytest.raises(ValueError, match="국회의원"):
+        personal_reservation_payload(
+            _eligible_train(),
+            PassengerCounts(adult=1),
+            netfunnel_key=SYNTHETIC_NF,
+            round_trip=True,
+            membership_number="1112345678",
+        )
+
+
+@pytest.mark.parametrize("membership_number", ["", "2298765432", "0011223344"])
+def test_round_trip_allows_members_without_the_11_prefix(membership_number):
+    # "" is the guest/no-membership-number case (ara0101v.js:319 `mbCrdNo ==
+    # ""`), which the app's own handler explicitly falls through on. A number
+    # that merely CONTAINS "11" past the first two characters must not match
+    # either -- the app tests substr(0,2) only.
+    form = personal_reservation_payload(
+        _eligible_train(),
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+        round_trip=True,
+        membership_number=membership_number,
+    )
+    assert form["rtnDv"] == "1"
+
+
+def test_one_way_ignores_the_11_membership_prefix():
+    # Same reasoning as the station guard: this lives inside the 왕복 checkbox
+    # handler, so a 편도 booking must not be blocked by it.
+    form = personal_reservation_payload(
+        _eligible_train(),
+        PassengerCounts(adult=1),
+        netfunnel_key=SYNTHETIC_NF,
+        membership_number="1112345678",
+    )
+    assert form["rtnDv"] == "0"
+
+
+def test_reserve_refuses_round_trip_for_a_national_assembly_member_with_no_send(
+    load_json_fixture,
+):
+    # Client-level: membership_number is threaded from the session
+    # automatically (no parameter on reserve() itself), and the refusal must
+    # happen before any network I/O -- same guarantee every other
+    # pre-submission ValueError in this builder already has.
+    client, recorder = _client(load_json_fixture("reservation_attempt_success.json"))
+    client.session.current = SrtSession(
+        login_id="synthetic", user_map={"MB_CRD_NO": "1198765432"}
+    )
+    consent = _live(allow_reserve=True)
+
+    with pytest.raises(ValueError, match="국회의원"):
+        client.reserve(
+            _eligible_train(),
+            consent=consent,
+            round_trip=True,
+            netfunnel_key=SYNTHETIC_NF,
+        )
+    assert recorder.requests == []
+
+
+def test_reserve_refuses_round_trip_between_a_korail_only_pair_with_no_send(
+    load_json_fixture,
+):
+    client, recorder = _client(load_json_fixture("reservation_attempt_success.json"))
+    consent = _live(allow_reserve=True)
+    train = dataclasses.replace(
+        _eligible_train(), arrival_station_code="0115", arrival_station_name="강릉"
+    )
+
+    with pytest.raises(ValueError, match="Korail-only"):
+        client.reserve(
+            train, consent=consent, round_trip=True, netfunnel_key=SYNTHETIC_NF
+        )
+    assert recorder.requests == []
+
+
 def test_round_trip_is_two_separate_reserve_calls_each_creating_one_hold(
     load_json_fixture,
 ):

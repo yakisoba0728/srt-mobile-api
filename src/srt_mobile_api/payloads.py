@@ -19,7 +19,7 @@ from .discounts import (
     PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE,
     PUBLIC_DISCOUNT_NAMES_BY_CODE,
 )
-from .stations import station_name_by_code
+from .stations import SRT_STATION_CODES, station_name_by_code
 
 
 # 공공할인코드 the 할인 승차권 page has a branch for. discounts.py NAMES six of
@@ -1307,6 +1307,7 @@ def personal_reservation_payload(
     round_trip: bool = False,
     designated_seats: SeatDesignation | None = None,
     seat_attr_code: str = "015",
+    membership_number: str = "",
 ) -> dict[str, str]:
     """Build the 개인예약 / 예약대기 reservation form (``/arc/selectListArc05013_n.do``).
 
@@ -1372,6 +1373,41 @@ def personal_reservation_payload(
     passenger TYPE), which is the reading this suffix is most often confused
     with.
 
+    ``round_trip=True`` is refused, before anything is built, for two
+    conditions the app's own 왕복 checkbox handler checks and this repository
+    now reproduces. Both live in the SAME handler, ``case "chk_rtrp"``
+    (ara0101v.js:317-341), and both follow the identical shape: call
+    ``callbackChkRtrp()`` (:903-906, force-unchecks ``#chk_rtrp``), show an
+    alert, and ``return`` -- which is BEFORE the code that ever sets
+    ``rtnDv="1"`` (:381). That is the same uncheck-alert-return control flow
+    as the already-implemented 환승×왕복 mutual exclusion above (:296-299,
+    :331-334), so both are refused here rather than merely documented:
+
+    * **코레일 전용역.** :337-341 calls ``lfn_isKorailStn`` (offline
+      ``sub/main.html:568-578``) on both the departure and arrival station.
+      That function scans ``stationList`` (``js/stationInfo.js``) for an entry
+      whose ``gubun`` is ``"SRT"`` and the matching code; a hit returns
+      ``False`` and anything else -- including a real station this library
+      otherwise knows the name of -- returns ``True``. If EITHER station comes
+      back ``True`` the app shows "코레일 열차는 왕복 열차 예약을 이용하실 수
+      없습니다." and returns. See :data:`~srt_mobile_api.stations.SRT_STATION_CODES`
+      for the 17-code set this reproduces.
+    * **국회의원 후급 회원.** :319-326: the page-global ``mbCrdNo`` -- non-empty
+      and not ``null`` -- is checked with ``mbCrdNo.substr(0,2) == "11"``. On a
+      match the app shows "왕복승차권은 국회의원 후급 적용으로 이용하실 수
+      없습니다 … 가는 열차와 오는 열차를 각각 편도로 예매 후 발권하여 주시기
+      바랍니다." and returns. ``mbCrdNo`` itself is never assigned inside the
+      offline bundle (it is seeded by the server-rendered ``ara0101v.do`` page,
+      which this repository does not have), so the binding to
+      :attr:`~srt_mobile_api.models.SrtSession.membership_number` is an
+      inference from the shared name and the shared 회원카드번호 concept
+      (``ara0101v.js:52-62``'s ``gds_userInfo.MB_CRD_NO``) -- the SAME
+      inference :func:`card_payment_payload` already makes for the wire field
+      it sends under the identical name ``mbCrdNo`` -- rather than something
+      read directly off this handler. Pass ``membership_number=""`` (the
+      default) to skip this check entirely, e.g. for a guest session that
+      carries none.
+
     ``designated_seats`` (좌석지정) switches ``jobId`` to ``1103`` (시트맵예약)
     and appends the seat family — ``seatNo1_1..N``, ``scarGridcnt1``,
     ``scarGridcnt2``, ``scarNo1``, ``scarNo2`` — built by
@@ -1416,6 +1452,25 @@ def personal_reservation_payload(
             "seat designation is implemented for 편도 only: the app's 왕복 "
             "seat callback writes no seat fields at all (ara0101v.js:884-892), "
             "so the 왕복 designated body is unevidenced"
+        )
+    # 왕복 × 국회의원 후급 배제. ara0101v.js:317-326's `case "chk_rtrp"` reads
+    # the page-global `mbCrdNo` and, when it is non-empty and its first two
+    # characters are "11", calls callbackChkRtrp() (:322, unchecks the box,
+    # defined :903-906) then srtAlertBoxDivShow(...) and `return`s (:325) --
+    # BEFORE the code that ever sets rtnDv="1" (:381). Same uncheck-alert-
+    # return shape as the already-implemented 환승×왕복 exclusion below
+    # (:296-299, :331-334), so it is refused here too.
+    is_assembly_member_number = (
+        isinstance(membership_number, str) and membership_number.startswith("11")
+    )
+    if round_trip and is_assembly_member_number:
+        raise ValueError(
+            "round trip is refused for a 국회의원 후급 member (membership "
+            "number prefix '11'): the app's 왕복 checkbox handler force-"
+            "unchecks the box and shows '왕복승차권은 국회의원 후급 적용으로 "
+            "이용하실 수 없습니다 … 가는 열차와 오는 열차를 각각 편도로 예매 "
+            "후 발권하여 주시기 바랍니다.' before ever setting rtnDv=1 "
+            "(ara0101v.js:317-326; uncheck at callbackChkRtrp, :903-906)"
         )
     if not isinstance(netfunnel_key, str):
         raise ValueError("netfunnel_key must be a string")
@@ -1469,6 +1524,25 @@ def personal_reservation_payload(
     arrival_station_code = _required_digits(
         train.arrival_station_code, "arrival_station_code", length=4
     )
+    # 왕복 × 코레일 전용역 배제. ara0101v.js:337-341's same `case "chk_rtrp"`
+    # handler calls lfn_isKorailStn (offline sub/main.html:568-578) on both
+    # stations; that function scans stationList (js/stationInfo.js) for an
+    # entry whose gubun is "SRT" matching the code, returning False only on a
+    # hit and True otherwise. If EITHER station comes back True the app
+    # force-unchecks #chk_rtrp and shows "코레일 열차는 왕복 열차 예약을
+    # 이용하실 수 없습니다." before returning -- again before rtnDv="1" is
+    # ever set (:381). SRT_STATION_CODES is the 17-code set (stationInfo.js:
+    # 29-45) this reproduces.
+    if round_trip and (
+        departure_station_code not in SRT_STATION_CODES
+        or arrival_station_code not in SRT_STATION_CODES
+    ):
+        raise ValueError(
+            "round trip is refused when either station is Korail-only, not "
+            "one of the 17 stations SRT actually serves (ara0101v.js:337-341"
+            f" lfn_isKorailStn; departure={departure_station_code!r}, "
+            f"arrival={arrival_station_code!r})"
+        )
     departure_consist_order = _required_digits(
         train.departure_consist_order, "departure_consist_order"
     )
