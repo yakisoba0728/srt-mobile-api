@@ -1486,6 +1486,20 @@ def personal_reservation_payload(
             "seat callback writes no seat fields at all (ara0101v.js:884-892), "
             "so the 왕복 designated body is unevidenced"
         )
+    # standby × round_trip is deliberately NOT refused, unlike the two
+    # combinations above, and this says so because the asymmetry otherwise
+    # reads as an oversight. Checked in the bundle on 2026-07-27: jobId 1102
+    # is assigned from the 예약대기 image inside the SAME branch that assigns
+    # 1101 (ara1001l.js:1445-1448), and every rtnDv read
+    # (:47, :1248, :1472-1476, :1581) tests rtnDv alone without consulting
+    # jobId. So the app has no rule against the pair, and inventing one here
+    # would refuse something SRT permits.
+    #
+    # Related, and settled the same way: ara0101v.js:379 disables the
+    # #btn_trnGpCd BUTTON when 왕복 is checked. That locks the SELECTOR, not
+    # the value -- the previously chosen trnGpCd stays in the form and is
+    # still sent -- so writing train_group_code on a round trip is correct
+    # and does not need a round_trip branch.
     # 왕복 × 국회의원 후급 배제. ara0101v.js:317-326's `case "chk_rtrp"` reads
     # the page-global `mbCrdNo` and, when it is non-empty and its first two
     # characters are "11", calls callbackChkRtrp() (:322, unchecks the box,
