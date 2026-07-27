@@ -1,3 +1,9 @@
+#: Kept equal to ``[project] version`` in pyproject.toml by
+#: ``test_release_readiness.test_package_version_matches_project_metadata``.
+#: Deliberately absent from ``__all__``: dunders are not part of the exported
+#: name surface, and ``from ... import *`` must not shadow a caller's own.
+__version__ = "1.0.0"
+
 from .client import SrtClient
 from .config import SrtConfig
 from .consent import (

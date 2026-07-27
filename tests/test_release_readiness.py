@@ -28,7 +28,7 @@ CLIENT_NAME = "SrtClient"
 VERIFICATION_DOCUMENT = "docs/VERIFICATION.md"
 FAILURE_MESSAGE = "distribution verification failed\n"
 EXPECTED_CLASSIFIERS = {
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -38,14 +38,32 @@ EXPECTED_CLASSIFIERS = {
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 }
+# There is deliberately no "License :: ..." classifier here: PEP 639 makes the
+# SPDX `license` string and the classifier mutually exclusive.
+EXPECTED_LICENSE = "Apache-2.0"
+LICENSE_FILE = "LICENSE"
+EXPECTED_AUTHORS = [
+    {"name": "yakisoba0728", "email": "yakihyuk0728@gmail.com"},
+]
+EXPECTED_AUTHOR_EMAIL = "yakisoba0728 <yakihyuk0728@gmail.com>"
+CANONICAL_URL = "https://github.com/yakisoba0728/srt-mobile-api"
+EXPECTED_URLS = {
+    "Homepage": CANONICAL_URL,
+    "Repository": CANONICAL_URL,
+    "Issues": f"{CANONICAL_URL}/issues",
+    "Changelog": f"{CANONICAL_URL}/blob/main/CHANGELOG.md",
+}
+EXPECTED_PROJECT_URLS = [f"{label}, {url}" for label, url in EXPECTED_URLS.items()]
+# Every header a correct build still must NOT emit. `License-Expression`,
+# `Author-email` and `Project-URL` left this tuple when the project grew owner
+# metadata, and each moved into an exact-value check rather than out of the
+# contract -- see the singleton parametrization and
+# test_requires_the_exact_project_url_set_without_duplicates below.
 FORBIDDEN_METADATA_HEADERS = (
     "License",
-    "License-Expression",
     "Author",
-    "Author-email",
     "Maintainer",
     "Maintainer-email",
-    "Project-URL",
     "Home-page",
     "Download-URL",
 )
@@ -54,6 +72,7 @@ with (ROOT / "pyproject.toml").open("rb") as stream:
     CONFIGURATION = tomllib.load(stream)
 PROJECT = CONFIGURATION["project"]
 VERSION = PROJECT["version"]
+LICENSE_TEXT = (ROOT / LICENSE_FILE).read_bytes()
 REQUIRES_PYTHON = PROJECT["requires-python"]
 DEPENDENCIES = list(PROJECT["dependencies"])
 NORMALIZED_PROJECT = re.sub(r"[-_.]+", "_", PROJECT_NAME).casefold()
@@ -69,24 +88,40 @@ VERIFIER = module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 
 
+#: The metadata headers this project emits exactly once, with the value each
+#: must carry. Keeping them in one tuple is what lets the missing/duplicate/
+#: wrong parametrization below cover the owner metadata for free.
+SINGLETON_METADATA = (
+    ("Name", PROJECT_NAME),
+    ("Version", VERSION),
+    ("Requires-Python", REQUIRES_PYTHON),
+    ("License-Expression", EXPECTED_LICENSE),
+    ("License-File", LICENSE_FILE),
+    ("Author-email", EXPECTED_AUTHOR_EMAIL),
+)
+
+
 def _metadata(
     *,
     singletons: dict[str, list[str]] | None = None,
     classifiers: list[str] | None = None,
     dependencies: list[str] | None = None,
+    project_urls: list[str] | None = None,
     extra_headers: tuple[tuple[str, str], ...] = (),
 ) -> bytes:
-    singleton_values = {
-        "Name": [PROJECT_NAME],
-        "Version": [VERSION],
-        "Requires-Python": [REQUIRES_PYTHON],
-    }
+    singleton_values = {header: [value] for header, value in SINGLETON_METADATA}
     if singletons:
         singleton_values.update(singletons)
 
     lines = ["Metadata-Version: 2.4"]
-    for header in ("Name", "Version", "Requires-Python"):
+    for header, _ in SINGLETON_METADATA:
         lines.extend(f"{header}: {value}" for value in singleton_values[header])
+    lines.extend(
+        f"Project-URL: {value}"
+        for value in (
+            EXPECTED_PROJECT_URLS if project_urls is None else project_urls
+        )
+    )
     lines.extend(
         f"Classifier: {value}"
         for value in (
@@ -116,6 +151,8 @@ def _write_wheel(
     include_metadata: bool = True,
     marker: bytes | None = b"",
     marker_info: zipfile.ZipInfo | None = None,
+    license_text: bytes | None = LICENSE_TEXT,
+    license_info: zipfile.ZipInfo | None = None,
     dist_info: str = DIST_INFO,
     extra_names: tuple[str, ...] = (),
     extra_infos: tuple[zipfile.ZipInfo, ...] = (),
@@ -134,6 +171,13 @@ def _write_wheel(
                     archive.writestr(f"{PACKAGE_NAME}/py.typed", marker)
                 else:
                     archive.writestr(marker_info, marker)
+            if license_text is not None:
+                if license_info is None:
+                    archive.writestr(
+                        f"{dist_info}/licenses/{LICENSE_FILE}", license_text
+                    )
+                else:
+                    archive.writestr(license_info, license_text)
             if include_metadata:
                 archive.writestr(
                     f"{dist_info}/METADATA",
@@ -171,6 +215,7 @@ def _write_sdist(
     metadata: bytes | None = None,
     include_metadata: bool = True,
     marker: bytes | None = b"",
+    license_text: bytes | None = None,
     missing: tuple[str, ...] = (),
     root: str = SDIST_ROOT,
     extra_members: tuple[tuple[tarfile.TarInfo, bytes], ...] = (),
@@ -184,6 +229,10 @@ def _write_sdist(
         "CHANGELOG.md": b"changelog\n",
         "SECURITY.md": b"security\n",
         "docs/RELEASE.md": b"release\n",
+        # Not filler like its neighbours: the verifier compares this against
+        # the checkout's own LICENSE, so the valid fixture must carry the
+        # real bytes.
+        LICENSE_FILE: LICENSE_TEXT if license_text is None else license_text,
         f"src/{PACKAGE_NAME}/py.typed": b"" if marker is None else marker,
         "PKG-INFO": _metadata() if metadata is None else metadata,
     }
@@ -293,13 +342,25 @@ def _mark_zip_encrypted(path: Path) -> None:
 
 def test_source_release_metadata_is_exact() -> None:
     assert PROJECT["name"] == PROJECT_NAME
-    assert PROJECT["version"] == "0.2.0"
+    assert PROJECT["version"] == "1.0.0"
     assert PROJECT["requires-python"] == ">=3.11"
     assert PROJECT["keywords"] == EXPECTED_KEYWORDS
     assert set(PROJECT["classifiers"]) == EXPECTED_CLASSIFIERS
     assert len(PROJECT["classifiers"]) == len(EXPECTED_CLASSIFIERS)
-    for forbidden in ("license", "authors", "maintainers", "urls"):
-        assert forbidden not in PROJECT
+    # The three public-release blockers this project used to forbid outright.
+    assert PROJECT["license"] == EXPECTED_LICENSE
+    assert PROJECT["license-files"] == [LICENSE_FILE]
+    assert PROJECT["authors"] == EXPECTED_AUTHORS
+    assert PROJECT["urls"] == EXPECTED_URLS
+    # PEP 639 forbids pairing the SPDX expression with a License classifier,
+    # and setuptools>=77 is the floor that understands either one.
+    assert not any(
+        value.casefold().startswith("license ::") for value in PROJECT["classifiers"]
+    )
+    assert CONFIGURATION["build-system"]["requires"] == ["setuptools>=77", "wheel"]
+    # Still forbidden: setuptools would turn it into a `Maintainer-email`
+    # header, which the distribution contract rejects.
+    assert "maintainers" not in PROJECT
     assert CONFIGURATION["tool"]["setuptools"]["package-data"][PACKAGE_NAME] == [
         "py.typed"
     ]
@@ -307,6 +368,13 @@ def test_source_release_metadata_is_exact() -> None:
     marker = ROOT / "src" / PACKAGE_NAME / "py.typed"
     assert marker.is_file()
     assert marker.read_bytes() == b""
+    license_path = ROOT / LICENSE_FILE
+    assert license_path.is_file()
+    license_lines = license_path.read_text(encoding="utf-8").splitlines()
+    assert license_lines[1].strip() == "Apache License"
+    assert license_lines[2].strip() == "Version 2.0, January 2004"
+    # The verbatim appendix placeholders stay as upstream ships them.
+    assert "Copyright [yyyy] [name of copyright owner]" in "\n".join(license_lines)
     for relative_path in (
         "MANIFEST.in",
         "CHANGELOG.md",
@@ -319,6 +387,25 @@ def test_source_release_metadata_is_exact() -> None:
         ".github/workflows/ci.yml",
     ):
         assert (ROOT / relative_path).is_file()
+
+
+def test_package_version_matches_project_metadata() -> None:
+    """One version, two places that state it, and a gate between them.
+
+    `srt_mobile_api.__version__` is what an installed caller can read; the
+    pyproject `version` is what the wheel and sdist are named and stamped with.
+    Nothing in the build derives one from the other, so a release that bumps
+    only pyproject would ship a package that misreports itself.
+
+    Deliberately a two-way check only. This package's default `User-Agent`
+    impersonates the SRT Android app (config.py:5-9), so it is pinned to the
+    app's version, not to the library's, and dragging it in here would be
+    wrong.
+    """
+    import srt_mobile_api
+
+    assert srt_mobile_api.__version__ == VERSION
+    assert "__version__" not in srt_mobile_api.__all__
 
 
 def test_only_repository_root_env_file_is_ignored() -> None:
@@ -589,7 +676,7 @@ def test_requires_regular_zero_byte_typed_markers(
 
 @pytest.mark.parametrize(
     "required_document",
-    ("README.md", "CHANGELOG.md", "SECURITY.md", "docs/RELEASE.md"),
+    ("README.md", "CHANGELOG.md", "SECURITY.md", "docs/RELEASE.md", LICENSE_FILE),
 )
 def test_requires_each_exact_regular_sdist_document(
     tmp_path: Path,
@@ -608,6 +695,13 @@ def test_requires_each_exact_regular_sdist_document(
         ("Name", PROJECT_NAME, "wrong-project"),
         ("Version", VERSION, "9.9.9"),
         ("Requires-Python", REQUIRES_PYTHON, ">=99"),
+        # The owner metadata. A build that says "MIT", credits somebody else,
+        # or points License-File at a name the archives do not carry is as
+        # wrong as one with the wrong project name -- and before these rows
+        # existed, all three headers were simply forbidden.
+        ("License-Expression", EXPECTED_LICENSE, "MIT"),
+        ("License-File", LICENSE_FILE, "COPYING"),
+        ("Author-email", EXPECTED_AUTHOR_EMAIL, "somebody <else@example.invalid>"),
     ),
 )
 @pytest.mark.parametrize("problem", ("missing", "duplicate", "wrong"))
@@ -677,6 +771,77 @@ def test_requires_the_exact_normalized_runtime_dependency_set(
         target,
         _metadata(dependencies=dependencies),
     )
+    _assert_rejected(capsys, [wheel, sdist])
+
+
+@pytest.mark.parametrize("target", ("wheel", "sdist"))
+@pytest.mark.parametrize("problem", ("missing", "extra", "duplicate", "wrong"))
+def test_requires_the_exact_project_url_set_without_duplicates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+    problem: str,
+) -> None:
+    """The canonical URL is a release blocker, so it is checked, not tolerated.
+
+    `Project-URL` was on the forbidden list until this project had owner
+    metadata to publish. Removing it from that list without putting this in its
+    place would have let a build point every link at somebody else's repository
+    and still pass the gate.
+    """
+    project_urls = list(EXPECTED_PROJECT_URLS)
+    if problem == "missing":
+        project_urls.remove(f"Homepage, {CANONICAL_URL}")
+    elif problem == "extra":
+        project_urls.append("Funding, https://example.invalid/sponsor")
+    elif problem == "duplicate":
+        project_urls.append(project_urls[0])
+    else:
+        project_urls[0] = "Homepage, https://github.com/someone-else/srt-mobile-api"
+    wheel, sdist = _pair_with_metadata(
+        tmp_path,
+        target,
+        _metadata(project_urls=project_urls),
+    )
+    _assert_rejected(capsys, [wheel, sdist])
+
+
+@pytest.mark.parametrize("target", ("wheel", "sdist"))
+@pytest.mark.parametrize("problem", ("missing", "empty", "altered", "special"))
+def test_requires_the_checkout_license_text_verbatim_in_both_artifacts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+    problem: str,
+) -> None:
+    """`License-Expression: Apache-2.0` has to be backed by the actual text.
+
+    A header is a claim. The wheel carries the text at
+    `<dist-info>/licenses/LICENSE` and the sdist at the root, and both must
+    equal the checkout's own bytes -- otherwise a truncated, empty or edited
+    license ships under a correct-looking SPDX header.
+    """
+    altered = LICENSE_TEXT.replace(b"Apache License", b"Someone Else License", 1)
+    assert altered != LICENSE_TEXT
+    payload = {"missing": None, "empty": b"", "altered": altered}.get(problem, b"")
+    if target == "wheel":
+        if problem == "special":
+            info = _zip_info(f"{DIST_INFO}/licenses/{LICENSE_FILE}", stat.S_IFLNK)
+            wheel = _write_wheel(tmp_path, license_text=b"target", license_info=info)
+        else:
+            wheel = _write_wheel(tmp_path, license_text=payload)
+        sdist = _write_sdist(tmp_path)
+    else:
+        wheel = _write_wheel(tmp_path)
+        if problem == "special":
+            sdist = _write_sdist(
+                tmp_path,
+                overrides={LICENSE_FILE: (tarfile.SYMTYPE, b"", "target")},
+            )
+        elif problem == "missing":
+            sdist = _write_sdist(tmp_path, missing=(LICENSE_FILE,))
+        else:
+            sdist = _write_sdist(tmp_path, license_text=payload)
     _assert_rejected(capsys, [wheel, sdist])
 
 

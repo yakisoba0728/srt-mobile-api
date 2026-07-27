@@ -1,16 +1,24 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+# setuptools 77 is the floor for PEP 639: earlier releases ignore
+# `license-files` and reject an SPDX string in `license`.
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "srt-mobile-api"
-version = "0.2.0"
+version = "1.0.0"
 description = "Python client for documented SRT Android app read APIs"
 readme = "README.md"
 requires-python = ">=3.11"
+# PEP 639 SPDX form, not the legacy `license = {text = ...}` table. There is
+# deliberately no `License ::` classifier: the two spellings are mutually
+# exclusive and setuptools rejects the pair.
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "yakisoba0728", email = "yakihyuk0728@gmail.com" }]
 keywords = ["srt", "read-only", "mobile-api"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -28,6 +36,12 @@ dependencies = [
 test = [
   "pytest>=8,<10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yakisoba0728/srt-mobile-api"
+Repository = "https://github.com/yakisoba0728/srt-mobile-api"
+Issues = "https://github.com/yakisoba0728/srt-mobile-api/issues"
+Changelog = "https://github.com/yakisoba0728/srt-mobile-api/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]

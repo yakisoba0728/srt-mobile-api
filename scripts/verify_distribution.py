@@ -15,11 +15,16 @@ import zipfile
 
 _FAILURE_MESSAGE = "distribution verification failed"
 _MAX_DISPLAY_NAME = 96
+#: The one file `[project] license-files` is allowed to name. Pinned the same
+#: way `py.typed` is: a marker file whose NAME is part of the contract, so a
+#: rename cannot quietly move the license out of the artifacts.
+_LICENSE_FILE = "LICENSE"
 _REQUIRED_SDIST_FILES = (
     "README.md",
     "CHANGELOG.md",
     "SECURITY.md",
     "docs/RELEASE.md",
+    _LICENSE_FILE,
 )
 _FORBIDDEN_COMPONENT_FAMILIES = (
     ".ds_store",
@@ -32,14 +37,18 @@ _FORBIDDEN_COMPONENT_FAMILIES = (
     "build",
     "dist",
 )
+#: Headers a correct build of this project never emits. `License-Expression`,
+#: `Author-email` and `Project-URL` used to be here too, back when the project
+#: shipped no owner metadata at all; they are now checked for their EXACT value
+#: instead, because dropping them from this tuple without replacing the check
+#: would have left the new metadata unverified. `License` (the legacy free-text
+#: header) stays forbidden and does not collide with `License-File`: the parser
+#: matches header names exactly, only case-insensitively.
 _FORBIDDEN_METADATA_HEADERS = (
     "License",
-    "License-Expression",
     "Author",
-    "Author-email",
     "Maintainer",
     "Maintainer-email",
-    "Project-URL",
     "Home-page",
     "Download-URL",
 )
@@ -62,6 +71,10 @@ class ProjectContract(NamedTuple):
     normalized_project: str
     classifiers: tuple[str, ...]
     dependencies: tuple[str, ...]
+    license_expression: str
+    license_text: bytes
+    author_email: str
+    project_urls: tuple[str, ...]
 
 
 def _normalize_distribution_name(value: str) -> str:
@@ -142,9 +155,50 @@ def _project_contract() -> ProjectContract:
     if len(set(normalized_dependencies)) != len(normalized_dependencies):
         raise ContractError
 
-    for forbidden in ("license", "authors", "maintainers", "urls"):
-        if forbidden in project:
-            raise ContractError
+    # `license`, `authors` and `urls` used to be forbidden here. They are now
+    # REQUIRED, and required in one exact shape, because the values they carry
+    # -- the license, the owner, the canonical URL -- are the things a public
+    # release is judged on. A missing key raises KeyError, which the CLI
+    # boundary reports the same as any other contract failure.
+    if "maintainers" in project:
+        raise ContractError
+
+    license_expression = project["license"]
+    if not isinstance(license_expression, str) or not license_expression:
+        raise ContractError
+    if project["license-files"] != [_LICENSE_FILE]:
+        raise ContractError
+    license_text = (root / _LICENSE_FILE).read_bytes()
+    if not license_text:
+        raise ContractError
+
+    authors = project["authors"]
+    if (
+        not isinstance(authors, list)
+        or len(authors) != 1
+        or not isinstance(authors[0], dict)
+        or set(authors[0]) != {"name", "email"}
+        or any(not isinstance(value, str) or not value for value in authors[0].values())
+    ):
+        raise ContractError
+    author_email = f"{authors[0]['name']} <{authors[0]['email']}>"
+
+    urls = project["urls"]
+    if (
+        not isinstance(urls, dict)
+        or not urls
+        or any(
+            not isinstance(label, str)
+            or not label
+            or not isinstance(url, str)
+            or not url
+            for label, url in urls.items()
+        )
+    ):
+        raise ContractError
+    project_urls = tuple(f"{label}, {url}" for label, url in urls.items())
+    if len(set(project_urls)) != len(project_urls):
+        raise ContractError
 
     return ProjectContract(
         project_name,
@@ -154,6 +208,10 @@ def _project_contract() -> ProjectContract:
         _normalize_distribution_name(project_name),
         tuple(classifiers),
         tuple(value for value in normalized_dependencies if value is not None),
+        license_expression,
+        license_text,
+        author_email,
+        project_urls,
     )
 
 
@@ -226,10 +284,20 @@ def _verify_metadata(payload: bytes, contract: ProjectContract) -> None:
         ("Name", contract.project_name),
         ("Version", contract.version),
         ("Requires-Python", contract.requires_python),
+        ("License-Expression", contract.license_expression),
+        ("License-File", _LICENSE_FILE),
+        ("Author-email", contract.author_email),
     ):
         values = metadata.get_all(header, [])
         if values != [expected]:
             raise ContractError
+
+    project_urls = metadata.get_all("Project-URL", [])
+    if (
+        len(project_urls) != len(contract.project_urls)
+        or set(project_urls) != set(contract.project_urls)
+    ):
+        raise ContractError
 
     classifiers = metadata.get_all("Classifier", [])
     if (
@@ -257,6 +325,10 @@ def _verify_wheel(wheel_path: Path, contract: ProjectContract) -> None:
     expected_dist_info = f"{contract.normalized_project}-{contract.version}.dist-info"
     metadata_path = f"{expected_dist_info}/METADATA"
     marker_path = f"{contract.package_name}/py.typed"
+    # Where PEP 639 puts the license text in a wheel. A `License-Expression`
+    # header the archive cannot back up with the actual text is a claim, not a
+    # license, so the bytes are compared against the checkout's own copy.
+    license_path = f"{expected_dist_info}/licenses/{_LICENSE_FILE}"
 
     with zipfile.ZipFile(wheel_path) as archive:
         members: dict[str, zipfile.ZipInfo] = {}
@@ -284,12 +356,16 @@ def _verify_wheel(wheel_path: Path, contract: ProjectContract) -> None:
 
         metadata_member = members.get(metadata_path)
         marker_member = members.get(marker_path)
+        license_member = members.get(license_path)
         if (
             metadata_member is None
             or marker_member is None
+            or license_member is None
             or not _zip_member_is_regular(metadata_member)
             or not _zip_member_is_regular(marker_member)
+            or not _zip_member_is_regular(license_member)
             or archive.read(marker_member) != b""
+            or archive.read(license_member) != contract.license_text
         ):
             raise ContractError
         _verify_metadata(archive.read(metadata_member), contract)
@@ -342,6 +418,9 @@ def _verify_sdist(sdist_path: Path, contract: ProjectContract) -> None:
             member = members.get(required_path)
             if member is None or member.type not in {tarfile.REGTYPE, tarfile.AREGTYPE}:
                 raise ContractError
+        license_member = members[f"{expected_root}/{_LICENSE_FILE}"]
+        if _tar_payload(archive, license_member) != contract.license_text:
+            raise ContractError
         _verify_metadata(_tar_payload(archive, metadata_member), contract)
 
 

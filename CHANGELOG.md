@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **Added: Apache-2.0, owner metadata, canonical URL, and `1.0.0`.** The
+  repository now carries a verbatim `LICENSE`, and `pyproject.toml` states the
+  license in PEP 639 SPDX form (`license = "Apache-2.0"` plus
+  `license-files = ["LICENSE"]`, no `License ::` classifier — the two spellings
+  are mutually exclusive), the owner, and the four project URLs. The
+  build-system floor moved `setuptools>=69` → `>=77`, the first release that
+  understands either key. `Development Status` moved from `3 - Alpha` to
+  `5 - Production/Stable`, and the version from `0.2.0` to `1.0.0`.
+  `srt_mobile_api.__version__` now exists and is held equal to the pyproject
+  version by a test; it is deliberately not in `__all__`.
+- **Changed: the distribution contract now VERIFIES the new metadata instead
+  of forbidding it.** `scripts/verify_distribution.py` used to reject
+  `license`/`authors`/`urls` in `pyproject.toml` outright and to blacklist the
+  `License-Expression`, `Author-email` and `Project-URL` headers. Simply
+  deleting those rules would have shipped the release-blocking metadata
+  unchecked, so each was inverted into an exact-value check of the same kind
+  `Name`/`Version`/`Requires-Python` already get, derived from
+  `pyproject.toml`. `License`, `Author`, `Maintainer`, `Maintainer-email`,
+  `Home-page` and `Download-URL` stay forbidden — a correct build emits none of
+  them. `LICENSE` joined the required sdist documents, and both archives must
+  now carry the checkout's license text byte-for-byte (wheel:
+  `<dist-info>/licenses/LICENSE`), so an SPDX header cannot claim a license the
+  artifact does not contain. Every new check has an adversarial case that
+  violates it.
+
 - **Fixed: a failed refund could read as a successful one.**
   `normalize_result_row` folded a conflicting pair of status rows the wrong
   way. It now prefers `dsOutput0` only when that row actually holds a usable
