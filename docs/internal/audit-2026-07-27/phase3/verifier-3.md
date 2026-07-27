@@ -130,7 +130,7 @@ reserve POST 직후 `get_reservations()` 로 티켓을 찾아 반환하고 끝�
 
 → `reserve(standby=True)` 의 와이어 흐름은 참조 구현과 **다르지 않다.** 빠진 것은 인접한
 **선택적** 알림설정이고, 그마저 번들 0-hit·라이브 미검증이며(`docs/VERIFICATION.md:1317`,
-`:1657` — 예약대기 표면 자체가 미검증), 커밋 `d7698d8`("SRT never offered 예약대기 across ten
+`:1657` — 예약대기 표면 자체가 미검증), 커밋 `bb3fcbf`("SRT never offered 예약대기 across ten
 searches")가 시사하듯 SRT 는 예약대기를 거의 제공하지 않는다.
 또 "통보를 못 받아 전환 기회를 놓친다"는 **서버 기본값이 SMS off** 라는 미증명 가정에 의존한다.
 공개 기록 위치: `client.py:1224-1227`, `docs/VERIFICATION.md:1335`,
@@ -167,17 +167,17 @@ searches")가 시사하듯 SRT 는 예약대기를 거의 제공하지 않는다
   `tests/test_reservation_list.py`, `docs/IMPLEMENTATION_PROGRESS.md`, `docs/VERIFICATION.md:297-299`.
 
 **그러나 "어느 쪽이 맞는지 저장소 아티팩트만으로는 판정 불가"는 틀렸다 — 결정 가능하다.**
-1. `git blame`: `parsers.py:2043` = 커밋 `5db3567`(로그 #39, 예약목록 최초 구현),
-   `parsers.py:1948` = 커밋 `9306e4c`(로그 #29, **2026-07-26 15:10:22 +0900**).
+1. `git blame`: `parsers.py:2043` = 커밋 `2b11025`(로그 #39, 예약목록 최초 구현),
+   `parsers.py:1948` = 커밋 `8cb8420`(로그 #29, **2026-07-26 15:10:22 +0900**).
    → 1948 이 **더 나중** 서술이고 2043 은 갱신되지 않은 잔존물이다. 다수결은 신선도를 측정하지 못한다.
-2. `git show 9306e4c` 커밋 메시지가 1차 증언이다:
+2. `git show 8cb8420` 커밋 메시지가 1차 증언이다:
    "LIVE 2026-07-26. The reservation list's populated row had never been observed … and the real
    one sends numbers … **a live card payment refused to build, reporting that the reservation
    carried no amount, on a reservation that plainly carried 7500.**"
    실패한 라이브 결제가 이 코드 변경을 강제했다 — 관측 없이는 나올 수 없는 서술이다.
 3. 교차 확증: `client.py:1611-1619` 가 기록한 2026-07-26 라이브 결제 금액이 **7,500 KRW** 로
    `rcvdAmt: 7500` 과 일치한다.
-4. `docs/VERIFICATION.md:297-299` 는 `713c591`(로그 #3, 9306e4c 보다 **뒤**)에서 작성됐지만
+4. `docs/VERIFICATION.md:297-299` 는 `ece1676`(로그 #3, 8cb8420 보다 **뒤**)에서 작성됐지만
    새 관측이 아니라 오래된 문장을 옮겨 적은 것이다(같은 파일에 populated row 캡처 없음).
 5. `tests/fixtures/` 에 캡처가 없다는 점은 "관측하지 않았다"의 증거가 아니다.
    `safety.py:924-927` SAFETY_STATEMENTS 가 "Do not store credentials, cookies, NetFunnel keys,
@@ -255,7 +255,7 @@ searches")가 시사하듯 SRT 는 예약대기를 거의 제공하지 않는다
   **현재 증거는 반대 방향**이다: 같은 서버의 검색 응답이 같은 필드명을 zero-padded 문자열로 보낸다 —
   `tests/fixtures/search_success.json` `dsOutput1[0]`: `dptTm='060000'`, `arvTm='083000'`
   (오전 6시 편도 열차인데 문자열, 앞자리 0 유지).
-- 커밋 `9306e4c` 가 실제로 숫자로 관측한 것은 `rcvdAmt`/`jrnyCnt`/`tkSpecNum`/`rsvChgTno` 같은
+- 커밋 `8cb8420` 가 실제로 숫자로 관측한 것은 `rcvdAmt`/`jrnyCnt`/`tkSpecNum`/`rsvChgTno` 같은
   **수량**뿐이고 수량에는 padding 이 무의미하다.
 - 2026-07-26 라이브 결제(`client.py:1611-1619`)는 실제 `payListMap` 행으로 31필드를 구성해
   성공했으므로 최소 1건은 6자리를 통과했다.
@@ -278,8 +278,8 @@ searches")가 시사하듯 SRT 는 예약대기를 거의 제공하지 않는다
   죽는 것도 사실(`_optional_row_string_tuple` 2277-2280 도 동일).
 - `parsers.py:2214-2237` `_row_field_is_absent` 는 `null` 만 완화. 인용 정확.
 - `parsers.py:1967-1975` 는 같은 파일에서 숫자를 정규화 — 처리 차이 실재.
-- 시간순도 주장에 유리: null 완화 커밋 `3ef1e5b`(2026-07-26 03:01:25) → "여섯 번째
-  string/number 불일치" 커밋 `9306e4c`(2026-07-26 15:10:22). 규칙이 세워진 뒤 검색 파서는 재방문되지 않았다.
+- 시간순도 주장에 유리: null 완화 커밋 `42e8efc`(2026-07-26 03:01:25) → "여섯 번째
+  string/number 불일치" 커밋 `8cb8420`(2026-07-26 15:10:22). 규칙이 세워진 뒤 검색 파서는 재방문되지 않았다.
 
 **그러나 "저장소 자신의 사후조치 규칙과 반대"라는 프레이밍은 틀렸다:**
 - 그 규칙 문장은 "**new** parsers should accept either from the start" 로 **신규** 파서를 겨냥한

@@ -274,7 +274,7 @@ file's central invariant **until the live verification refuted it**" 라고 기�
 ## P2INC-10 — populated 예약행 "검증됨/미검증" 모순 → **CONFIRMED** (medium → **low**)
 
 **모순 확인 (인용 7곳 전부 직접 확인, 전부 정확)**
-- 커밋 `9306e4c` "fix(parsers): read a reservation's amount when it arrives as a number" —
+- 커밋 `8cb8420` "fix(parsers): read a reservation's amount when it arrives as a number" —
   "LIVE 2026-07-26. The reservation list's populated row had never been observed … the real one
   sends numbers … `{"pnrNo":"3202607…","rcvdAmt":7500,"jrnyCnt":1,"tkSpecNum":1,"stlFlg":"N",
   "rsvChgTno":0}` … a live card payment refused to build, reporting that the reservation carried

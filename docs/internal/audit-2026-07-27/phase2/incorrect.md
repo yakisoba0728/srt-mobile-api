@@ -126,7 +126,7 @@ srtgo 는 애초에 그 상태에 도달하지 못한다 — 두 소스 모두�
   `_required_digits(reservation.departure_time, "departure_time", length=6)` — **정확히 6자리 요구**
 
 **앱/실측 근거**
-- 커밋 `9306e4c`(2026-07-26)가 이 정규화를 도입하며 기록한 실측 `trainListMap` 행:
+- 커밋 `8cb8420`(2026-07-26)가 이 정규화를 도입하며 기록한 실측 `trainListMap` 행:
   `{"pnrNo":"3202607…","rcvdAmt":7500,"jrnyCnt":1,"tkSpecNum":1,"stlFlg":"N","rsvChgTno":0}`
   — 6개 중 4개가 JSON 숫자. 커밋 메시지 자신의 결론: *"This is the sixth string-versus-number
   mismatch this codebase has hit. Both apps are inconsistent about it."*
@@ -232,7 +232,7 @@ payListMap 행에 dptTm=63000, arvTm=65600 (JSON 숫자)
 - **라이브러리 근거**: `src/srt_mobile_api/parsers.py:2248-2251` — 값이 있으나(그리고 null 이
   아니고) 문자열이 아니면 `SrtProtocolError`. 같은 파일 `:1967-1975`(예약목록)는 정반대로 숫자를
   정규화한다.
-- **앱/실측 근거**: 커밋 `9306e4c` 메시지 — *"Both apps are inconsistent about it;
+- **앱/실측 근거**: 커밋 `8cb8420` 메시지 — *"Both apps are inconsistent about it;
   **new parsers should accept either from the start.**"* 검색 행 파서는 그 규칙을 따르지 않았다.
   (`parsers.py:2214-2235` 가 null 만 완화했고 숫자는 그대로 폭발한다.)
 - **detail**: 검색 행 40건이 라이브 관측됐으므로 현재 위험은 낮다. 다만 한 컬럼이라도 숫자로
@@ -286,7 +286,7 @@ payListMap 행에 dptTm=63000, arvTm=65600 (JSON 숫자)
 
 ### P2INC-10 [medium / doc-drift] populated 예약행 "검증됨/미검증" 모순 — 1차(S7-02)는 "저자에게 확인"에서 멈췄지만 git 이 답한다
 
-- **라이브러리 근거**: 커밋 `9306e4c`(2026-07-26) *"LIVE 2026-07-26. The reservation list's
+- **라이브러리 근거**: 커밋 `8cb8420`(2026-07-26) *"LIVE 2026-07-26. The reservation list's
   populated row had never been observed … and the real one sends numbers"* — 실측 행과 그로 인한
   실제 버그(카드결제가 "금액 없음"으로 거부)를 함께 기록하고 있다. 즉 **`parsers.py:1948` 쪽이
   사실**이고 나머지가 stale: `parsers.py:2043`, `models.py:618-627`, `client.py:301-307`,

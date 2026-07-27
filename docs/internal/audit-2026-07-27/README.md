@@ -480,7 +480,7 @@ apktool 경로는 `analysis/apktool/assets/offline/` 상대.
 #### L-2 [C8-a] 예약목록 숫자→문자 정규화가 zero-padding을 잃어 오전 출발 편의 결제가 만들어지지 않는다
 > **P2INC-03** (원 medium → 보정 low)
 
-- **앱근거:** 커밋 `9306e4c`(2026-07-26)가 기록한 실측 `trainListMap` 행
+- **앱근거:** 커밋 `8cb8420`(2026-07-26)가 기록한 실측 `trainListMap` 행
   `{"pnrNo":"3202607…","rcvdAmt":7500,"jrnyCnt":1,"tkSpecNum":1,"stlFlg":"N","rsvChgTno":0}`
   — 6개 중 4개가 JSON **숫자**. `payListMap`의 populated 행 타입은 저장소에 기록 0건.
 - **라이브러리근거:** `parsers.py:1967-1975` `_reservation_list_optional_string` → `str(value)`;
@@ -494,7 +494,7 @@ apktool 경로는 `analysis/apktool/assets/offline/` 상대.
   실패는 fail-closed지만 미결제 홀드를 결제 기한까지 풀 수 없게 만든다.
 - **왜 medium이 아닌가:** 트리거 전제(시각 필드가 숫자로 옴)가 **관측 0건**이고 증거는 반대 방향이다 —
   `tests/fixtures/search_success.json`의 `dsOutput1[0]`은 `dptTm='060000'`, `arvTm='083000'`으로
-  **같은 서버가 시각을 zero-padded 문자열로 보낸다**. `9306e4c`가 숫자로 관측한 것은
+  **같은 서버가 시각을 zero-padded 문자열로 보낸다**. `8cb8420`가 숫자로 관측한 것은
   `rcvdAmt`/`jrnyCnt`/`tkSpecNum`/`rsvChgTno` 같은 **수량**뿐이다.
 - **수정:** 필드별 기대 길이로 zero-fill(시각 `zfill(6)`, 역코드 `zfill(4)`)하거나
   `card_payment_payload`가 6자리 미만 시각을 좌측 0 패딩.
@@ -622,9 +622,9 @@ apktool 경로는 `analysis/apktool/assets/offline/` 상대.
 - **라이브러리근거(B, 미검증이다) 6곳:** `parsers.py:2043-2046`, `models.py:618-627`,
   `client.py:301-306`(및 `:1650-1655`), `tests/test_reservation_list.py:12-13`,
   `docs/VERIFICATION.md:297-299`, `docs/IMPLEMENTATION_PROGRESS.md:790`.
-- **판정 — "판정 불가"가 아니다:** `git blame` 결과 `:2043`은 `5db3567`(예약목록 최초 구현),
-  `:1948`은 `9306e4c`(2026-07-26 15:10:22)로 **`:1948`이 더 나중**이다.
-  `git show 9306e4c` 메시지가 1차 증언이다 — "a live card payment refused to build … on a
+- **판정 — "판정 불가"가 아니다:** `git blame` 결과 `:2043`은 `2b11025`(예약목록 최초 구현),
+  `:1948`은 `8cb8420`(2026-07-26 15:10:22)로 **`:1948`이 더 나중**이다.
+  `git show 8cb8420` 메시지가 1차 증언이다 — "a live card payment refused to build … on a
   reservation that plainly carried 7500". 교차확증: `client.py:1611-1619`의 라이브 결제액이
   7,500 KRW. 즉 **`parsers.py:1948` 쪽이 사실이고 나머지 6곳이 stale**이다.
   (`client.py:301`은 "for an account with no reservations" 조건부라 프로브 시점엔 참이었다.
@@ -634,13 +634,13 @@ apktool 경로는 `analysis/apktool/assets/offline/` 상대.
   (특히 `payListMap` 행의 타입).
 
 #### L-12 `_optional_row_string`은 숫자를 만나면 검색 전체를 죽인다
-- **앱근거:** 커밋 `9306e4c` 메시지 — "This is the **sixth** string-versus-number mismatch this
+- **앱근거:** 커밋 `8cb8420` 메시지 — "This is the **sixth** string-versus-number mismatch this
   codebase has hit. Both apps are inconsistent about it; **new parsers** should accept either
   from the start."
 - **라이브러리근거:** `parsers.py:2248-2251`(present non-string → `SrtProtocolError`,
   예외가 필드 단위로 스코프되지 않아 `search_trains` 전체가 죽음) 대 `parsers.py:2214-2237`(null만 완화)
   대 `parsers.py:1967-1975`(예약목록은 숫자를 정규화).
-- **범위 축소(3차 반증):** "저장소 자신의 규칙과 반대"라는 프레이밍은 틀렸다 — `9306e4c`의 규칙은
+- **범위 축소(3차 반증):** "저장소 자신의 규칙과 반대"라는 프레이밍은 틀렸다 — `8cb8420`의 규칙은
   **신규 파서** 전향 지침이다. 더 결정적으로 두 헬퍼의 차이는 **의도적이며 코드 옆에 이유가 적혀
   있다**: `parsers.py:1960-1965` "Still deliberately more forgiving than `_optional_row_string`,
   which raises on a present non-string. Raising over one odd field would cost the caller the PNRs
