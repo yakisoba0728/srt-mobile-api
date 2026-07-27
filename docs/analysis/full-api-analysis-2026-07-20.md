@@ -362,6 +362,15 @@ The hidden-input state bag backing `#seatSearchForm` and `#rsvForm`. Canonical
 init at `ara0101v.js:84-152`; extended at `ara1001l.js:1438-1468`. Selected
 fields:
 
+> **CORRECTED 2026-07-27.** The `psgTpCd` table below was wrong in both places
+> it appeared: it read `2=어린이, 3=경로, 4=중증장애, 5=경증장애`, which swaps
+> 2↔5 and 3↔4 against `commCode.js:54-88` (`1 어른`, `2 장애 1~3급`,
+> `3 장애 4~6급`, `4 만 65세이상`, `5 만4~12세`). **The CODE was always right**
+> — `models.py` maps `psgTpCd 5` to 어린이 — so this was a correction trap: a
+> reader who "fixed" the code to match this document would have booked child
+> fares into 장애인 seats. Two earlier audits flagged it and neither edit
+> landed, which is why it is called out here rather than quietly amended.
+
 | Field | Meaning / decode | Source |
 |---|---|---|
 | `jobId` | 조정구분코드: 1101=개인예약, 1102=예약대기, 1103=시트맵예약 | `ara0101v.js:85` |
@@ -375,7 +384,7 @@ fields:
 | `dptDt1`/`dptTm1` | 출발일자(yyyyMMdd)/시각(HHmmss) | `ara0101v.js:101-102` |
 | `back_dptDt1`/`back_dptTm1` | 오는열차(inbound) 출발일자/시각 | `ara0101v.js:105-106` |
 | `totPrnb` | 총인원수 (also sent as `choiceSeatCount`) | `ara0101v.js:109` |
-| `psgTpCd1..5` | 승객유형: 1=어른,2=어린이,3=경로,4=중증장애,5=경증장애 | `ara0101v.js:113-121` |
+| `psgTpCd1..5` | 승객유형: 1=어른,2=장애 1~3급,3=장애 4~6급,4=만 65세이상,5=만4~12세(어린이) | `commCode.js:54-88` |
 | `psgInfoPerPrnb1..5` | 승객정보당인원수 | `ara0101v.js:114-122` |
 | `rqSeatAttCd1/2` | 요구좌석속성: 015=일반, 021=휠체어, 028=전동휠체어 | `ara0101v.js:127,134` |
 | `smkSeatAttCd*`=`000`, `dirSeatAttCd*`=`009`, `locSeatAttCd*`=`000`, `etcSeatAttCd*`=`000` | 좌석속성 defaults | `ara0101v.js:124-135` |
@@ -450,7 +459,7 @@ model fields are enumerated inline in §3.5.
 `grpDv` 0=개인/1=단체 · `jobId` 1101/1102/1103 · `trnGpCd` 300=SRT/900=KTX+SRT/109=전체 ·
 `stlbTrnClsfCd` 00=KTX/05=전체/07·10=KTX-산천/17=SRT (full table `main.html:626-640`) ·
 `psrmClCd` 1=일반실/2=특실 · `rqSeatAttCd` 015=일반/021=휠체어/028=전동휠체어 ·
-`psgTpCd` 1=어른/2=어린이/3=경로/4=중증장애/5=경증장애 · default stations 0551=수서, 0020=부산.
+`psgTpCd` 1=어른/2=장애 1~3급/3=장애 4~6급/4=만 65세이상/5=만4~12세(어린이) · default stations 0551=수서, 0020=부산.
 
 ---
 

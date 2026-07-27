@@ -248,8 +248,8 @@ cards and instalments were not exercised:
   `:1599`/`:1608` point it at `/ard/selectListArd02018_n.do` (group) or
   `/ard/selectListArd02017_n.do` (personal) — server-rendered WebView pages —
   and the charge then goes through the TransKey secure keypad
-  (`AndroidManifest.xml:143`, `bridge.js:2,31,66-68`) and RaonSecure FIDO
-  (`AndroidManifest.xml:315`). None of that is plain HTTP form fields. It was an
+  (`analysis/jadx/resources/AndroidManifest.xml:143`, `bridge.js:2,31,66-68`) and RaonSecure FIDO
+  (`analysis/jadx/resources/AndroidManifest.xml:315`). None of that is plain HTTP form fields. It was an
   open question whether this endpoint was a legacy path the server still honours
   or dead for our app version; the 2026-07-26 charge answered it — **the server
   still honours it**, even though our app never takes it;
@@ -1357,7 +1357,7 @@ both PNRs.**
 > Nothing on the 왕복 path touches it, and 환승 + 왕복 is mutually exclusive
 > anyway. By extension the `...2` suffix in this form family indexes the **여정
 > (journey) slot** — the app's own gloss is `여정일련번호1(001:선행, 002:후행)`
-> (`ara0101v.js:97`, echoed at `ara1001l.js:1607`) — so slot 2 is a transfer's
+> (`ara0101v.js:97`, echoed at `ara1001l.js:1611`) — so slot 2 is a transfer's
 > *following* leg. A round trip never fills it. It is certainly not a second
 > passenger; passengers live in `psgTpCd1..5`, indexed by passenger **type**.
 
@@ -1507,7 +1507,7 @@ seed `"1"` (`:92`) and a null-check read (`ara1001l.js:1654`). The app's own cod
 table names both values — `11` 편도 / rmk 직통, `14` 환승편도 / rmk 환승
 (`commCode.js:296-309`) — and the slot vocabulary is glossed inline:
 `"jrnySqno1" : "001"  //여정일련번호1(001:선행, 002:후행)` (`ara0101v.js:97`,
-repeated at `ara1001l.js:1607`). So **slot 1 is 선행, slot 2 is 후행**.
+repeated at `ara1001l.js:1611`). So **slot 1 is 선행, slot 2 is 후행**.
 
 **Search — same endpoint, one field.** `chtnDvCd` goes from `"1"` (직통) to
 `"2"` (환승). The app derives it itself:

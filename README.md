@@ -140,9 +140,12 @@ section.
   station or a 국회의원 후급 membership, because the app refuses both before it
   sends (`ara0101v.js:317-326`, `:337-341`).
 - `reserve(train, seat_attr_code="021", consent=...)` — 휠체어석; `"028"` is
-  전동휠체어 and `"015"` (the default) is an ordinary seat. The same three codes
-  the search accepts, so a search for wheelchair inventory and the reservation
-  that follows it now agree.
+  전동휠체어 and `"015"` an ordinary seat. Omit it and the reservation takes
+  the code the row was FOUND with, so searching for wheelchair inventory and
+  reserving a row out of those results agree by default. The search itself
+  validates nothing — `TrainSearchQuery.seat_attr_code` is forwarded as given
+  — but the reservation accepts only these three, which are the ones SRT
+  dispatches on.
 - `reserve(train, designated_seats=..., consent=...)` — 좌석지정 (`jobId=1103`),
   taking a `SeatDesignation` built by `SeatGrid.choose("1B", "2C")`.
 - `reserve_transfer(itinerary, consent=...)` — 환승; one request, two journeys.

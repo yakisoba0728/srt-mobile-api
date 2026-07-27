@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+- **Fixed: a failed refund could read as a successful one.**
+  `normalize_result_row` folded a conflicting pair of status rows the wrong
+  way. It now prefers `dsOutput0` only when that row actually holds a usable
+  one, and when two rows disagree the FAILING one wins. Fail-closed: a refund
+  that did not happen must never come back looking like it did.
+- **Fixed: 특실 was booked on missing data, and 휠체어석 could not be booked
+  at all.** `"예약가능" in (None or "")` is `False`, so a search row that
+  carried no availability field at all read as "일반실 is gone" and
+  `GENERAL_FIRST` silently booked 특실 — reachable through plain
+  `search_trains()` → `reserve()`, and it costs the caller the fare
+  difference. A missing field is now distinguished from a sold-out class and
+  refused rather than guessed. Separately, both reservation builders wrote the
+  literal `"015"` while the search honoured
+  `TrainSearchQuery.seat_attr_code`, so 021/028 inventory was searchable and
+  then unbookable; the reservation now validates against the three codes SRT
+  dispatches on and, when the caller names none, inherits the code the row was
+  found with.
+- **Fixed: reservation identifiers lost their leading zeros.** A JSON number
+  arrives with them already gone — a 06:30 departure comes back as `63000` —
+  and `str()` alone handed a five-character time to a payment builder that
+  requires exactly six digits, so every departure before 10:00 failed to build
+  a payment. Five fixed-width identifier columns are now repadded; quantities
+  like `rcvdAmt` deliberately are not. `trnGpCd` is also sent as the row gave
+  it rather than defaulted.
+- **Fixed: a transfer hold could not be released, and a search could depart
+  from its own arrival station.**
+- **Fixed: a seat designation forgot which cabin its grid came from.** Picking
+  특실 seats while `seat_type` stayed at its `GENERAL_FIRST` default sent
+  일반실 as the class with 특실 car and seat numbers beside it — a body the app
+  cannot express, so there is no evidence for how the server treats it. The
+  cabin and the seat numbers must now describe the same cabin.
+- **Added: the app's two 왕복 refusals.** A 코레일 전용역 and a 국회의원 후급
+  membership are both refused before sending, matching `ara0101v.js:317-341`.
+- **Added: the ceiling half of the 10-person party rule.** A non-단체 search
+  of 10 or more is refused, as `ara0101v.js:562-567` does; the floor on group
+  searches was already enforced. It lives in the client rather than in a
+  payload builder because the builders cannot tell the two flows apart.
+- **Fixed: 예약대기 refused rows the app would have queued.** The cabin was
+  resolved before standby overrode it, so once the availability requirement
+  landed, a waitlistable row that carried no `gnrmRsvPsbStr` raised past the
+  override. Standby forces 일반실 and reads no availability at all, so the
+  decision now happens first.
+- **Fixed: a NetFunnel queue slot leaked whenever a client-side guard fired.**
+  The reservation form was built outside the `try` whose `finally` releases the
+  slot, and `_get_act10_key` recorded its key only after the poll loop, so both
+  of its own raises abandoned one too. A key is now registered the moment it
+  exists.
+
 - **할인 승차권 검색 (`Ara10131`) — the request is evidenced, the effect is not.**
   `SrtClient.search_public_discount_trains(query, discount, *, page_cursor="")`
   → `TrainSearchResult`, a `POST /ara/selectListAra10131_n.do`. A READ:

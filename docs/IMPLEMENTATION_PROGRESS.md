@@ -1,11 +1,44 @@
 # SRT Python Package Implementation Progress
 
-Last updated: 2026-07-26 KST (version `0.2.0`; the consent-gated mutation port,
+Last updated: 2026-07-27 KST (version `0.2.0`; the consent-gated mutation port,
 its transport-layer gate and the four-category live enablement are recorded
 under `## Unreleased` in `CHANGELOG.md`). Entries dated before that describe the state at HEAD
 `955de306` and are kept as the historical record.
 
 ## Current State
+
+### 2026-07-27 — audit round, then verification of the audit round
+
+The 2026-07-27 sweep of the decompiled app produced 57 confirmed findings; the
+fixes are recorded per-item in `CHANGELOG.md` under `## Unreleased`, and the
+short version is that six correctness defects and two new refusals landed, and
+a follow-up verification pass over those fixes found four more.
+
+What changed in behaviour:
+
+- A failed refund can no longer read as a successful one (`normalize_result_row`
+  is fail-closed on conflicting status rows).
+- 특실 is no longer booked when the row states no availability, and 휠체어석
+  (`021`) / 전동휠체어 (`028`) can be booked at all. A reservation that names no
+  `seat_attr_code` now inherits the one its search row was found with, which is
+  the API-layer half of the same discard — the builder-layer half was closed
+  first and the discard simply moved up a layer.
+- Fixed-width reservation identifiers keep their leading zeros when the server
+  sends them as JSON numbers. Before this, every departure before 10:00 failed
+  to build a payment.
+- A seat designation and its reservation class must describe the same cabin.
+- 왕복 is refused for a 코레일 전용역 and for a 국회의원 후급 membership, and a
+  non-단체 search of 10 or more passengers is refused — all three reproduce
+  refusals the app performs before it sends.
+- 예약대기 no longer refuses rows the app would have queued, and a NetFunnel
+  queue slot is released even when a client-side guard raises.
+
+What is worth keeping in mind about the tests: the padding repair shipped with
+no test that forced it to run, because every fixture fed those columns
+pre-padded strings. Emptying the table at runtime left the whole suite green.
+That is the same shape as the korail defect that made every hold unpayable
+while 2340 tests passed, so the repair is now pinned from both directions and
+a column added to the table without a case fails the suite.
 
 - Search parsing now distinguishes the exact observed mixed-case personal and
   uppercase group wrappers, rejects partial/dual/wrong-type pairs, and raises
@@ -545,7 +578,7 @@ offline-reservation-JS variables and local cache keys, never an `Ata09036` or
 **Our app does not use the payment path at all.** `ara1001l.js:1550` serialises
 `#rsvForm` and `:1599`/`:1608` aim it at `Ard02018` (group) / `Ard02017`
 (personal), server-rendered WebView pages, and the charge runs through the
-TransKey secure keypad (`AndroidManifest.xml:143`, `bridge.js:2,31,66-68`) and
+TransKey secure keypad (`analysis/jadx/resources/AndroidManifest.xml:143`, `bridge.js:2,31,66-68`) and
 RaonSecure FIDO (`:315`). Whether the plaintext endpoint was a legacy path the
 server still honours or dead for our app version was the open question; the
 2026-07-26 charge answered it. The server still honours it, even though our app

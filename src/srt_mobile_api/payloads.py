@@ -91,7 +91,7 @@ JOURNEY_COUNT_TRANSFER = "2"
 
 # 여정일련번호 (jrnySqno) slot values, glossed by the app on its own seed:
 # "jrnySqno1" : "001"  //여정일련번호1(001:선행, 002:후행) (ara0101v.js:97), repeated
-# at ara1001l.js:1607 as "0001 : 선행, 0002 : 후행". 선행 is the leading leg, 후행
+# at ara1001l.js:1611 as "0001 : 선행, 0002 : 후행". 선행 is the leading leg, 후행
 # the following one, so a transfer's second leg is slot 2 / value "002".
 JOURNEY_SEQUENCE_LEADING = "001"
 JOURNEY_SEQUENCE_FOLLOWING = "002"
@@ -1397,7 +1397,7 @@ def personal_reservation_payload(
     By extension the ``...2`` suffix in this form family indexes the 여정
     (journey) slot, not a passenger and not the return leg. The app's own gloss
     is ``여정일련번호1(001:선행, 002:후행)`` (ara0101v.js:97, echoed at
-    ara1001l.js:1607 ``0001 : 선행, 0002 : 후행``): slot 2 is the FOLLOWING leg of
+    ara1001l.js:1611 ``0001 : 선행, 0002 : 후행``): slot 2 is the FOLLOWING leg of
     a transfer. A round trip never fills it -- the one-way seat callback
     explicitly blanks it (``scarGridcnt2=0``, ``scarNo2=""``, ara0101v.js:875-878),
     the 왕복 seat callbacks write no slot at all (:884-892), and the return
@@ -1852,7 +1852,7 @@ def transfer_reservation_payload(
 
     ``jrnySqno1`` stays ``"001"`` and ``jrnySqno2`` is ``"002"``, which is the
     app's own vocabulary: ``//여정일련번호1(001:선행, 002:후행)``
-    (``ara0101v.js:97``), repeated at ``ara1001l.js:1607`` as
+    (``ara0101v.js:97``), repeated at ``ara1001l.js:1611`` as
     ``0001 : 선행, 0002 : 후행``.
 
     **환승 and 왕복 are mutually exclusive, and the app enforces it in BOTH
@@ -2135,9 +2135,9 @@ def unpaid_reservation_cancel_payload(
 # `#rsvForm` and :1599/:1608 point it at `/ard/selectListArd02018_n.do` (group)
 # or `/ard/selectListArd02017_n.do` (personal), which are server-rendered
 # WebView pages, and the app then runs the charge through the TransKey secure
-# keypad (com.softsecurity.transkey, AndroidManifest.xml:143;
+# keypad (com.softsecurity.transkey, analysis/jadx/resources/AndroidManifest.xml:143;
 # bridge.js:2,31,66-68) and RaonSecure FIDO (com.raon.fido.*,
-# AndroidManifest.xml:315). None of that is HTTP form fields.
+# analysis/jadx/resources/AndroidManifest.xml:315). None of that is HTTP form fields.
 #
 # So this plaintext endpoint is a path the app itself does not take. It HAS now
 # been tested: on 2026-07-26 this exact form charged a real card against the real

@@ -362,7 +362,7 @@ class TransferItinerary:
     The two legs go into 여정 slots 1 and 2, and the app names the slot values
     itself: ``"jrnySqno1" : "001"  //여정일련번호1(001:선행, 002:후행)``
     (``ara0101v.js:97``, echoed as ``0001 : 선행, 0002 : 후행`` at
-    ``ara1001l.js:1607``). So :attr:`first_leg` is 선행 (``jrnySqno1="001"``) and
+    ``ara1001l.js:1611``). So :attr:`first_leg` is 선행 (``jrnySqno1="001"``) and
     :attr:`second_leg` is 후행 (``jrnySqno2="002"``).
 
     **Why this type exists at all.** A transfer search row is HALF an itinerary.

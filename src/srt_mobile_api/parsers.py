@@ -1983,6 +1983,25 @@ def _reservation_list_container(
 #: requires six digits, refusing every departure before 10:00. An amount like
 #: rcvdAmt has no such problem, which is why this is a list and not a blanket
 #: rule.
+#:
+#: MEMBERSHIP CRITERION, stated because it was not and the omission kept
+#: pulling wrong candidates back in. A column belongs here only if BOTH hold:
+#:
+#:   1. its width is FIXED by the protocol -- a time is always 6, a station
+#:      code always 4 -- so a shorter string is provably damaged, and
+#:   2. something downstream requires that exact width. dptTm/arvTm/iseLmtTm
+#:      feed card_payment_payload's _required_digits(..., length=6), which is
+#:      an exact-length check and not a minimum.
+#:
+#: `trnNo` fails (1): SRT train numbers are variable-width, so padding one
+#: would CREATE the corruption this table exists to repair. `seatNum` fails
+#: (2): nothing requires a width from it. `rcvdAmt` fails both -- it is a
+#: quantity, and 7500 means 7500.
+#:
+#: A column added here without a case in
+#: tests/test_reservation_list.py::test_a_numeric_identifier_column_keeps_its_width
+#: fails the suite, deliberately: this repair shipped once with no test that
+#: forced it to run at all.
 _ZERO_PADDED_RESERVATION_COLUMNS = {
     "dptTm": 6,
     "arvTm": 6,
