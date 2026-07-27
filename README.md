@@ -331,6 +331,6 @@ make are yours, and so is anything you strand.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE). This project is not affiliated
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). This project is not affiliated
 with, endorsed by, or sponsored by SR (수서고속철도), and "SRT" is used here
 only to describe interoperability.
