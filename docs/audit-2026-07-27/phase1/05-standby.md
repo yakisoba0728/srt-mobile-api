@@ -12,7 +12,7 @@
   평문 JS라서 jadx/apktool 차이가 거의 없었음).
 - `docs/analysis/*.md`(cross-validation, ref-srtgo_plus, VERIFICATION.md, IMPLEMENTATION_PROGRESS.md,
   RELEASE_GAP_PLAN.md) 전체에서 standby/예약대기/waitlist 관련 언급을 확인.
-- `/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py` 원본을 직접 읽어 `RESERVE_JOBID`,
+- `srtgo_plus/srtgo/srt.py` 원본을 직접 읽어 `RESERVE_JOBID`,
   `reserve()`, `reserve_standby()`, `_reserve()`, `reserve_standby_option_settings()` 전체를 대조.
 - `src/srt_mobile_api/{payloads,client,models,parsers,errors,safety}.py` 를 읽고,
   `tests/test_reserve_variants.py` 의 standby 관련 테스트 전부를 확인.

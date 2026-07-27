@@ -1,6 +1,6 @@
 # SRT 감사 3차 검증 (verifier-1, 반증 담당) — 17건 판정
 
-대상: /Users/yakisoba/Documents/GitHub/srt-mobile-api (읽기 전용 접근만)
+대상: srt-mobile-api (읽기 전용 접근만)
 방법: 인용된 file:line 을 전부 직접 열어 대조. 동작 주장은 실제 실행으로 재현.
 재현 스크립트는 저장소 밖 스크래치패드에만 작성 (`repro1.py`, `repro2.py`, `repro3.py`),
 `PYTHONDONTWRITEBYTECODE=1` 로 실행해 저장소에 `.pyc` 를 남기지 않았다.
@@ -17,7 +17,7 @@
 - `src/srt_mobile_api/models.py:40-47` docstring 이 "read from the login response's ``userMap``… ``MB_CRD_NO`` is one of its keys
   (``…full-api-analysis-2026-07-20.md:431``…)" 라고 그 줄을 지목 → 인용 대상 객체 불일치. 주장 성립.
 - 기능 판단은 옳다: `src/srt_mobile_api/session.py:70` 이 `response.get("userMap")` 을 세션에 보관하고,
-  `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:723-724` 가
+  `srtgo/srtgo/srt.py:723-724` 가
   `json.loads(r.text)["userMap"]` → `user_info["MB_CRD_NO"]` 를 가드 없이 읽는다.
   (주장이 적은 `srt.py:721` 은 실제로 `:724`. 부수 인용 오차 — 실질에는 영향 없음.)
 - `tests/fixtures/login_success.json` = `{"userMap":{"RTNCD","MSG","CUST_NM"}}` — MB_CRD_NO 없음. 혼동 소지 지적도 사실.
@@ -161,7 +161,7 @@
 - 앱 대조 확인(직접 열람): `ara1001l.js:1430-1432`
   `var sPsrmClCd = ""; if (item.gnrmRsvPsbImg == …) sPsrmClCd = 1; else if (item.sprmRsvPsbImg == …) sPsrmClCd = 2;`
   — 둘 다 아니면 **빈 문자열**, 절대 2 가 아니다.
-- srtgo 대조 확인: `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:448`
+- srtgo 대조 확인: `srtgo/srtgo/srt.py:448`
   `self.general_seat_state = data["gnrmRsvPsbStr"]` — 가드 없음(주장의 447-448 정확).
 - 공개 경로만으로 도달: `search_trains()` → `reserve()`. `reserve` 는 라이브 전송 가능 카테고리(`safety.py:520-522`).
 

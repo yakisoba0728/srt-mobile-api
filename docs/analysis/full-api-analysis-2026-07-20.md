@@ -5,7 +5,7 @@
 **Version:** `2.0.41` (`versionCode=150`)
 **Date:** 2026-07-20 KST
 **Author:** FABLE
-**Source of truth:** verified static reverse-engineering of the decompiled APK (`analysis/apktool/`, `analysis/jadx/`), cross-checked against the implemented read-only client in `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src` and the prior runtime spec `docs/analysis/srt-app-api-library-spec-2026-07-09.md`.
+**Source of truth:** verified static reverse-engineering of the decompiled APK (`analysis/apktool/`, `analysis/jadx/`), cross-checked against the implemented read-only client in `src` and the prior runtime spec `docs/analysis/srt-app-api-library-spec-2026-07-09.md`.
 
 ## Overview
 
@@ -514,7 +514,7 @@ written to `localStorage['userReservation']`.
 
 ---
 
-## 8. Coverage vs implemented client (`/Users/yakisoba/Documents/GitHub/srt-mobile-api/src`)
+## 8. Coverage vs implemented client (`src`)
 
 The `src/srt_mobile_api` package is a **pure server-side, read-only HTTP
 client**. Its allowlist (`safety.py: READ_ONLY_ROUTES`) is the authority on what

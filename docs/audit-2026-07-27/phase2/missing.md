@@ -1,7 +1,7 @@
 # SRT 2차 감사 — 누락 렌즈 (P2MIS)
 
 **감사자:** 2차 검토자 (독립 재확인)
-**대상:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+**대상:** `srt-mobile-api`
 **렌즈:** 앱에는 있는데 라이브러리에 **아예 없는** 기능 / 엔드포인트 / 파라미터
 **날짜:** 2026-07-27
 
@@ -14,8 +14,8 @@
 
 - 경로 추출: `analysis/apktool/assets/offline/**` (bundle), `analysis/jadx/sources/**`,
   `analysis/apktool/smali*/**`, `docs/analysis/*.md`, `tests/fixtures/**`,
-  그리고 참조 구현 두 벌(`/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py`,
-  `/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py`)을 docs 인용을 거치지 않고
+  그리고 참조 구현 두 벌(`srtgo/srtgo/srt.py`,
+  `srtgo_plus/srtgo/srt.py`)을 docs 인용을 거치지 않고
   **직접** 열람.
 - 라이브러리 대조: `safety.py`의 `READ_ONLY_ROUTES` / `SRT_MUTATION_ROUTES`를 권위로 삼고,
   `client.py` 메서드 목록·`payloads.py` 빌더·`parsers.py` 파서를 개별 확인.
@@ -32,9 +32,9 @@
 ### P2MIS-01 — `/ard/selectListArd02019_n.do` (승차권 상세조회) 전면 부재 · missing · medium
 
 **앱/참조 근거**
-- `/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py:96`
+- `srtgo_plus/srtgo/srt.py:96`
   `"ticket_info": f"{SRT_MOBILE}/ard/selectListArd02019_n.do"`
-  (동일 라인이 `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:96`에도 존재 — 두 벌 일치)
+  (동일 라인이 `srtgo/srtgo/srt.py:96`에도 존재 — 두 벌 일치)
 - `srt.py:1102-1112` — `POST` 바디는 `{"pnrNo": <PNR>, "jrnySqno": "1"}` 단 2개,
   응답 `trainListMap` 각 행이 한 장의 승차권.
 - `srt.py:274-286` (`SRTTicket.__init__`) — 행 필드는
@@ -152,8 +152,8 @@ srtgo=JSON `Ard02019`이며, **라이브러리는 둘 다 없다.**
   실재한다 (같은 블록에 `CUST_MG_NO`, `MB_CRD_NO`, `CUST_NM`, `CUST_SRT_CD`,
   `CUST_CL_CD`, `BTDT`, `SEX_DV_CD`, `ABRD_RS_STN_CD`, `GOFF_RS_STN_CD`, `DSCP_YN`,
   `USER_DV`, `USER_KEY`, `KR_JSESSIONID`, `SR_JSESSIONID`).
-- `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:726` 및
-  `/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py:726` (두 벌 동일) —
+- `srtgo/srtgo/srt.py:726` 및
+  `srtgo_plus/srtgo/srt.py:726` (두 벌 동일) —
   **로그인 응답의 `userMap`에서** `user_info["MBL_PHONE"]`를 가드 없이 읽는다.
   즉 전화번호는 부킹페이지를 파싱하지 않아도 **로그인 응답만으로 이미 손에 있다.**
 
@@ -204,7 +204,7 @@ srtgo=JSON `Ard02019`이며, **라이브러리는 둘 다 없다.**
 - `src/srt_mobile_api/payloads.py:269-276` — `PASSENGER_TYPE_CODES`
   `("adult","1"), ("disability_1_to_3","2"), ("disability_4_to_6","3"),
    ("senior","4"), ("child_slot_count","5")` — **commCode.js와 일치.**
-- 참조 구현 `/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py:241-247`
+- 참조 구현 `srtgo_plus/srtgo/srt.py:241-247`
   (`SRTTicket.PASSENGER_TYPE`) 도 commCode.js와 일치.
 
 **무엇이 문제인가:** 이 저장소는 `docs/analysis/`를 사실상의 프로토콜 명세로 취급하고,
@@ -226,7 +226,7 @@ srtgo=JSON `Ard02019`이며, **라이브러리는 둘 다 없다.**
 ### P2MIS-04 — `/ata/selectListAta01135_n.do` (예약대기 SMS/좌석등급변경 동의) 미구현 · missing · medium — *1차 S5-01 교차확인 + 보강*
 
 **앱/참조 근거**
-- `/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py:98`
+- `srtgo_plus/srtgo/srt.py:98`
   `"standby_option": f"{SRT_MOBILE}/ata/selectListAta01135_n.do"`
 - `srt.py:1014-1051` — 바디는 정확히 4개:
   `{pnrNo, psrmClChgFlg: Y|N, smsSndFlg: Y|N, telNo: <phone> or ""}`.

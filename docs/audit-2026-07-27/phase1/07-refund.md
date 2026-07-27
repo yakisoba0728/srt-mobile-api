@@ -3,7 +3,7 @@
 담당 영역: 미결제 취소(예약취소) / 결제후 환불(환불) 2단계 흐름 / 위약금·부분환불 유무 /
 환불 응답의 업무실패 분류(dsOutput0 등) / 승차권·예약 목록 조회.
 
-대상 저장소: `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+대상 저장소: `srt-mobile-api`
 
 ## 0. 방법론 메모
 

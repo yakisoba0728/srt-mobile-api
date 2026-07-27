@@ -105,7 +105,7 @@
 
 ## P2MIS-04 — 예약대기 옵션 `/ata/selectListAta01135_n.do` 미구현 → **CONFIRMED (low)**
 
-- 참조구현 직접 확인(`/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py`):
+- 참조구현 직접 확인(`srtgo_plus/srtgo/srt.py`):
   - `:98` `"standby_option": f"{SRT_MOBILE}/ata/selectListAta01135_n.do",`
   - `:1014-1051` `reserve_standby_option_settings(...)` — 바디 `{pnrNo, psrmClChgFlg, smsSndFlg, telNo}` 4개(`:1041-1046`), POST(`:1049`).
   - `:862-876` `reserve()` — 좌석불가+예약대기가능이면 `reserve_standby(...)` 후 `if self.phone_number:` 로 곧바로 `reserve_standby_option_settings(...)` 호출.

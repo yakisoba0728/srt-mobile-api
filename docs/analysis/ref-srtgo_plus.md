@@ -7,7 +7,8 @@ code was run and no network call was made.
 
 **Reference project.** `srtgo_plus` — a fork of the discontinued `srtgo`
 (lapis42), maintained by "dion" (DionNam).
-- Local clone: `/Users/yakisoba/Documents/GitHub/srtgo_plus`
+- Read from a local checkout of that repository, sitting beside this one; every
+  `srtgo_plus/...` path in this directory means a path inside that checkout.
 - Commit analyzed: `354960197855b2ca5d2fe300f26d1b45bdbf66ab` ("Initial commit", 2026-03-23)
 - Focus file: `srtgo/srt.py` (1261 lines) — the SRT client. Orchestration/CLI in
   `srtgo/srtgo.py`. `srtgo/__init__.py` is empty.

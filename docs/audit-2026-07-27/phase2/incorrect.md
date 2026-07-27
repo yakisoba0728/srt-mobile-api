@@ -1,6 +1,6 @@
 # SRT 2차 감사 — 오구현 렌즈 (Phase 2 / incorrect-implementation lens)
 
-대상: `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+대상: `srt-mobile-api`
 렌즈: **라이브러리에 있긴 한데 틀린 것** — 필드명, 값 타입(문자열/숫자), 상수값,
 분기 조건, 기본값, 응답 파싱 키, 인코딩, 헤더.
 방법: 1차 8건 보고서를 읽되 결론을 상속하지 않고, 앱 자산(`assets/offline/js`, `sub/main.html`)·

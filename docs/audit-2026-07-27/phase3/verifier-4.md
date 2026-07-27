@@ -101,7 +101,7 @@ fills them" 으로만 적혀 있어 오해 소지가 더 적다.
 
 ## S5-02 — mblPhone 생략 근거가 standby 에 대해 거짓 → **CONFIRMED** (medium → **low**)
 
-**srtgo 원본 직접 확인** (`/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py`)
+**srtgo 원본 직접 확인** (`srtgo_plus/srtgo/srt.py`)
 - `:726` `self.phone_number = user_info["MBL_PHONE"]` — 로그인 userMap 에서 가드 없이 읽음.
 - `:867-869` `reservation = self.reserve_standby(train, passengers, option=option,
   mblPhone=self.phone_number)` — 대기 경로에서 실전화번호를 명시적으로 전달.

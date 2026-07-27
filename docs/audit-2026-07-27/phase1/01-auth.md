@@ -28,8 +28,8 @@ reverify5(최신, 2026-07-22)는 "0 provable divergences"로 결론짓고, 제�
 
 **본 감사는 이 5차 감사를 맹신하지 않고 독립적으로 재검증**했다: jadx/apktool 원본,
 오프라인 자산(`main.html`), `srtgo`/`srtgo_plus` 참조 구현 소스 자체(단순히 docs의
-인용을 신뢰하지 않고 `/Users/yakisoba/Documents/GitHub/srtgo`,
-`/Users/yakisoba/Documents/GitHub/srtgo_plus`의 실제 `srt.py`를 직접 열람), 그리고
+인용을 신뢰하지 않고 `srtgo`,
+`srtgo_plus`의 실제 `srt.py`를 직접 열람), 그리고
 `tests/fixtures/login_success.json`을 직접 대조했다. 그 결과 기존 5차 감사의 결론(현재
 코드는 이 서브시스템에서 입증가능한 결함이 없다)을 재확인했고, **기존에 없었던 새 발견
 1건(doc-drift, 인용 오류)** 을 추가로 확인했다.
@@ -97,7 +97,7 @@ This is NOT newly captured: :class:`SrtSession` has always kept the whole
 **실제 검증한 결과(이번 감사에서 독립적으로 확인):**
 - `userMap`이 `MB_CRD_NO`를 담는다는 근거는 앱 디컴파일에는 전혀 없다
   (`/apb/selectListApb01080_n.do`의 응답 처리는 서버렌더링, APK 0-hit).
-- 그러나 `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:721`에서
+- 그러나 `srtgo/srtgo/srt.py:721`에서
   `user_info = json.loads(r.text)["userMap"]; self.membership_number =
   user_info["MB_CRD_NO"]` — **가드 없이 무조건 읽음** (없으면 `KeyError`),
   이는 실응답에 이 키가 항상 존재한다는 강한 정황증거다.
@@ -204,8 +204,8 @@ divergence"로 확정했다. 로그아웃은 SRT_LIVE_MUTATION_CATEGORIES(예약
 - `SRWebActivity.java` 전체(2709줄)에서 `login`/`deviceKey`/`ANDROID_ID`/
   `bridgeCall` 관련 부분을 직접 읽어 네이티브 브릿지 액션 30종을 전수 확인,
   인증 관련 항목(FIDO/SNS/푸시/TransKey)이 모두 HTTP JSON API가 아님을 직접 검증.
-- `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py`,
-  `/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py`를 **docs의 인용을
+- `srtgo/srtgo/srt.py`,
+  `srtgo_plus/srtgo/srt.py`를 **docs의 인용을
   거치지 않고 직접** 열람하여 로그인 필드, 정규식, `MB_CRD_NO` 접근 방식을 재검증.
 - `tests/fixtures/login_success.json`, `login_failure.json`,
   `login_failure_toplevel.json`을 직접 열람.

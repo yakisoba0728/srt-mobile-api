@@ -1,6 +1,6 @@
 # SRT 2차 검토 — 안전·일관성 렌즈
 
-- 대상: `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+- 대상: `srt-mobile-api`
 - 렌즈: 상태변경 경로의 consent 게이트 우회 가능성 / kill switch 와 실제 라우트의 정합 /
   카드·자격증명 마스킹 탈출 경로 / allowlist 라우트의 실제 성격 / 공개 API 표면 일관성
 - 방법: `safety.py`·`http.py`·`consent.py`·`redaction.py`·`client.py` 전문 정독 →

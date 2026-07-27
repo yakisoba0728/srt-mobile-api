@@ -1,6 +1,6 @@
 # SRT 예약(일반·왕복) 감사 — Phase 1 / 03-reserve
 
-대상 저장소: `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+대상 저장소: `srt-mobile-api`
 담당 범위: 일반예약(jobId 1101), 예약대기(1102), 시트맵예약(1103), 왕복예약(rtnDv),
 승객 유형 구성(psgTpCd 1~6, 유아 fold), 예약 요청 필드/타입, `consent.py` 뮤테이션 게이트.
 범위 밖(다른 슬라이스가 담당할 것으로 판단하여 표에서 제외): 환승예약

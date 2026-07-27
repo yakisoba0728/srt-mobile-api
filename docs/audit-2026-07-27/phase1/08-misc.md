@@ -1,6 +1,6 @@
 # SRT 08 — 할인·복지·쿠폰·NetFunnel·브릿지·공통헤더·에러코드·안전계층 감사
 
-감사 대상 저장소: `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+감사 대상 저장소: `srt-mobile-api`
 라이브러리: `src/srt_mobile_api/{discounts,netfunnel,errors,safety,redaction,consent,http,config,session}.py`
 담당 범위: 할인/복지/쿠폰/마일리지, NetFunnel 대기열, 네이티브 브릿지, 공통 헤더/UA/기기정보, 에러코드 체계, 안전 계층
 

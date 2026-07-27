@@ -1,6 +1,6 @@
 # SRT 2차 감사 — 교차검증 렌즈 (Phase 2)
 
-**대상:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+**대상:** `srt-mobile-api`
 **렌즈:** 문서(docs/, README, CHANGELOG) · 테스트가 주장하는 것 **vs** 코드가 실제로 하는 것
 **vs** 앱(디컴파일/오프라인번들)이 실제로 하는 것 — 셋의 대조.
 **작성일:** 2026-07-27

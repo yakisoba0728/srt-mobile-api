@@ -33,8 +33,8 @@ Sorted High → Low. Includes only findings the verifier did **not** reject.
 
 ### LOW — login `deviceKey` field value (`auth-session`)
 
-- **Our ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src/srt_mobile_api/session.py:53` (also `config.py:19` `device_key` default)
-- **Ground-truth ref:** `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:704-705`; `/Users/yakisoba/Documents/GitHub/srt-mobile-api/docs/analysis/ref-srtgo_plus.md:119-122`
+- **Our ref:** `src/srt_mobile_api/session.py:53` (also `config.py:19` `device_key` default)
+- **Ground-truth ref:** `srtgo/srtgo/srt.py:704-705`; `docs/analysis/ref-srtgo_plus.md:119-122`
 
 Our client sends `config.device_key` (default `"0123456789ABCDEF"`, an ANDROID_ID-format value) as the login form's `deviceKey` field. Both wire references for this server-rendered field send the constant `"-"`: srtgo (`data["deviceKey"] = "-"`) and srtgo_plus, which explicitly states "deviceKey is the constant '-'". The ANDROID_ID value legitimately belongs on the `/main/main.do?deviceId=` query param (decompile `SRWebActivity.java:1582-1584` reads `Settings.Secure` ANDROID_ID), **not** on the login `deviceKey` field. Our client conflates the two by reusing one config value for both. `deviceKey` appears nowhere in the decompile, so srtgo/srtgo_plus are the only wire evidence and they agree on `"-"`. Likely harmless (server probably ignores it) but it is a wrong param value vs. the only evidence, and sending a static obviously-fake device key on every login is worse than the neutral `"-"` for any device-based anti-abuse gate.
 
@@ -42,8 +42,8 @@ Our client sends `config.device_key` (default `"0123456789ABCDEF"`, an ANDROID_I
 
 ### LOW — failed-login error message parsing (`auth-session`)
 
-- **Our ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src/srt_mobile_api/session.py:62-66`
-- **Ground-truth ref:** `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:716,718`; `/Users/yakisoba/Documents/GitHub/srt-mobile-api/docs/analysis/ref-srtgo_plus.md:126`
+- **Our ref:** `src/srt_mobile_api/session.py:62-66`
+- **Ground-truth ref:** `srtgo/srtgo/srt.py:716,718`; `docs/analysis/ref-srtgo_plus.md:126`
 
 On login failure our client reads the server message from `user_map.get("MSG")` (nested inside `userMap`). The wire reference reads `MSG` at the **top level** of the JSON: srtgo does `r.json()["MSG"]` for both the non-existent-member and password-error cases, sibling to the top-level `userMap` it reads for success. Because `MSG` is top-level per the only wire evidence, our nested read yields `None` on a real failure, so we fall back to the generic "SRT login failed" and lose the real Korean server message. Worse, if a failure response omits `userMap` entirely (srtgo's failure path never touches `userMap`), our earlier guard raises `SrtProtocolError("SRT login response missing userMap")` instead of an `SrtAuthError`, giving the wrong exception type on a normal wrong-password attempt.
 

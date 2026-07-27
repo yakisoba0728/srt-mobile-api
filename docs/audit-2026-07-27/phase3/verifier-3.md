@@ -1,6 +1,6 @@
 # SRT 3차 검증자 (verifier-3) — 16건 판정
 
-대상: `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+대상: `srt-mobile-api`
 검증일: 2026-07-27
 방법: 인용된 file:line 을 **전부 직접 열어** 확인. 앱 근거는 APK 에 그대로 실린
 `analysis/apktool/assets/offline/**`(디컴파일 산출물이 아니라 원본 JS 에셋이므로 authoritative),
@@ -123,7 +123,7 @@ jadx Java 근거 1건은 smali 로 교차확인. 저장소 파일은 하나도 �
   payment/reserve-info/refund 07-26)가 라이브로 닫혔고 `Ata01135`/`Ard02019` 만 남았다.
 
 **심각도 근거가 무너지는 지점 — 참조 구현을 직접 열어 확인:**
-`/Users/yakisoba/Documents/GitHub/srtgo_plus/srtgo/srt.py:1014-1051`
+`srtgo_plus/srtgo/srt.py:1014-1051`
 `reserve_standby_option_settings()` 는 **독립 public 메서드**이고, 예약 경로(`srt.py:999-1012`)는
 reserve POST 직후 `get_reservations()` 로 티켓을 찾아 반환하고 끝난다 — 이 메서드를 호출하지 않는다.
 독스트링 예시(`:1032-1035`)도 사용자가 `reserve_standby()` **후에 따로** 호출하는 형태다.

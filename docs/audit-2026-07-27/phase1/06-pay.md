@@ -3,7 +3,7 @@
 담당 영역: 결제 경로 전체(카드결제/환불/취소/예약목록 읽기/쿠폰등록), 카드 필드,
 할부, 카드정보 마스킹(redaction.py), 안전게이트(consent.py, safety.py, http.py).
 
-대상 저장소: `/Users/yakisoba/Documents/GitHub/srt-mobile-api`
+대상 저장소: `srt-mobile-api`
 
 ## 방법
 

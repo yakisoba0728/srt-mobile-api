@@ -34,8 +34,8 @@ Sorted High → Low. Includes only findings the verifier did **not** reject. Bot
 
 ### HIGH — seat page builder sources `seatAttCd` from the wrong field (`seat-timetable-fare`)
 
-- **Our ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src/srt_mobile_api/payloads.py:329` (value parsed at `parsers.py:896`, gated at `payloads.py:308-309`)
-- **Ground-truth ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/analysis/apktool/assets/offline/js/ara/ara1001l.js:1508`; seed `ara0101v.js:132`; wire ref `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:193,427-449`
+- **Our ref:** `src/srt_mobile_api/payloads.py:329` (value parsed at `parsers.py:896`, gated at `payloads.py:308-309`)
+- **Ground-truth ref:** `analysis/apktool/assets/offline/js/ara/ara1001l.js:1508`; seed `ara0101v.js:132`; wire ref `srtgo/srtgo/srt.py:193,427-449`
 
 `get_seat_page` builds `seatAttCd` from the **search-response row**: `payloads.py:329` sends `seatAttCd = _required_digits(train.seat_attr_code, length=3)`, and `train.seat_attr_code` is parsed from the `dsOutput1` row's `seatAttCd` key at `parsers.py:896`. But the app sources this field from the **request** side, not the response. `ara1001l.js:1508` sends `seatAttCd: lfn_getRsv("rqSeatAttCd1")`, where `rqSeatAttCd1` is the seat-attribute code the app itself set at search time, seeded to the constant `"015"` (`ara0101v.js:132`). `srtgo` confirms this design: it hardcodes `rqSeatAttCd1="015"` in its request (`srt.py:193`), and its search-row parser (`srt.py:427-449`) **never** reads a row `seatAttCd`.
 
@@ -50,8 +50,8 @@ Passing tests mask the bug because `_complete_seat_train` (`tests/test_client_re
 
 ### LOW — login error classification on IP block (`auth-session`)
 
-- **Our ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src/srt_mobile_api/http.py:75` (raise `SrtProtocolError` on non-JSON login response); reached via `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src/srt_mobile_api/session.py:44` login POST
-- **Ground-truth ref:** `/Users/yakisoba/Documents/GitHub/srtgo/srtgo/srt.py:719-720`
+- **Our ref:** `src/srt_mobile_api/http.py:75` (raise `SrtProtocolError` on non-JSON login response); reached via `src/srt_mobile_api/session.py:44` login POST
+- **Ground-truth ref:** `srtgo/srtgo/srt.py:719-720`
 
 On an IP block, the SRT server returns a **non-JSON plain-text** body (e.g. `"Your IP Address Blocked ..."`), which the battle-tested reference explicitly surfaces as a login failure: `srtgo` does `if "Your IP Address Blocked" in r.text: raise SRTLoginError(r.text.strip())` (`srt.py:719-720`). Our `login()` posts via `http.post_form` with `Accept: application/json`, so a non-JSON body is caught in `_parse_json_object` (`http.py:66-75`) and raised as `SrtProtocolError` **before** `session.py`'s failure branch (`session.py:67-79`) is ever reached.
 
@@ -61,8 +61,8 @@ The result: an IP block surfaces as `SrtProtocolError`, not an auth error. Calle
 
 ### LOW — group search `psgNum` vs `totPrnb` invariant (`search-selectors`)
 
-- **Our ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src/srt_mobile_api/payloads.py:259`
-- **Ground-truth ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/analysis/apktool/assets/offline/js/ara/ara1001l.js:165` (also `:104`); client-side guard `ara0101v.js:551-554`
+- **Our ref:** `src/srt_mobile_api/payloads.py:259`
+- **Ground-truth ref:** `analysis/apktool/assets/offline/js/ara/ara1001l.js:165` (also `:104`); client-side guard `ara0101v.js:551-554`
 
 `group_search_ajax_payload()` sets `psgNum = str(max(query.passengers.total, 10))` but leaves `totPrnb` (carried in `hydrated_fields` from `search_page_payload`, which sets `totPrnb = passengers.total`) untouched. In the app, `psgNum` is **always** `lfn_getRsv("totPrnb")` for both individual and group searches (`ara1001l.js:104` `sPsgNum=lfn_getRsv("totPrnb")`, `:165` `"psgNum":sPsgNum`) — the two are identical. The app never bumps `psgNum`: it instead client-side-rejects a group search when `totPrnb<10` (`ara0101v.js:551-554` alert, no request).
 
@@ -72,8 +72,8 @@ So for a group query with `total<10` our client emits an inconsistent payload (e
 
 ### LOW — mutual-verification parser over-strict on `msgCd` (`seat-timetable-fare`)
 
-- **Our ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/src/srt_mobile_api/parsers.py:419`
-- **Ground-truth ref:** `/Users/yakisoba/Documents/GitHub/srt-mobile-api/analysis/apktool/assets/offline/js/ara/ara1001l.js:234` (handler 234-241); schema `docs/analysis/full-api-analysis-2026-07-20.md §4.4`
+- **Our ref:** `src/srt_mobile_api/parsers.py:419`
+- **Ground-truth ref:** `analysis/apktool/assets/offline/js/ara/ara1001l.js:234` (handler 234-241); schema `docs/analysis/full-api-analysis-2026-07-20.md §4.4`
 
 `parse_mutual_verification_response` requires `msgCd` to be present and a string: it reads `code = row.get('msgCd')` (`parsers.py:419`) and then raises `SrtProtocolError` unless `isinstance(code, str)` (`parsers.py:423-426`). The app never reads `msgCd` for this response — `fn_searchMutMrkVrfCd` only checks `dsOutput0.strResult=='FAIL'` and then reads `dsOutput0.mutMrkVrfCd` (`ara1001l.js:234-241`). The documented `Ara10130` `dsOutput0` schema is `{strResult, msgTxt, mutMrkVrfCd}` with no `msgCd` (`docs/analysis/full-api-analysis-2026-07-20.md §4.4` and the endpoint table). If the live response follows that JS-implied schema (no `msgCd`), our parser rejects an otherwise valid `SUCC` response, so `get_mutual_verification` would always fail.
 
