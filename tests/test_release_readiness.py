@@ -73,6 +73,20 @@ with (ROOT / "pyproject.toml").open("rb") as stream:
 PROJECT = CONFIGURATION["project"]
 VERSION = PROJECT["version"]
 LICENSE_TEXT = (ROOT / LICENSE_FILE).read_bytes()
+#: Every path named by ``license-files``. ``LICENSE_FILE`` stays the primary and
+#: remains the target of the adversarial licence-content cases below; NOTICE
+#: rides along because Apache-2.0 section 4(d) obliges a redistributor to carry
+#: the attribution notices forward, which a wheel carrying only LICENSE makes
+#: impossible. The notice is load-bearing here: it records which prior-art
+#: checkouts were read and that no code came from them.
+EXPECTED_LICENSE_FILES = [LICENSE_FILE, "NOTICE"]
+LICENSE_PAYLOADS = {name: (ROOT / name).read_bytes() for name in EXPECTED_LICENSE_FILES}
+#: The declared files other than the one the licence-content cases mutate.
+COMPANION_LICENSE_PAYLOADS = {
+    name: payload
+    for name, payload in LICENSE_PAYLOADS.items()
+    if name != LICENSE_FILE
+}
 REQUIRES_PYTHON = PROJECT["requires-python"]
 DEPENDENCIES = list(PROJECT["dependencies"])
 NORMALIZED_PROJECT = re.sub(r"[-_.]+", "_", PROJECT_NAME).casefold()
@@ -96,9 +110,13 @@ SINGLETON_METADATA = (
     ("Version", VERSION),
     ("Requires-Python", REQUIRES_PYTHON),
     ("License-Expression", EXPECTED_LICENSE),
-    ("License-File", LICENSE_FILE),
     ("Author-email", EXPECTED_AUTHOR_EMAIL),
 )
+# `License-File` used to live in the tuple above, and could, while `LICENSE`
+# was the only declared licence. It moved out when NOTICE joined it: the header
+# is emitted once per declared file, so asserting it appears exactly once would
+# now assert the NOTICE is missing. Its missing/duplicate/wrong coverage did not
+# move out with it — see test_rejects_a_wrong_license_file_header_set below.
 
 
 def _metadata(
@@ -107,6 +125,7 @@ def _metadata(
     classifiers: list[str] | None = None,
     dependencies: list[str] | None = None,
     project_urls: list[str] | None = None,
+    license_files: list[str] | None = None,
     extra_headers: tuple[tuple[str, str], ...] = (),
 ) -> bytes:
     singleton_values = {header: [value] for header, value in SINGLETON_METADATA}
@@ -116,6 +135,12 @@ def _metadata(
     lines = ["Metadata-Version: 2.4"]
     for header, _ in SINGLETON_METADATA:
         lines.extend(f"{header}: {value}" for value in singleton_values[header])
+    lines.extend(
+        f"License-File: {value}"
+        for value in (
+            EXPECTED_LICENSE_FILES if license_files is None else license_files
+        )
+    )
     lines.extend(
         f"Project-URL: {value}"
         for value in (
@@ -178,6 +203,11 @@ def _write_wheel(
                     )
                 else:
                     archive.writestr(license_info, license_text)
+            # Written unconditionally, including when the case above withholds
+            # LICENSE: the licence-content cases must fail because of the file
+            # they target, not because a second declared file went missing too.
+            for companion, payload in COMPANION_LICENSE_PAYLOADS.items():
+                archive.writestr(f"{dist_info}/licenses/{companion}", payload)
             if include_metadata:
                 archive.writestr(
                     f"{dist_info}/METADATA",
@@ -233,6 +263,7 @@ def _write_sdist(
         # the checkout's own LICENSE, so the valid fixture must carry the
         # real bytes.
         LICENSE_FILE: LICENSE_TEXT if license_text is None else license_text,
+        **COMPANION_LICENSE_PAYLOADS,
         f"src/{PACKAGE_NAME}/py.typed": b"" if marker is None else marker,
         "PKG-INFO": _metadata() if metadata is None else metadata,
     }
@@ -349,7 +380,7 @@ def test_source_release_metadata_is_exact() -> None:
     assert len(PROJECT["classifiers"]) == len(EXPECTED_CLASSIFIERS)
     # The three public-release blockers this project used to forbid outright.
     assert PROJECT["license"] == EXPECTED_LICENSE
-    assert PROJECT["license-files"] == [LICENSE_FILE]
+    assert PROJECT["license-files"] == EXPECTED_LICENSE_FILES
     assert PROJECT["authors"] == EXPECTED_AUTHORS
     assert PROJECT["urls"] == EXPECTED_URLS
     # PEP 639 forbids pairing the SPDX expression with a License classifier,
@@ -496,9 +527,10 @@ def test_license_files_must_name_readable_non_empty_files_in_the_checkout(
 
 def test_license_files_carries_the_checkouts_own_bytes() -> None:
     """The positive that makes the negatives above mean something."""
-    declared = VERIFIER._license_files(ROOT, {"license-files": [LICENSE_FILE]})
-    assert declared == ((LICENSE_FILE, LICENSE_TEXT),)
+    declared = VERIFIER._license_files(ROOT, {"license-files": EXPECTED_LICENSE_FILES})
+    assert declared == tuple(LICENSE_PAYLOADS.items())
     assert b"Apache License" in declared[0][1]
+    assert b"Apache License" in dict(declared)["NOTICE"]
 
 
 @pytest.mark.parametrize(
@@ -572,7 +604,7 @@ def test_the_repository_pyproject_satisfies_every_contract_rule() -> None:
     """The negatives above are only meaningful if the positive still holds."""
     contract = VERIFIER._project_contract()
     assert contract.license_expression == EXPECTED_LICENSE
-    assert contract.license_files == ((LICENSE_FILE, LICENSE_TEXT),)
+    assert contract.license_files == tuple(LICENSE_PAYLOADS.items())
     assert contract.author_email == EXPECTED_AUTHOR_EMAIL
     assert set(contract.project_urls) == set(EXPECTED_PROJECT_URLS)
     assert len(contract.project_urls) == len(EXPECTED_PROJECT_URLS)
@@ -813,7 +845,7 @@ def test_requires_regular_zero_byte_typed_markers(
 
 @pytest.mark.parametrize(
     "required_document",
-    ("README.md", "CHANGELOG.md", "SECURITY.md", "docs/RELEASE.md", LICENSE_FILE),
+    ("README.md", "CHANGELOG.md", "SECURITY.md", "docs/RELEASE.md", *EXPECTED_LICENSE_FILES),
 )
 def test_requires_each_exact_regular_sdist_document(
     tmp_path: Path,
@@ -837,7 +869,6 @@ def test_requires_each_exact_regular_sdist_document(
         # wrong as one with the wrong project name -- and before these rows
         # existed, all three headers were simply forbidden.
         ("License-Expression", EXPECTED_LICENSE, "MIT"),
-        ("License-File", LICENSE_FILE, "COPYING"),
         ("Author-email", EXPECTED_AUTHOR_EMAIL, "somebody <else@example.invalid>"),
     ),
 )
@@ -939,6 +970,40 @@ def test_requires_the_exact_project_url_set_without_duplicates(
         tmp_path,
         target,
         _metadata(project_urls=project_urls),
+    )
+    _assert_rejected(capsys, [wheel, sdist])
+
+
+@pytest.mark.parametrize("target", ("wheel", "sdist"))
+@pytest.mark.parametrize("problem", ("missing", "extra", "duplicate", "wrong"))
+def test_rejects_a_wrong_license_file_header_set(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+    problem: str,
+) -> None:
+    """`License-File` is checked as a set, because it stopped being singular.
+
+    It rode the singleton parametrization while `LICENSE` was the only declared
+    licence file. NOTICE joining it made "appears exactly once" the wrong
+    assertion -- it would have demanded the notice be absent. The coverage the
+    singleton row provided is reproduced here against the whole set, so that
+    dropping NOTICE from the metadata, inventing a file the archives do not
+    carry, or renaming LICENSE to COPYING all still fail the gate.
+    """
+    license_files = list(EXPECTED_LICENSE_FILES)
+    if problem == "missing":
+        license_files.remove("NOTICE")
+    elif problem == "extra":
+        license_files.append("COPYING")
+    elif problem == "duplicate":
+        license_files.append(license_files[0])
+    else:
+        license_files[0] = "COPYING"
+    wheel, sdist = _pair_with_metadata(
+        tmp_path,
+        target,
+        _metadata(license_files=license_files),
     )
     _assert_rejected(capsys, [wheel, sdist])
 

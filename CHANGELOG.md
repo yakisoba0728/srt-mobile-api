@@ -5,8 +5,13 @@
 - **Added: Apache-2.0, owner metadata, canonical URL, and `1.0.0`.** The
   repository now carries a verbatim `LICENSE`, and `pyproject.toml` states the
   license in PEP 639 SPDX form (`license = "Apache-2.0"` plus
-  `license-files = ["LICENSE"]`, no `License ::` classifier — the two spellings
-  are mutually exclusive), the owner, and the four project URLs. The
+  `license-files = ["LICENSE", "NOTICE"]`, no `License ::` classifier — the two
+  spellings are mutually exclusive), the owner, and the four project URLs.
+  `NOTICE` is named there and not only at the repository root because
+  Apache-2.0 §4(d) obliges anyone redistributing this to carry the attribution
+  notices forward, which they cannot do from a wheel that omits the file; both
+  artifacts now carry it, and the verifier checks the `License-File` header as
+  a set rather than as a singleton. The
   build-system floor moved `setuptools>=69` → `>=77`, the first release that
   understands either key. `Development Status` moved from `3 - Alpha` to
   `5 - Production/Stable`, and the version from `0.2.0` to `1.0.0`.

@@ -14,7 +14,7 @@ requires-python = ">=3.11"
 # deliberately no `License ::` classifier: the two spellings are mutually
 # exclusive and setuptools rejects the pair.
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "yakisoba0728", email = "yakihyuk0728@gmail.com" }]
 keywords = ["srt", "read-only", "mobile-api"]
 classifiers = [
