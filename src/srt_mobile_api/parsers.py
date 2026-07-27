@@ -2273,13 +2273,83 @@ def _normalize_search_wrapper(data: dict[str, Any]) -> tuple[str, str]:
     return code, message
 
 
+#: Search-row columns whose value is a FIXED-WIDTH identifier, by the SAME
+#: criterion as :data:`_ZERO_PADDED_RESERVATION_COLUMNS` -- the width is fixed
+#: by the protocol AND something downstream requires exactly that width.
+#:
+#: This is the SEARCH row rather than the reservation-list row, and it exists
+#: for the same reason one commit later: the reservation-list readers were
+#: taught to take a JSON number while these still refused one outright. That
+#: asymmetry is a trap rather than a defect on its own -- the search dies
+#: loudly instead of corrupting anything, so it is safe TODAY. It stops being
+#: safe the moment somebody relaxes the type check to match the sibling
+#: readers, because relaxing without padding is exactly how a 06:30 departure
+#: becomes the five-character "63000". Widening and padding therefore land
+#: together, in one place, so they cannot be separated later.
+#:
+#: Each entry's downstream requirement, all in payloads.py, all EXACT-length
+#: checks rather than minimums:
+#:   dptTm/arvTm -> _required_digits(..., length=6)
+#:   dptDt/arvDt/runDt -> length=8
+#:   dptRsStnCd/arvRsStnCd -> length=4, and station_name_by_code keys on the
+#:     padded form
+#:   seatAttCd -> length=3
+#:
+#: Deliberately ABSENT: trnNo, whose width varies and which payloads.py
+#: already zfill(5)s on the way out, so it repairs itself; and the run/consist
+#: orders, which no exact-length check reads.
+_ZERO_PADDED_SEARCH_ROW_COLUMNS = {
+    "dptTm": 6,
+    "arvTm": 6,
+    "dptDt": 8,
+    "arvDt": 8,
+    "runDt": 8,
+    "dptRsStnCd": 4,
+    "arvRsStnCd": 4,
+    "seatAttCd": 3,
+    "stlbTrnClsfCd": 2,
+}
+
+
+def _row_scalar(value: Any, key: str) -> str | None:
+    """A search-row value: a JSON string, or a JSON number on a WIDTH-REGISTERED key.
+
+    ``None`` in, ``None`` out. Anything this does not accept returns ``None``
+    so the caller raises its own message.
+
+    **A number is accepted only for keys in**
+    :data:`_ZERO_PADDED_SEARCH_ROW_COLUMNS`, and that coupling is the design
+    rather than an implementation detail. Widening a field and repadding it
+    are the same decision: relaxing the type check without a width is how a
+    06:30 departure becomes ``"63000"``, so this makes the two impossible to
+    separate -- a field can only be widened by giving it a width.
+
+    That is why this is narrower than the sibling korail package's
+    ``_train_scalar``, which takes a number for every field on its row. There
+    the fields in question were counts, with live evidence of numeric
+    arrivals. Here most optional row fields carry Korean TEXT
+    (``gnrmRsvPsbStr`` is ``"예약가능"``), and a number in one of those is a
+    genuinely different response rather than a padding accident. Two existing
+    tests pin that, deliberately, and they still pass.
+
+    ``bool`` is excluded explicitly because it is an ``int`` subclass in
+    Python, and ``true`` is not a value SRT sends for one of these.
+    """
+    if value is None or isinstance(value, str):
+        return value
+    width = _ZERO_PADDED_SEARCH_ROW_COLUMNS.get(key)
+    if width is not None and type(value) is int:
+        return str(value).zfill(width)
+    return None
+
+
 def _required_row_string(
     row: dict[str, Any],
     key: str,
     *,
     context: str,
 ) -> str:
-    value = row.get(key)
+    value = _row_scalar(row.get(key), key)
     if not isinstance(value, str):
         raise SrtProtocolError(f"SRT {context} {key} must be a string")
     return value
@@ -2318,7 +2388,7 @@ def _optional_row_string(
     for key in keys:
         if _row_field_is_absent(row, key):
             continue
-        value = row[key]
+        value = _row_scalar(row[key], key)
         if not isinstance(value, str):
             raise SrtProtocolError(
                 f"SRT search train row {key} must be a string"

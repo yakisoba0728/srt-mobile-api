@@ -607,3 +607,74 @@ def test_new_typed_models_are_exported_without_moving_legacy_positional_fields()
         "amount",
         "raw_amount",
     ]
+
+
+# --------------------------------------------------------------------------
+# The search row's numeric-identifier path. This is the OPPOSITE direction
+# from the reservation-list padding bug: here a JSON number made the whole
+# search raise rather than quietly corrupting a value, so it was safe. It
+# stopped being safe the moment the reservation-list readers learned to take
+# a number and these did not -- the obvious next edit is "make them match",
+# and making them match WITHOUT padding is how 06:30 becomes "63000".
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "sent", "expected"),
+    [
+        ("dptTm", 63000, "063000"),
+        ("arvTm", 82500, "082500"),
+        ("dptDt", 20990102, "20990102"),
+        ("arvDt", 20990102, "20990102"),
+        ("runDt", 20990102, "20990102"),
+        ("dptRsStnCd", 551, "0551"),
+        ("arvRsStnCd", 20, "0020"),
+        ("seatAttCd", 15, "015"),
+        ("stlbTrnClsfCd", 0, "00"),
+    ],
+)
+def test_a_numeric_search_row_identifier_keeps_its_width(key, sent, expected):
+    from srt_mobile_api import parsers
+
+    assert parsers._row_scalar(sent, key) == expected
+
+
+def test_a_number_is_refused_on_a_key_with_no_registered_width():
+    """Widening and padding are one decision, so they cannot be separated.
+
+    A key can only accept a number by being given a width. That is what stops
+    a future "make these readers match the reservation-list ones" edit from
+    landing the relaxation without the repair.
+    """
+    from srt_mobile_api import parsers
+
+    assert parsers._row_scalar(42, "gnrmRsvPsbStr") is None
+    assert parsers._row_scalar(1, "rcvdFare") is None
+    # bool is an int subclass; it is not a number SRT sends for these.
+    assert parsers._row_scalar(True, "dptTm") is None
+
+
+def test_trn_no_is_deliberately_not_width_registered():
+    """It repairs itself, and padding it here would be wrong.
+
+    SRT train numbers vary in width, so a registered width would CREATE the
+    corruption this table repairs. payloads.py already zfill(5)s train_no on
+    the way out, which is where the five-character form is actually required.
+    """
+    from srt_mobile_api import parsers
+
+    assert "trnNo" not in parsers._ZERO_PADDED_SEARCH_ROW_COLUMNS
+
+
+def test_every_width_registered_search_column_is_covered_by_a_test():
+    """Guard the guard, the same way the reservation-list table is guarded."""
+    from srt_mobile_api import parsers
+
+    covered = {
+        case[0]
+        for case in test_a_numeric_search_row_identifier_keeps_its_width.pytestmark[
+            0
+        ].args[1]
+    }
+
+    assert covered == set(parsers._ZERO_PADDED_SEARCH_ROW_COLUMNS)
