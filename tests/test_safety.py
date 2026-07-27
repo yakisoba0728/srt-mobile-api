@@ -284,3 +284,62 @@ def test_seat_page_rejects_percent_encoded_route_spelling():
             ),
             config,
         )
+
+
+def test_no_module_level_definition_is_unreachable():
+    """AST reachability over src/, so removal residue fails instead of lingering.
+
+    The sibling korail repository lost fifteen module-level names to one day of
+    add-then-remove, and grepping the deletion diff structurally cannot find
+    them: that finds CALLERS of what was removed, while these are definitions
+    that were only ever read from INSIDE the removed block. This repository has
+    the same exposure, so it gets the same guard rather than waiting to earn it.
+
+    Anything genuinely meant to be unused belongs in the allowlist with a
+    reason, so "unused" stays a decision rather than an accident.
+    """
+    import ast
+    import re
+    from pathlib import Path
+
+    import srt_mobile_api
+
+    #: Deliberately unreferenced, with the reason stated.
+    deliberately_unused = {
+        # Prose that happens to be a tuple: the statements the safety model is
+        # written against. Deleting it deletes the statement of intent.
+        "SAFETY_STATEMENTS",
+    }
+
+    package = Path(__file__).parents[1] / "src" / "srt_mobile_api"
+    sources = {p: p.read_text(encoding="utf-8") for p in package.glob("*.py")}
+    corpus = "\n".join(sources.values()) + "\n".join(
+        p.read_text(encoding="utf-8") for p in Path(__file__).parent.glob("*.py")
+    )
+    exported = set(srt_mobile_api.__all__)
+
+    orphans = []
+    for path, text in sources.items():
+        if path.name == "__init__.py":
+            continue
+        for node in ast.parse(text).body:
+            names = []
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names = [node.name]
+            elif isinstance(node, ast.Assign):
+                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names = [node.target.id]
+            for name in names:
+                if (
+                    name.startswith("__")
+                    or name in exported
+                    or name in deliberately_unused
+                ):
+                    continue
+                if len(re.findall(rf"\b{re.escape(name)}\b", corpus)) <= 1:
+                    orphans.append(f"{path.name}:{node.lineno} {name}")
+
+    assert not orphans, "unreachable module-level definitions:\n  " + "\n  ".join(
+        sorted(orphans)
+    )
