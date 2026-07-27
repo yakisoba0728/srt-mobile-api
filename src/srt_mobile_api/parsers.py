@@ -679,9 +679,18 @@ def parse_discount_coupon_page(html: str) -> DiscountCouponList:
     )
 
 
-# The 할인 승차권 page's eight server-rendered 공공할인 approval flags. Anchored on
-# `var` so the DECLARATION is matched and the page's own `data1Check != "Y"`
-# comparisons -- which appear nine more times -- are not.
+# The 할인 승차권 page's eight server-rendered 공공할인 approval flags.
+#
+# Anchored on `var` so only a DECLARATION matches. The comment here used to say
+# the anchor was what kept the page's own `dataNCheck != "Y"` comparisons out,
+# and that was wrong: measured against both fixtures, dropping `var` changes
+# nothing (8 matches either way), because a comparison has no `= "..."` and no
+# trailing `;` for the rest of the pattern to reach. What the anchor actually
+# excludes is a bare RE-assignment -- `data1Check = "N";` without `var` -- which
+# would otherwise overwrite the server's rendered verdict with a later
+# client-side one. No fixture contains such a line, so this is defensive rather
+# than exercised; removing `var` today turns no test red. Kept because the
+# declaration is the value the server asserted, and that is the one to read.
 _PUBLIC_DISCOUNT_FLAG_RE = re.compile(
     r'var\s+data([1-8])Check\s*=\s*"([^"]*)"\s*;'
 )
