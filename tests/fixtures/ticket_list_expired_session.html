@@ -6,16 +6,17 @@
     <script src="/js/loginCheck_new.js"></script>
     <script src="/js/common/messages.js"></script>
     <script type="text/javascript">
-        $(document).ready(function () {
-
-            //console.log("로그인페이지로 이동");
-            	srtAlertBoxDivShow("알림", Sr.msgs.login020, null, "mvLoginPage()");
-
-        });
-
-        function mvLoginPage() {
+        /* NOT the page's own script. On the live response an on-ready handler
+           raises this alert and hands off to mvLoginPage(), which navigates to
+           /login/login.do?page=menu. Both facts are kept; the code is ours.
+           What matters is only that the two tokens below sit together INSIDE a
+           <script>: the message KEY is the discriminator, because mvLoginPage()
+           is defined on ordinary authenticated pages too. */
+        function fixtureExpiredSessionAlert() {
+            srtAlertBoxDivShow("알림", Sr.msgs.login020, null, "mvLoginPage()");
             location.href = "/login/login.do?page=menu";
         }
+        fixtureExpiredSessionAlert();
     </script>
 </head>
 <body>
@@ -29,12 +30,13 @@
   present at all (the server renders none of them in this state), and the bulk
   that is omitted is boilerplate menu/footer markup.
 
-  What makes this the hard case, and why it is kept verbatim: the page carries
-  no login-form action, no password input, and no redirect or error status --
-  HTTP 200 throughout. So a login-FORM detector says "not a login page" and
-  passes it through as content. The only signal is the inline Sr.msgs.login020
-  alert above. (The two tokens a form detector looks for are deliberately absent
-  from this file, comment included; a test asserts that.)
+  What makes this the hard case: the page carries no login-form action, no
+  password input, and no redirect or error status -- HTTP 200 throughout. So a
+  login-FORM detector says "not a login page" and passes it through as content.
+  The only signal is the inline Sr.msgs.login020 alert above, and the script it
+  sits in is written for this fixture rather than copied. (The two tokens a form
+  detector looks for are deliberately absent from this file, comment included;
+  a test asserts that.)
 
   The /login/login.do referer forms below are reproduced because they are
   present on ordinary AUTHENTICATED pages too -- they are what makes a naive

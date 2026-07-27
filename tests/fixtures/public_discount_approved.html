@@ -24,39 +24,37 @@
 	<script language="JavaScript">
 		var contextPath = "";
 
-		$(function() {
-			var data1Check="Y";
-			var data2Check="";
-			var data3Check="";
-			var data4Check="";
-			var data5Check="";
-			var data6Check="Y";
-			var data7Check="";
-			var data8Check="";
-			if(data1Check != "Y" && data2Check != "Y" && data3Check != "Y" && data4Check != "Y" && data5Check != "Y" && data6Check != "Y" && data7Check != "Y" && data8Check != "Y"){
-				$("#inquiry1").hide();
-				srtAlertBoxDivShow("알림", Sr.msgs.notice006, null, "gotoMain();");
-				return;
-			}else{
-				var PBL_DISC_CD="";
-				var PBL_DISC_NM="";
-				var PBL_DISC_MG_NO="";
-				if(data1Check == "Y"){
-					PBL_DISC_CD 			="";
-					PBL_DISC_NM 			="";
-					PBL_DISC_MG_NO 	="";
-				}
-				$("#TGT_DTRM_YN").val("Y");
-			}
-		});
+		/* The same fixture-written script as public_discount_none.html carries,
+		   differing in the one way this whole file differs: slots 1 and 6 say
+		   "Y". See that file for what each part of it is reproducing. */
 
-		function goSubmit(){
-			var frm = document.forms["rsvForm"];
-			$("#rsvForm").attr("action",contextPath + "/ara/selectListAra10131_n.do");
-			NetFunnel_Action({action_id:"act_10"}, function() {
-				frm.submit();
-			}.bind(this));
+		var data1Check="Y";
+		var data2Check="";
+		var data3Check="";
+		var data4Check="";
+		var data5Check="";
+		var data6Check="Y";
+		var data7Check="";
+		var data8Check="";
+
+		if (data1Check != "Y" && data2Check != "Y" && data3Check != "Y"
+				&& data4Check != "Y" && data5Check != "Y" && data6Check != "Y"
+				&& data7Check != "Y" && data8Check != "Y") {
+			$("#inquiry1").hide();
+			srtAlertBoxDivShow("알림", Sr.msgs.notice006, null, "gotoMain();");
+		} else {
+			//다자녀(01)와 임산부(02)가 신청이 승인된 경우,최근에 신청한 데이터로 출력해줌
+			if (data1Check == "Y") { $("#PBL_DISC_CD").val(""); $("#PBL_DISC_NM").val(""); $("#PBL_DISC_MG_NO").val(""); }
+			$("#TGT_DTRM_YN").val("Y");
 		}
+
+		var fixtureAra10131Navigation = {
+			trigger: "goSubmit",
+			form: "#rsvForm",
+			formMethod: "get",
+			retargetedTo: "/ara/selectListAra10131_n.do",
+			queueGate: "NetFunnel_Action act_10, then the form submits"
+		};
 	</script>
 
 	<div role="main" class="ui-content" data-ajax="false">

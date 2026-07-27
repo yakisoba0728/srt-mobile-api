@@ -2,8 +2,9 @@
   REDACTED reproduction of a REAL response, captured 2026-07-26 from
   POST /ara/selectListAra13010_n.do for a single-leg journey.
 
-  Structure is verbatim; the passenger-type and class labels, the amounts and
-  the train/station identifiers are synthetic. Two independent routes in the
+  What is reproduced is the response's SHAPE -- the block ids, the table
+  structure and the row layout; the passenger-type and class labels, the amounts
+  and the train/station identifiers are synthetic. Two independent routes in the
   same capture produced this identical layout.
 
   The point of the fixture: the page is built for a TRANSFER itinerary and
@@ -12,10 +13,11 @@
   and its six rows REPEAT the first block's labels with "-" and "0원" amounts.
   Reading every table therefore yields duplicate labels priced at zero.
 
-  The trailing script is kept because it is the trap: it hides the placeholder
-  block, but it ALSO contains a hide() call for the real block inside
-  selectTransferTrain(), so a textual scan for hide() targets suppresses the
-  real fares instead of the placeholder ones.
+  The trailing script is the trap, and it is ours: the live page hides the
+  placeholder block at top level and ALSO carries a hide() call for the REAL
+  block inside its leg-switching handler. That arrangement is what the script
+  below reproduces, because a textual scan for hide() targets names both blocks
+  and so suppresses the real fares along with the placeholder ones.
 -->
 <div class="ui-content type3" role="main">
 
@@ -135,11 +137,11 @@
 </div>
 <script>
 $("#trainPayInfo22").hide();
-function selectTransferTrain(no) {
-	if (no == 1) {
-		$("#trainPayInfo1").show();
-		$("#trainPayInfo22").hide();
-	} else {
+/* NOT the page's own leg switcher. Ours, and it reproduces the one thing that
+   matters: the REAL leg is hidden too, by a call that sits inside a function
+   body, so hide() targets collected textually name BOTH blocks. */
+function fixtureShowLeg(leg) {
+	if (leg == 2) {
 		$("#trainPayInfo1").hide();
 		$("#trainPayInfo22").show();
 	}

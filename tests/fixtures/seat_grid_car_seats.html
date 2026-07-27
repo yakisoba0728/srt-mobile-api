@@ -2,7 +2,9 @@
   REDACTED reproduction of a REAL response, captured 2026-07-26 from
   POST /arc/selectListArc02011_n.do -- the seat page's follow-up read, returned
   once a 호차 is chosen. The live body was 25,930 bytes and 74 seat cells; this
-  keeps the cell structure verbatim and shrinks the car to twelve seats.
+  reproduces the cell structure exactly -- the tag, the class, the id and the
+  onclick call, all of which the parser reads -- and shrinks the car to twelve
+  seats. There is no page code here: a cell's onclick is a call, not a handler.
 
   What it demonstrates, none of which is in the offline v2.0.41 bundle (both
   this route and trnScarSeatFrm are 0-hit there):

@@ -877,7 +877,9 @@ two-coupon template, commented out, *inside* `ul.coupList`, with plausible
 numbers and rates. `html.parser` hands a comment to `handle_comment` as one
 opaque string and never parses markup inside it, so the template cannot become
 coupons; a regex over the same bytes would have invented two for an account that
-holds none. The fixture keeps the template verbatim so the property is tested.
+holds none. The fixture reproduces that arrangement — the same six span classes
+inside the same commented-out list, with numbers and rates of its own that are
+just as plausible — so the property is tested rather than asserted.
 
 **"You hold none" and "we did not understand this page" are kept apart.** The
 parser refuses a page with no `ul.coupList` (not the coupon page), a list that

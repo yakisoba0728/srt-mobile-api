@@ -2,28 +2,33 @@
   REDACTED reproduction of a REAL response, live-read 2026-07-26 from
   GET /common/ARA/ARA0301V/view.do (할인 승차권) for an account approved for no
   공공할인. The live body was 206,268 bytes: the shared MY SRT menu, the whole
-  ~140-field #rsvForm, and this script. Both are shrunk here to the parts the
-  parser and its claims depend on.
+  ~140-field #rsvForm, and a script. The form is shrunk to the parts the parser
+  and its claims depend on; the SCRIPT IS NOT THE PAGE'S -- see the note inside
+  it for what the replacement reproduces and what it drops.
 
-  What it demonstrates:
+  What this fixture demonstrates:
 
     * the eight approval flags are server-rendered as `var dataNCheck="";` and
       are ALL EMPTY for an unapproved account. That is the live-verified state
       and the reason PublicDiscountPage returns it instead of raising;
-    * the same eight identifiers appear NINE more times as comparisons
+    * each of those identifiers then appears SEVERAL MORE TIMES as a comparison
       (`data1Check != "Y"`, `data1Check == "Y"`), which is why the flag regex is
-      anchored on `var` rather than on the name;
+      anchored on `var` rather than on the name. The live page compares them
+      nine more times; here it is fewer, but still more often than it declares
+      them, which is the property that matters;
     * the page's own comment ties slot 1 to code 01 and slot 2 to code 02 --
       "다자녀(01)와 임산부(02)" -- and that single comment is the whole evidence
-      for the code-to-slot mapping. It is reproduced verbatim;
+      for the code-to-slot mapping. It is quoted exactly, as evidence;
     * PBL_DISC_CD / PBL_DISC_NM / PBL_DISC_MG_NO / TGT_DTRM_YN are the four
       fields this page adds to the ordinary booking form, and they are what
       makes it the 할인 승차권 form rather than the booking form;
-    * the eight branch bodies that would carry an approved discount's code, name
-      and management number are EMPTY here, which is why none of them is parsed;
-    * goSubmit() targets /ara/selectListAra10131_n.do behind NetFunnel act_10.
-      That route is registered nowhere in this library and has no builder; it is
-      kept in the fixture so the thing that is NOT implemented is visible.
+    * the branch bodies that would carry an approved discount's code, name and
+      management number are EMPTY on the live page, which is why none of them is
+      parsed;
+    * goSubmit() retargets #rsvForm at /ara/selectListAra10131_n.do behind
+      NetFunnel act_10. That route is registered nowhere in this library and has
+      no builder; it is recorded here so the thing that is NOT implemented stays
+      visible.
 
   Enough of #rsvForm is kept to show it is the booking form plus four fields.
 -->
@@ -35,56 +40,56 @@
 	<script language="JavaScript">
 		var contextPath = "";
 
-		$(function() {
-			var data1Check="";
-			var data2Check="";
-			var data3Check="";
-			var data4Check="";
-			var data5Check="";
-			var data6Check="";
-			var data7Check="";
-			var data8Check="";
-			if(data1Check != "Y" && data2Check != "Y" && data3Check != "Y" && data4Check != "Y" && data5Check != "Y" && data6Check != "Y" && data7Check != "Y" && data8Check != "Y"){
-				$("#inquiry1").hide();
-				srtAlertBoxDivShow("알림", Sr.msgs.notice006, null, "gotoMain();");
-				return;
-			}else{
-				//다자녀(01)와 임산부(02)가 신청이 승인된 경우,최근에 신청한 데이터로 출력해줌
-				//아니라면 기존 로직데로 흘러감
-				if(data1Check == "Y" && data2Check == "Y"){
-					$("#TGT_DTRM_YN").val("Y");
-				}else{
-					var PBL_DISC_CD="";
-					var PBL_DISC_NM="";
-					var PBL_DISC_MG_NO="";
-					if(data1Check == "Y"){
-						PBL_DISC_CD 			="";
-						PBL_DISC_NM 			="";
-						PBL_DISC_MG_NO 	="";
-					}else if(data2Check == "Y"){
-						PBL_DISC_CD 			="";
-						PBL_DISC_NM 			="";
-						PBL_DISC_MG_NO 	="";
-					}else if(data8Check == "Y"){
-						PBL_DISC_CD 			="";
-						PBL_DISC_NM 			="";
-						PBL_DISC_MG_NO 	="";
-					}
-					$("#PBL_DISC_CD").val(PBL_DISC_CD);
-					$("#PBL_DISC_NM").val(PBL_DISC_NM);
-					$("#PBL_DISC_MG_NO").val(PBL_DISC_MG_NO);
-					$("#TGT_DTRM_YN").val("Y");
-				}
-			}
-		});
+		/* NOT the page's own script. The live page hydrates the eight flags and
+		   then branches through them at length; written out below is what the
+		   parser reads and what it must not be fooled by. Four properties are
+		   reproduced exactly and nothing else is:
 
-		function goSubmit(){
-			var frm = document.forms["rsvForm"];
-			$("#rsvForm").attr("action",contextPath + "/ara/selectListAra10131_n.do");
-			NetFunnel_Action({action_id:"act_10"}, function() {
-				frm.submit();
-			}.bind(this));
+		     1. the eight flags are SERVER-RENDERED as `var dataNCheck="..."`,
+		        and for an account approved for nothing every one is EMPTY;
+		     2. each identifier is COMPARED far more often than it is declared.
+		        That is why the flag regex is anchored on `var`. Widen it to
+		        accept comparisons and this page stops parsing, because the
+		        comparisons say "Y";
+		     3. the branch bodies that would carry an approved discount's code,
+		        name and management number are EMPTY on the live page, which is
+		        why none of them is parsed;
+		     4. the page's reaction to "approved for nothing" is an alert and a
+		        bounce to the main page -- which is an answer, not a refusal.
+
+		   The one line below quoted from the page as it wrote it is its own
+		   comment tying slot 1 to code 01 and slot 2 to code 02. That single
+		   comment is the whole evidence for the code-to-slot mapping. */
+
+		var data1Check="";
+		var data2Check="";
+		var data3Check="";
+		var data4Check="";
+		var data5Check="";
+		var data6Check="";
+		var data7Check="";
+		var data8Check="";
+
+		if (data1Check != "Y" && data2Check != "Y" && data3Check != "Y"
+				&& data4Check != "Y" && data5Check != "Y" && data6Check != "Y"
+				&& data7Check != "Y" && data8Check != "Y") {
+			$("#inquiry1").hide();
+			srtAlertBoxDivShow("알림", Sr.msgs.notice006, null, "gotoMain();");
+		} else {
+			//다자녀(01)와 임산부(02)가 신청이 승인된 경우,최근에 신청한 데이터로 출력해줌
+			if (data1Check == "Y" && data2Check == "Y") { $("#TGT_DTRM_YN").val("Y"); }
+			if (data1Check == "Y") { $("#PBL_DISC_CD").val(""); $("#PBL_DISC_NM").val(""); $("#PBL_DISC_MG_NO").val(""); }
+			if (data2Check == "Y") { $("#PBL_DISC_CD").val(""); $("#PBL_DISC_NM").val(""); $("#PBL_DISC_MG_NO").val(""); }
+			if (data8Check == "Y") { $("#PBL_DISC_CD").val(""); $("#PBL_DISC_NM").val(""); $("#PBL_DISC_MG_NO").val(""); }
 		}
+
+		var fixtureAra10131Navigation = {
+			trigger: "goSubmit",
+			form: "#rsvForm",
+			formMethod: "get",
+			retargetedTo: "/ara/selectListAra10131_n.do",
+			queueGate: "NetFunnel_Action act_10, then the form submits"
+		};
 	</script>
 
 	<div role="main" class="ui-content" data-ajax="false">
