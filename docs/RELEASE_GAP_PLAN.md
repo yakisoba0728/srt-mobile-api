@@ -1054,7 +1054,7 @@ Individual reserve stays feasible; only payment/cancel/refund walk back.
   (`cross-validation-2026-07-21.md` §5). `Ard02019`, `Ard02045`, `Ata09036`,
   `Ata01135`, `Atc02063`, `getListAtc14087` are all ABSENT (runtime-only).
 - **Uncaptured native secrets** (not in §7): hardcoded Google/Firebase API keys
-  (Firebase project `<SRT-APP-FIREBASE-PROJECT-REDACTED>`), Kakao and Facebook app keys, and an
+  (plus a Firebase project id), Kakao and Facebook app keys, and an
   `android_id`/MAC/IP device fingerprint feeding `push.srail.co.kr:3101`
   (`cross-validation-2026-07-21.md` §5; `strings.xml`; `SRWebActivity.java:1841-1851`).
   *(Key values intentionally NOT reproduced in this plan.)*

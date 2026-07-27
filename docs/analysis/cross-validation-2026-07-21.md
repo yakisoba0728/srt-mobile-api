@@ -17,6 +17,19 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 - 🆕 **Newly-found hidden** — present in our v2.0.41 decompile, absent from srtgo.
 - ❓ **Disputed / low-confidence** — could not be line-verified, or a citation was found imprecise. Substance noted separately.
 
+> **On the `<SRT-APP-…-REDACTED>` placeholders below.** The SR app ships several
+> third-party vendor credentials hardcoded in its own resources — Google/Firebase
+> API keys, a Firebase project id, a GCM/FCM sender number, and Kakao and Facebook
+> app ids — and finding them there is part of what this report records. The
+> **finding** is kept in full: the field name, the file and the line number are all
+> still here, so the claim stays checkable by anyone who decompiles the same APK.
+> The **values** are not. They are SR's credentials, not ours, and this repository
+> is public; republishing them would hand out working keys to no analytical end.
+> Every one of them was rewritten out of this repository's git history and replaced
+> with a `<SRT-APP-…-REDACTED>` placeholder naming which key it stood for. Nothing
+> here was a secret of SRT's *API* — none of these keys is used by anything this
+> library does.
+
 > **Status note (2026-07-25) — a snapshot, plus one gap it named that has since
 > been closed.** This report is a static cross-validation dated 2026-07-21 and is
 > left as written; every 0-hit finding in it still holds, because they are facts
@@ -285,8 +298,8 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 - **SEAT-DESIGNATION `/arc/selectListArc02012_n.do` with `reqCode` semantics decoded:** `9`=seat-designate one-way, `10`=round-trip outbound, `11`=round-trip done (`const.js:9-11` `POP_REQ_SEATSELECT_DPT_ONEWAY/GO_BACK/GO_BACK_DONE`; consumed at `ara1001l.js:1496-1520`). `trnGpCd` hard-coded `'300'` because seat pick is SRT-only. srtgo omits this endpoint.
 - **Group reservation disables seat designation:** the seat-select affordance is gated by `grpDv != '1'` (`ara1001l.js:1101`), so group is auto-assign only — a rule neither srtgo nor OUR client models.
 - **Extra reservation-flow endpoints srtgo lacks:** `ara10130` mutual-verification returning `mutMrkVrfCd` as `dsOutput0` (`ara1001l.js:227-242`), `ara12009` timetable detail (`ara1001l.js:1189`), `ara13010` fare/pricing detail (`ara1001l.js:1229`), `ata01032` discount detail GET with JSP EL `pnrNo=${commandMap.pnrNo}` (`arc0102c.js:33-37`). srtgo has none (`srt.py:88-102`).
-- **Hardcoded Firebase/Google keys (NOT in our doc §7):** `google_api_key = google_crash_reporting_api_key = <SRT-APP-GOOGLE-API-KEY-REDACTED>` (`strings.xml:171,174`); a SECOND, different `sr_gcm_api_key = <SRT-APP-GCM-API-KEY-REDACTED>` (`strings.xml:492`); `google_app_id = <SRT-APP-GOOGLE-APP-ID-REDACTED>` (`:172`); `firebase_database_url https://<SRT-APP-FIREBASE-PROJECT-REDACTED>.firebaseio.com` (`:162`); `google_storage_bucket <SRT-APP-FIREBASE-PROJECT-REDACTED>.appspot.com` (`:176`); `project_id <SRT-APP-FIREBASE-PROJECT-REDACTED>` (`:469`). srtgo has no native layer.
-- **Social-login app keys hardcoded:** `kakao_app_key = <SRT-APP-KAKAO-APP-KEY-REDACTED>` (`strings.xml:242`) and `facebook_app_id = <SRT-APP-FACEBOOK-APP-ID-REDACTED>` (`:158`). GCM/FCM sender/project number `<SRT-APP-GCM-SENDER-ID-REDACTED>` appears as `gcm_defaultSenderId, google_project_id, sr_gcm_id` (`:164,175,493`).
+- **Hardcoded Firebase/Google keys (NOT in our doc §7):** `google_api_key` and `google_crash_reporting_api_key` hold **one and the same** key (`strings.xml:171,174` — written here as the single placeholder `<SRT-APP-GOOGLE-API-KEY-REDACTED>`, and that they are equal is the finding); `sr_gcm_api_key` (`strings.xml:492`) is a **SECOND, DIFFERENT** Google API key, distinct from the first — it is `<SRT-APP-GCM-API-KEY-REDACTED>` here precisely so the two do not blur together; `google_app_id` (`:172`); `firebase_database_url https://<SRT-APP-FIREBASE-PROJECT-REDACTED>.firebaseio.com` (`:162`), `google_storage_bucket <SRT-APP-FIREBASE-PROJECT-REDACTED>.appspot.com` (`:176`) and `project_id` (`:469`), all three naming the same Firebase project. srtgo has no native layer. *(Values withheld — see the note at the top of this report.)*
+- **Social-login app keys hardcoded:** `kakao_app_key` (`strings.xml:242`) and `facebook_app_id` (`:158`). One GCM/FCM sender/project number is stored three times over, as `gcm_defaultSenderId`, `google_project_id` and `sr_gcm_id` (`:164,175,493`) — all three the same value, which is why one placeholder `<SRT-APP-GCM-SENDER-ID-REDACTED>` stands for all of them. *(Values withheld — see the note at the top of this report.)*
 - **Device fingerprinting for H2O push registration:** `android_id` is re-read, `:` and `-` stripped and upper-cased, used as a pseudo-`macAddress` alongside the real WiFi MAC (`getMacAddress` on SDK≤22, else `/sys wlan0` read) and the IPv4 address (`SRWebActivity.java:1841-1851`). Feeds the proprietary `push.srail.co.kr:3101` H2O SmartBroker channel (`b6/a.java`). Separate from the `deviceId=android_id` already noted for main.do.
 
 ### OUR-version exact values
@@ -298,8 +311,8 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 - Seat-pick rsvForm fields: `seatNo1_1..seatNo1_N, scarNo1, scarGridcnt1, scarNo2, scarGridcnt2` (`ara0101v.js:870-879`)
 - `grpDv`: 0=individual, 1=group; group threshold `totPrnb>=10`; group round-trip forbidden (`ara0101v.js:93,549-568`)
 - Individual payment-entry: `/ard/selectListArd02017_n.do` with `pnrNo=reservListMap.pnrNo` (`ara1001l.js:1608-1609`)
-- Firebase/Google: `api_key <SRT-APP-GOOGLE-API-KEY-REDACTED>`; `sr_gcm_api_key <SRT-APP-GCM-API-KEY-REDACTED>`; `app_id <SRT-APP-GOOGLE-APP-ID-REDACTED>`; sender `<SRT-APP-GCM-SENDER-ID-REDACTED>`; project `<SRT-APP-FIREBASE-PROJECT-REDACTED>` (`strings.xml:171,492,172,164,469`)
-- `kakao_app_key <SRT-APP-KAKAO-APP-KEY-REDACTED>`; `facebook_app_id <SRT-APP-FACEBOOK-APP-ID-REDACTED>` (`strings.xml:242,158`)
+- Firebase/Google, values withheld — the entries are `api_key`, `sr_gcm_api_key`, `app_id`, the sender number and the project id, at `strings.xml:171,492,172,164,469` in that order
+- `kakao_app_key` and `facebook_app_id`, values withheld (`strings.xml:242,158`)
 - **Full bundled endpoint inventory = EXACTLY 14 `*_n.do`:** apb01080, ara10007, ara10082, ara10130, ara12009, ara13010, arc02012, arc05013, arc06014, ard02017, ard02018, ata01032, atc14016, atc14017.
 
 ### ❓ Disputed / low-confidence
@@ -373,7 +386,7 @@ srtgo is a working, live-tested Python client for the SRT hidden mobile-JSON API
 5. **srtgo misses the alternate host** `app.srail.co.kr/neo/` (and dev `devapp.srail.co.kr/neo/`) which serves the same `_n.do` JSON.
 6. **Two of OUR own prior beliefs were phantoms and are now retired:** `act_19` reservation gate (only `act_10` exists) and `arc02011` seat-inventory JSON (the real endpoint is `arc02012`, and it returns HTML, not a JSON inventory feed).
 7. **Two OUR-client fidelity bugs surfaced:** an **extra space** in the UA before `SRT-APP-Android` (`config.py:7-8`) that neither the app nor srtgo emits, and a stale `netfunnel-act-19` exclusion in `safety.py:183`.
-8. **Native-layer secrets our doc §7 omitted:** two distinct Google/Firebase API keys, `google_app_id`, Firebase project `<SRT-APP-FIREBASE-PROJECT-REDACTED>`, Kakao and Facebook app keys, and an android_id/MAC/IP fingerprint feeding `push.srail.co.kr:3101`.
+8. **Native-layer secrets our doc §7 omitted:** two distinct Google/Firebase API keys, `google_app_id`, a `firebase_database_url` / `google_storage_bucket` / `project_id` trio naming one Firebase project, Kakao and Facebook app keys, and an android_id/MAC/IP fingerprint feeding `push.srail.co.kr:3101`. Field names and `strings.xml` lines are in §5; the values are withheld (see the note at the top of this report).
 
 ## Remaining open questions (need a live v2.0.41 capture)
 
