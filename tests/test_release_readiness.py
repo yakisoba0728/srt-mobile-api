@@ -840,6 +840,44 @@ def test_ambient_live_opt_in_is_deselected_by_the_release_command() -> None:
     assert result.returncode == 5
     assert "1 deselected" in result.stdout
 
+#: ``pytest --collect-only -q`` tail, in both spellings it can take: with
+#: something deselected it reports ``1665/1666 tests collected (1 deselected)``,
+#: and with nothing deselected just ``1666 tests collected``.
+_COLLECTED_RE = re.compile(
+    r"(?m)^(?:(?P<selected>\d+)/(?P<total>\d+)|(?P<only>\d+)) tests? collected"
+    r"(?: \((?P<deselected>\d+) deselected\))?"
+)
+
+
+def _collected_offline_test_count() -> tuple[int, int]:
+    """How many tests ``-m "not live"`` actually selects, and how many it drops.
+
+    Collection rather than a run: it is the same selection the README sentence
+    describes, it costs a fraction of a second, and a suite that RUNS itself to
+    check its own count would double every future test's cost.
+
+    The environment is scrubbed of the live opt-in on purpose. The neighbouring
+    test sets it deliberately, and a count that quietly depended on an ambient
+    variable would be no better than the hardcoded string this replaced.
+    """
+    environment = os.environ.copy()
+    environment.pop(LIVE_ENV, None)
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-m", "not live", "--collect-only"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout[-2000:]
+    match = _COLLECTED_RE.search(result.stdout)
+    assert match is not None, result.stdout[-2000:]
+    selected = int(match.group("selected") or match.group("only"))
+    return selected, int(match.group("deselected") or 0)
+
+
 # The README used to be BOTH the front door and the audit log: 1,835 lines whose
 # first "##" heading sat at line 488. On 2026-07-26 the audit log moved into
 # docs/VERIFICATION.md so the README could serve a reader who wants to USE the
@@ -849,7 +887,7 @@ def test_ambient_live_opt_in_is_deselected_by_the_release_command() -> None:
 #   STAYED in the README, because a user needs them at the front door:
 #     "installable read-only" / not "analysis workspace"  (what this repo IS)
 #     "26 routes"                                          (the read boundary)
-#     "1607 passed" / "1 deselected"                       (the offline gate)
+#     the offline gate count / "1 deselected"              (the offline gate)
 #     "iter_train_search_pages"                            (a public method)
 #     "docs/RELEASE.md"                                    (the release gate)
 #
@@ -869,11 +907,28 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     assert "installable read-only" in readme_lower
     assert "analysis workspace" not in readme_lower
     assert "26 routes" in readme
-    # The CURRENT offline count, so this is a real gate: it must be updated
-    # whenever the suite grows. (docs/VERIFICATION.md also cites the historical
-    # 0.2.0 figure; that one is labelled as historical and is not asserted here,
-    # because a frozen number can never fail.)
-    assert "1607 passed" in readme and "1 deselected" in readme
+    # The CURRENT offline count. This used to read
+    #
+    #     assert "1607 passed" in readme
+    #
+    # under a comment claiming it was "a real gate ... it must be updated
+    # whenever the suite grows". It was not a gate at all: it compared the
+    # README against a hardcoded string, so both could say 1607 while the suite
+    # actually ran 1662, which is exactly what had happened. A number kept by
+    # hand in two places drifts in both.
+    #
+    # So ask the suite instead. _collected_offline_test_count() is the same
+    # `-m "not live"` selection the README sentence describes, and the README
+    # must state THAT number -- which no longer needs updating "whenever the
+    # suite grows", because a stale README now fails here on its own.
+    #
+    # (docs/VERIFICATION.md also cites the historical 0.2.0 figure, and
+    # docs/IMPLEMENTATION_PROGRESS.md keeps a log of past gates; both are
+    # labelled historical and neither is asserted here, because a frozen number
+    # can never fail.)
+    collected, deselected = _collected_offline_test_count()
+    assert f"{collected} passed" in readme
+    assert f"{deselected} deselected" in readme
     assert "iter_train_search_pages" in readme
     assert "live continuation was verified" in verification_lower
     assert "personal and group each returned two pages" in verification_lower
