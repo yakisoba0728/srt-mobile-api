@@ -2,14 +2,18 @@
   REDACTED reproduction of a REAL response, captured 2026-07-26 from
   POST /ara/selectListAra12009_n.do.
 
-  Structure is verbatim, including the quirks that matter:
+  What is reproduced is the response's SHAPE -- the element names, ids and the
+  one call the parser reads -- because each of the following is a quirk the
+  parser has to survive and none of them can be guessed:
     * <td id="stationNm_N"> is EMPTY and UNCLOSED -- the station name is never
       in the markup; the WebView fills it in from the CODE.
     * the getStationNameByCode('XXXX') call sits in a <script> INSIDE the <tr>.
     * the origin's arrival cell and the terminus' departure cell hold "-",
       which a "first non-time cell" heuristic mistakes for a station name.
     * a per-stop trailData script follows each row, using the sentinel arrival
-      time "999999" at the origin.
+      time "999999" at the origin. Those scripts sit BETWEEN rows, so nothing
+      here reads them; they are kept because their existence is what proves the
+      in-row script is the only per-row source of a code.
 
   Station codes are public route data, not personal data, and are the values our
   own stations.py table already maps, so they are kept real -- the fixture would

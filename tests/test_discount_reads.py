@@ -130,14 +130,15 @@ def test_the_live_pages_commented_out_template_is_not_read_as_coupons(load_text_
     """The single most important property of this parser.
 
     The real page ships a two-coupon designer template, commented out, INSIDE
-    ul.coupList, with plausible numbers (5503900624) and rates (23%, 15%). A
+    ul.coupList. The fixture reproduces that arrangement with numbers and rates
+    of its own, chosen to be as plausible as the page's own placeholders are: a
     regex would have produced two coupons for an account that holds none.
     """
     html = load_text_fixture("discount_coupons_empty.html")
-    assert "5503900624" in html and "23%" in html
+    assert "9910000001" in html and "45%" in html
     result = parse_discount_coupon_page(html)
     assert result.coupons == ()
-    assert all("5503900624" != coupon.coupon_number for coupon in result.coupons)
+    assert all("9910000001" != coupon.coupon_number for coupon in result.coupons)
 
 
 def test_populated_page_parses_every_span_as_display_text(load_text_fixture):

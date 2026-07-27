@@ -1768,32 +1768,26 @@ server issues a 유아 a seat, since `choiceSeatCount` counts it.
 ### The evidence, and where every piece of it came from
 
 **[page] `/apa/selectListApa03020_n.do`, live-read 2026-07-26 (81,493 bytes).**
-The registration handler, verbatim, and it is the whole of the request evidence:
+The page's own `couponReg()` handler is the whole of the request evidence.
+Everything it establishes, read off it and written out here rather than copied:
 
-```js
-function couponReg() {
-    var txt = $("#c_txt").val();
-    var pw  = $("#c_pw").val();
-    if(txt == '') { srtAlertBoxDivShow("알림", Sr.msgs.mysrt006, null); ... return; }
-    if(pw  == '') { srtAlertBoxDivShow("알림", Sr.msgs.mysrt007, null); ... return; }
-    var params = $("#couponInfo").serialize();
-    $.ajax({ type:"POST", url:"/arb/selectListArb02A01_n.do",
-             data:params, dataType:"json",
-             success:function(args){
-                 var msg   = args.resultMap[0].MSG;
-                 var rtncd = args.resultMap[0].RTNCD;
-                 if(rtncd == "N"){ srtAlertBoxDivShow("알림", msg, null); }
-                 else { srtAlertBoxDivShow("알림", Sr.msgs.mysrt008, null, "mvPage()"); }
-             }, error:function(e){} });
-}
-```
+| what | value |
+| --- | --- |
+| trigger | the 등록하기 button's `onclick`, `couponReg()` |
+| method / route | `POST /arb/selectListArb02A01_n.do` |
+| body | `#couponInfo` serialised — nothing added, nothing removed |
+| content type | form-encoded; `dataType:"json"` on the reply |
+| reply keys | `resultMap[0].RTNCD`, `resultMap[0].MSG` |
+| failure is | `RTNCD == "N"`, and then `MSG` is the only thing saying which failure |
+| refused before sending | empty number (`Sr.msgs.mysrt006`), empty password (`Sr.msgs.mysrt007`) |
+| success text | `Sr.msgs.mysrt008` |
 
 `#couponInfo` is exactly two inputs: `<input type="number" id="c_txt"
 name="dscp_no" maxlength="10">` and `<input type="password" id="c_pw"
 name="dscp_pwd" maxlength="4">`, plus a `keyup` handler on the first that strips
 every non-digit and truncates to ten. **No PNR, no member number, no NetFunnel
 key** — the session is the only thing on this request that says whose account
-the coupon lands on. Committed verbatim to
+the coupon lands on. The same facts, in the same form, are recorded in
 `tests/fixtures/discount_coupons_empty.html`.
 
 **[bundle] 0-hit, in every part.** `Arb02A01`, `dscp_no`, `dscp_pwd`,

@@ -275,8 +275,8 @@ def test_the_send_boundary_refuses_the_category_independently():
 
 
 def test_reading_the_coupon_page_still_issues_no_post(load_text_fixture):
-    # The fixture now carries couponReg() verbatim. Reading the page must not
-    # execute it, and the read route stays GET-only.
+    # The fixture names the registration route and its two fields. Reading the
+    # page must not act on any of that, and the read route stays GET-only.
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

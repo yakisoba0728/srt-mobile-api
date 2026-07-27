@@ -905,8 +905,9 @@ v2.0.41 offline bundle, which knows no `/arb/` route at all. What the bundle
 carries this flow's two validation refusals and its success text
 (`mysrt006`/`007`/`008`), and `sub/main.html` carries the member flag `DSCP_YN`
 that the live session's own user map also returns. So `dscp` is 할인쿠폰 in the
-app's own words; only the route is new. The handler is committed verbatim in
-`tests/fixtures/discount_coupons_empty.html`.
+app's own words; only the route is new. Every one of those facts — route, both
+field names, both reply keys, both refusals and the success text — is recorded
+in `tests/fixtures/discount_coupons_empty.html`.
 
 **A FIFTH consent category, `coupon`, because the four that existed did not
 fit.** Registering a coupon changes account state, but it books nothing and

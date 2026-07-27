@@ -1210,16 +1210,17 @@ class DiscountCoupon:
     없습니다."); the populated ROW shape is not, because the account this project
     tests with holds no coupons. What the field names come from is the coupon
     page's own commented-out designer template, which is the nearest thing to a
-    populated row that exists anywhere we can read::
+    populated row that exists anywhere we can read. Six spans, keyed by class --
+    the class names below are the page's, the values are stand-ins::
 
-        <span class="rate">23%</span>
+        <span class="rate">45%</span>
         <span class="boarding">탑승일기준</span>
-        <span class="date">2020.07.07 ~ 2021.07.07</span>
+        <span class="date">2099.01.01 ~ 2099.12.31</span>
         <span class="type"> 운임할인</span>
-        <span class="num">5503900624</span>
+        <span class="num">9910000001</span>
         <span class="useCnt">이용가능 횟수 : 1</span>
 
-    Turning "23%" into a number or "이용가능 횟수 : 1" into an integer would be
+    Turning "45%" into a number or "이용가능 횟수 : 1" into an integer would be
     inventing structure on top of a shape nobody here has seen the server
     produce. When a populated page is finally read, deriving those becomes a
     one-line change; asserting them now would be a guess wearing a type.

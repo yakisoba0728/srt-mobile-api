@@ -9,6 +9,8 @@ bundled JavaScript suggests it would.
 Each test names the live observation it pins.
 """
 
+import re
+
 import httpx
 import pytest
 
@@ -286,6 +288,28 @@ def test_seat_page_alerts_inside_function_bodies_are_not_a_refusal(
     assert "srtAlertBoxDivShow" in html
     assert "Sr.msgs.rsv046" in html
     assert parse_seat_selection_page(html).cars
+
+
+def test_an_alert_inside_a_handler_is_not_a_refusal_even_with_no_cars(
+    load_text_fixture,
+):
+    """The discrimination is WHERE the call sits, and only that.
+
+    Reading the working page proves nothing on its own: the refusal is raised
+    only when the alert is found AND the page lists no car, so a parser that
+    merely searched for ``srtAlertBoxDivShow(`` anywhere would still return that
+    page's two cars and this suite would stay green. Strip the ``<select>`` out
+    and the guard is gone -- what is left is exactly the question the parser
+    answers, whether an alert nested in a handler counts as the server refusing.
+    It must not; only a script that is nothing but the call does.
+    """
+    html = load_text_fixture("seat_page_car_options.html")
+    without_cars = re.sub(r"(?s)<select id='selectScarNo'.*?</select>", "", html)
+    assert "<option" not in without_cars
+    assert "srtAlertBoxDivShow(" in without_cars
+
+    page = parse_seat_selection_page(without_cars)
+    assert page.cars == ()
 
 
 def test_seat_page_end_to_end_refuses_the_sold_out_shape(load_text_fixture):

@@ -3,18 +3,26 @@
   POST /arc/selectListArc02012_n.do for a train the server reported bookable
   (gnrmRsvPsbStr "예약가능").
 
-  Structure is verbatim; the train number, date, station codes and car figures
-  are synthetic. Two things it demonstrates that the offline bundle cannot:
+  What is reproduced is the response's SHAPE -- element names, ids, classes and
+  form field names, i.e. the interface the parser reads. The train number, date,
+  station codes and car figures are synthetic. Two things it demonstrates that
+  the offline bundle cannot:
 
     * the ONLY inventory this response carries is the <select id="selectScarNo">
       car list, each option naming the seats that car still has free;
     * <div id="trnScarSeatInfo"> is EMPTY -- the seat grid is not in this
       response at all, it is fetched separately once a car is chosen.
 
-  The srtAlertBoxDivShow calls below sit inside function bodies, exactly as on
-  the real page (Sr.msgs.rsv045/rsv046). They are kept because they are what
-  makes "the page mentions an alert" useless as a failure signal: only a script
-  whose WHOLE content is the alert call marks a refused page.
+  THE TRAILING SCRIPT IS NOT THE PAGE'S. The real page ships two handlers whose
+  bodies raise a 알림 through srtAlertBoxDivShow / srtAlertBoxDivConfirmShow; the
+  two functions below are written for this fixture and reproduce exactly one
+  property of them, which is the only property the parser rests on: the alert
+  call sits INSIDE a function body and is therefore never the first token of the
+  script. That is what makes "the page mentions an alert" useless as a failure
+  signal -- only a script whose WHOLE content is the alert call marks a refused
+  page (see tests/fixtures/seat_page_sold_out_error.html for that shape). The
+  message keys rsv045/rsv046 are identifiers from the app's own
+  js/common/messages.js and are kept because the parser reports them.
 -->
 <div data-role="page" id='page' class="jqm-demos">
 	<div id="selectTrainScarSeatList" class="layerPage ui-page-active" style="display: block;">
@@ -72,16 +80,14 @@
 	</div>
 </div>
 <script>
-	function showSelectTrainScarList() {
-		if (scarSeatArrayNo.length > 0) {
-			srtAlertBoxDivConfirmShow("알림", Sr.msgs.rsv045, null, "confirmSelectTrainScarList()");
+	function fixtureCarListNotice(alreadyChosen) {
+		if (alreadyChosen) {
+			srtAlertBoxDivConfirmShow("알림", Sr.msgs.rsv045, null);
 		}
 	}
-	function addSeat() {
-		if (selectScarSeatCount > totalCount) {
-			selectScarSeatCount--;
+	function fixtureCountNotice(chosen, allowed) {
+		if (chosen > allowed) {
 			srtAlertBoxDivShow("알림", Sr.msgs.rsv046, null);
-			return;
 		}
 	}
 </script>

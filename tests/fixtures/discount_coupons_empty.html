@@ -2,33 +2,38 @@
   REDACTED reproduction of a REAL response, live-read 2026-07-26 from
   GET /apa/selectListApa03020_n.do (할인쿠폰조회/등록) for an account holding no
   coupons. The live body was 77,056 bytes, almost all of it the shared MY SRT
-  menu and footer; this keeps the content region verbatim and drops the chrome.
+  menu and footer; what is reproduced here is the content region's SHAPE -- the
+  element names, ids and classes the parser reads -- and nothing else.
 
-  Two things it demonstrates that no synthetic page would:
+  Two things it demonstrates that no flattened fixture would:
 
     * the list CONTAINER (ul.coupList) is rendered even when the account holds
       nothing, which is why the parser uses it as the page's identity marker
       rather than using the presence of a coupon;
     * a commented-out two-coupon designer TEMPLATE ships inside that same
-      container, on the live page, complete with plausible numbers and rates.
-      It is reproduced here verbatim, because a parser that turned it into two
-      coupons would look correct on every synthetic fixture and be wrong on the
-      real page. html.parser hands a comment to handle_comment as one opaque
-      string and never parses markup inside it.
+      container, on the live page. The one below is written for this fixture:
+      the six span CLASSES are the page's (they are the field names
+      DiscountCoupon is built from), the numbers, rates and dates are synthetic
+      stand-ins chosen to look like real ones. That plausibility is the point --
+      a parser that turned the comment into two coupons would look correct on
+      every hand-built fixture and be wrong on the real page. html.parser hands
+      a comment to handle_comment as one opaque string and never parses markup
+      inside it.
 
-  The registration form AND its handler are kept, verbatim, because they are the
-  entire evidence for SrtClient.register_discount_coupon: the route, the two
-  field names, the JSON dataType and the response keys (resultMap[0].RTNCD /
-  .MSG) exist nowhere else -- all of it is 0-hit across the 21,673 files of the
-  v2.0.41 offline bundle, which knows no /arb/ route at all. The parser must
-  still ignore every bit of it, and a test asserts that reading this page issues
-  no POST.
+  The registration form is kept because its two field names are part of the
+  request. The trailing script is NOT the page's: the live page carries a
+  couponReg() handler and this fixture replaces it with a plain record of the
+  facts that handler is the sole evidence for -- the route, the JSON dataType,
+  the two reply keys (resultMap[0].RTNCD / .MSG) and the two client-side
+  refusals. All of it is 0-hit across the 21,673 files of the v2.0.41 offline
+  bundle, which knows no /arb/ route at all. The parser must still ignore every
+  bit of it, and a test asserts that reading this page issues no POST.
 
   What the bundle DOES corroborate is the vocabulary either side of the wire:
   js/common/messages.js:111-113 carries mysrt006 ("할인쿠폰번호를 입력하여
   주십시오."), mysrt007 ("할인쿠폰 비밀번호를 입력하여 주십시오.") and mysrt008
   ("쿠폰등록 요청을 완료하였습니다..."), which is why the client-side validation
-  below is restated in coupon_registration_payload rather than invented.
+  is restated in coupon_registration_payload rather than invented.
 -->
 <div data-role="page" class="jqm-demos" id="page">
 	<div data-role="header" data-add-back-btn="true" class="type2 ui-header ui-bar-inherit" role="banner">
@@ -63,13 +68,13 @@
 					<li>
 						<div class="coup-box">
 							<div class="coup-box-left">
-								<span class="rate">23%</span>
+								<span class="rate">45%</span>
 								<span class="boarding">탑승일기준</span>
-								<span class="date">2020.07.07 ~ 2021.07.07</span>
+								<span class="date">2099.01.01 ~ 2099.12.31</span>
 							</div>
 							<div class="coup-box-right">
 								<span class="type"> 운임할인</span>
-								<span class="num">5503900624</span>
+								<span class="num">9910000001</span>
 								<span class="useCnt">이용가능 횟수 : 1</span>
 							</div>
 						</div>
@@ -77,13 +82,13 @@
 					<li>
 						<div class="coup-box">
 							<div class="coup-box-left">
-								<span class="rate">15%</span>
+								<span class="rate">5%</span>
 								<span class="boarding">탑승일기준</span>
-								<span class="date">2020.07.07 ~ 2021.07.07</span>
+								<span class="date">2099.01.01 ~ 2099.12.31</span>
 							</div>
 							<div class="coup-box-right">
 								<span class="type"> 운임할인</span>
-								<span class="num">5503900624</span>
+								<span class="num">9910000002</span>
 								<span class="useCnt">이용가능 횟수 : 1</span>
 							</div>
 						</div>
@@ -121,51 +126,15 @@
 	</div>
 </div>
 <script>
-$("#c_txt").keyup(function() {
-	$(this).val($(this).val().replace(/[^0-9]/g,""));
-	var str = $(this).val();
-	if ($(this).attr("name") == "c_txt") {
-		if (str.length > 10) str = str.substring(0, 10);
-	}
-	$(this).val( str );
-});
-function couponReg() {
-	var txt = $("#c_txt").val();
-	var pw = $("#c_pw").val();
-	if(txt == '') {
-		srtAlertBoxDivShow("알림", Sr.msgs.mysrt006, null);
-		$("#c_txt").focus();
-		return;
-	}
-	if(pw == '') {
-		srtAlertBoxDivShow("알림", Sr.msgs.mysrt007, null);
-		$("#c_pw").focus();
-		return;
-	}
-
-	var params = $("#couponInfo").serialize();
-    $.ajax({
-        type:"POST",
-        url:"/arb/selectListArb02A01_n.do",
-        data:params,
-        dataType:"json",
-        success:function(args){
-        	//console.log(args.resultMap);
-        	var msg = args.resultMap[0].MSG;
-        	var rtncd = args.resultMap[0].RTNCD;
-        	if(rtncd == "N"){
-        		srtAlertBoxDivShow("알림", msg, null);
-        	} else {
-        		srtAlertBoxDivShow("알림", Sr.msgs.mysrt008, null, "mvPage()");
-        	}
-        },
-        error:function(e){
-            //alert(e.responseText);
-        }
-    });
-}
-
-function mvPage() {
-	window.location.href = "/apa/selectListApa03020_n.do";
-}
+	var fixtureCouponRegistration = {
+		trigger: "couponReg",
+		method: "POST",
+		url: "/arb/selectListArb02A01_n.do",
+		form: "#couponInfo",
+		fields: ["dscp_no", "dscp_pwd"],
+		dataType: "json",
+		replyKeys: ["resultMap[0].RTNCD", "resultMap[0].MSG"],
+		refusedBeforeSending: [Sr.msgs.mysrt006, Sr.msgs.mysrt007],
+		acceptedMessage: Sr.msgs.mysrt008
+	};
 </script>
