@@ -364,3 +364,26 @@ def test_first_reservable_train_returns_none_when_nothing_is_bookable():
         )
         is None
     )
+
+
+def test_env_device_key_default_agrees_with_the_config_default(monkeypatch):
+    """``SRT_DEVICE_KEY`` is an OVERRIDE, so its fallback must be the real default.
+
+    ``read_device_key_from_env`` (``live.py:240-241``) repeats the literal
+    ``config.py:19`` already holds, and ``run_live_smoke_from_env`` feeds the
+    result straight into ``SrtConfig(device_key=...)``. Unset, therefore, the
+    live path must build exactly the config a zero-config caller gets -- if the
+    two literals ever drift, an unset ``SRT_DEVICE_KEY`` would silently make the
+    live run differ from the documented default, and nothing else would notice.
+
+    Not a defect today (the copies agree), which is why this pins the agreement
+    rather than changing either one.
+    """
+    from srt_mobile_api import SrtConfig
+    from srt_mobile_api.live import read_device_key_from_env
+
+    monkeypatch.delenv("SRT_DEVICE_KEY", raising=False)
+    assert read_device_key_from_env() == SrtConfig().device_key
+
+    monkeypatch.setenv("SRT_DEVICE_KEY", "OVERRIDDEN0000001")
+    assert read_device_key_from_env() == "OVERRIDDEN0000001"

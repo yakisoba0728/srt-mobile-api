@@ -238,3 +238,94 @@ def test_login_rolls_back_cookie_and_current_on_every_step(failure_path, load_js
         client.login("login-id", "pw")
     assert client.session.current is None
     assert "JSESSIONID" not in client.http.cookies
+
+
+def test_zero_config_client_logs_in_with_no_configuration(load_json_fixture):
+    """The README quickstart's bare ``SrtClient()`` must actually be able to log in.
+
+    README.md:66 opens with ``client = SrtClient()`` and README.md:92-94 states
+    that "``SrtClient()`` needs no configuration". That was prose only, and the
+    sibling KORAIL client is the reason it cannot stay prose: there a bare
+    ``KorailConfig()`` announced the library instead of the app in the
+    User-Agent and left the anti-macro token off, so the server refused the
+    login as a bot -- while every read still worked, which is exactly what makes
+    the trap quiet. This pins that SRT does not share it, by driving the WHOLE
+    login path (``session.py:37-94``: login page, login POST, main, booking) on
+    a client constructed with no ``config`` argument at all.
+
+    The transport is the only injection, and it refuses any host but
+    ``app.srail.or.kr``: login must not need a NetFunnel round trip either
+    (``nf.letskorail.com`` is only reached by the ``act_10`` search/reserve gate,
+    never by ``SrtSessionClient.login``).
+    """
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.host, request.url.path, request.headers["User-Agent"]))
+        if request.url.host != "app.srail.or.kr":
+            raise AssertionError(f"login reached a non-app host: {request.url.host}")
+        if request.url.path == "/login/login.do":
+            return httpx.Response(200, text="<html>login</html>")
+        if request.url.path == "/apb/selectListApb01080_n.do":
+            return httpx.Response(200, json=load_json_fixture("login_success.json"))
+        if request.url.path == "/main/main.do":
+            return httpx.Response(200, text="<html>main</html>")
+        if request.url.path == "/ara/ara0101v.do":
+            return httpx.Response(200, text="<html>booking</html>")
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    client = SrtClient(transport=httpx.MockTransport(handler))
+    session = client.login("login-id", "pw")
+
+    assert session.login_id == "login-id"
+    assert client.session.current is session
+    # The bare client really did carry the frozen defaults -- nothing was filled
+    # in for it along the way.
+    assert client.config == SrtConfig()
+    # All four steps ran, all four on the app origin only.
+    assert [path for _host, path, _ua in seen] == [
+        "/login/login.do",
+        "/apb/selectListApb01080_n.do",
+        "/main/main.do",
+        "/ara/ara0101v.do",
+    ]
+
+
+def test_default_user_agent_impersonates_the_app_on_every_login_request(
+    load_json_fixture,
+):
+    """The default UA is the app's, and names neither this library nor httpx.
+
+    This is the precise shape of the KORAIL defect: a default User-Agent that
+    identifies the client library is what the server reads as a bot, and it
+    reports that as a "please update the app" message rather than as a refusal.
+    ``http.py:56-61`` sends ``config.user_agent`` verbatim on every request, so
+    the default is what a zero-config caller transmits.
+
+    The ``537.36SRT-APP-Android`` assertion is deliberate and is NOT a typo to
+    be tidied: the app concatenates its suffix onto the WebView UA with no
+    separator (``SRWebActivity.java:2642-2645``; confirmed as faithful, not a
+    defect, in ``docs/audit-2026-07-27/phase1/08-misc.md:134``), and srtgo
+    matches (``srt.py:20-23``). ``test_models.py`` only checks that the suffix is
+    present somewhere, which passes with or without the space.
+    """
+    agents = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        agents.append(request.headers["User-Agent"])
+        if request.url.path == "/apb/selectListApb01080_n.do":
+            return httpx.Response(200, json=load_json_fixture("login_success.json"))
+        return httpx.Response(200, text="<html>ok</html>")
+
+    client = SrtClient(transport=httpx.MockTransport(handler))
+    client.login("login-id", "pw")
+
+    assert len(agents) == 4
+    assert set(agents) == {SrtConfig().user_agent}
+    for agent in agents:
+        assert "SRT-APP-Android V." in agent
+        # No space before the suffix: the app emits none.
+        assert "537.36SRT-APP-Android" in agent
+        lowered = agent.casefold()
+        for library_name in ("srt_mobile_api", "srt-mobile-api", "httpx", "python"):
+            assert library_name not in lowered
