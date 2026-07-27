@@ -43,9 +43,6 @@ from .models import (
     PublicDiscountEntitlement,
     PublicDiscountPage,
     PublicDiscountSelection,
-    ReservationAttemptResult,
-    ReservationRecord,
-    ReservationTrain,
     SeatCarOption,
     SeatDesignation,
     SeatGrid,
@@ -53,7 +50,6 @@ from .models import (
     SeatSelectionPage,
     SeatType,
     SrtCancelResult,
-    SrtCouponRegistrationRequest,
     SrtCouponRegistrationResult,
     SrtPaymentCard,
     SrtPaymentResult,
@@ -73,21 +69,14 @@ from .models import (
     TransferSearchResult,
     UnpairedTransferGroup,
 )
-from .parsers import (
-    pair_transfer_itineraries,
-    parse_card_payment_response,
-    parse_coupon_registration_response,
-    parse_discount_coupon_page,
-    parse_public_discount_page,
-    parse_public_discount_search_response,
-    parse_refund_response,
-    parse_refund_ticket_info_response,
-    parse_reservation_attempt_response,
-    parse_reservation_hold_response,
-    parse_reservation_list_response,
-    parse_seat_grid_response,
-    parse_unpaid_cancel_response,
-)
+
+#: Deliberately NOT re-exported here: ``parsers`` and the request/attempt models
+#: that only its functions produce. ``SrtClient`` already calls every one of
+#: those parsers on the caller's behalf, so a caller who imports one is reaching
+#: past the client into the wire layer. They remain importable at their defining
+#: path -- ``from srt_mobile_api.parsers import ...``,
+#: ``from srt_mobile_api.models import ...`` -- because this is a move, not a
+#: deletion. ``tests/test_public_surface_rule.py`` is what keeps them down.
 
 __all__ = [
     "SrtClient",
@@ -124,22 +113,6 @@ __all__ = [
     "PublicDiscountEntitlement",
     "PublicDiscountPage",
     "PublicDiscountSelection",
-    "pair_transfer_itineraries",
-    "parse_card_payment_response",
-    "parse_coupon_registration_response",
-    "parse_discount_coupon_page",
-    "parse_public_discount_page",
-    "parse_public_discount_search_response",
-    "parse_refund_response",
-    "parse_refund_ticket_info_response",
-    "parse_reservation_attempt_response",
-    "parse_reservation_hold_response",
-    "parse_reservation_list_response",
-    "parse_seat_grid_response",
-    "parse_unpaid_cancel_response",
-    "ReservationAttemptResult",
-    "ReservationRecord",
-    "ReservationTrain",
     "SeatCarOption",
     "SeatDesignation",
     "SeatGrid",
@@ -147,7 +120,6 @@ __all__ = [
     "SeatSelectionPage",
     "SeatType",
     "SrtCancelResult",
-    "SrtCouponRegistrationRequest",
     "SrtCouponRegistrationResult",
     "SrtPaymentCard",
     "SrtPaymentResult",

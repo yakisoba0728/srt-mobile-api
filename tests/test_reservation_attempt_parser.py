@@ -409,13 +409,31 @@ def test_parse_reservation_attempt_rejects_non_string_success_field(
 
 
 def test_reservation_attempt_model_is_exported():
-    assert srt_mobile_api.ReservationAttemptResult is ReservationAttemptResult
-    assert srt_mobile_api.ReservationRecord is ReservationRecord
-    assert srt_mobile_api.ReservationTrain is ReservationTrain
-    assert (
-        srt_mobile_api.parse_reservation_attempt_response
-        is parse_reservation_attempt_response
+    # These four used to be package-root names. They are not any more: the
+    # attempt parser is wire-layer machinery and the three models are the only
+    # things it produces, so `tests/test_public_surface_rule.py` holds them
+    # below the root. The move is not a removal, and that is what this asserts
+    # -- the defining submodule still answers, and the root deliberately does
+    # not, in both spellings (missing from `__all__` AND missing as an
+    # attribute), because dropping only the `__all__` entry would leave the
+    # name reachable and the demotion half-done.
+    from srt_mobile_api import models, parsers
+
+    assert models.ReservationAttemptResult is ReservationAttemptResult
+    assert models.ReservationRecord is ReservationRecord
+    assert models.ReservationTrain is ReservationTrain
+    assert parsers.parse_reservation_attempt_response is (
+        parse_reservation_attempt_response
     )
+
+    for held_back in (
+        "ReservationAttemptResult",
+        "ReservationRecord",
+        "ReservationTrain",
+        "parse_reservation_attempt_response",
+    ):
+        assert held_back not in srt_mobile_api.__all__
+        assert not hasattr(srt_mobile_api, held_back)
 
 
 # --- the hold parser must never lose a PNR to a strict-validation failure -----

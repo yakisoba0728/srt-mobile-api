@@ -368,10 +368,17 @@ def test_cancel_parser_surfaces_an_app_level_rejection():
 
 
 def test_cancel_model_and_parser_are_exported():
+    # The result model is a public type -- `SrtClient.cancel` returns it, so a
+    # caller has to be able to name it. The parser is not: the client calls it
+    # for you, and reaching for it from the package root means reaching past the
+    # client into the wire layer. So one is exported and the other was moved
+    # down to its defining module, where it stays importable.
+    from srt_mobile_api import parsers
+
     assert srt_mobile_api.SrtCancelResult is SrtCancelResult
-    assert (
-        srt_mobile_api.parse_unpaid_cancel_response is parse_unpaid_cancel_response
-    )
+    assert parsers.parse_unpaid_cancel_response is parse_unpaid_cancel_response
+    assert "parse_unpaid_cancel_response" not in srt_mobile_api.__all__
+    assert not hasattr(srt_mobile_api, "parse_unpaid_cancel_response")
 
 
 # --- SrtClient.cancel: consent gating, dry-run default, and the live gate -----

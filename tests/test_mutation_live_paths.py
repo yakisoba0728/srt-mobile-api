@@ -516,7 +516,7 @@ def test_reservation_hold_parser_raises_app_error_on_fail_envelope():
     # The reserve-response parser (wired for the future live path) still surfaces
     # a FAIL envelope as SrtAppError, exercised directly since the live path is
     # not callable yet.
-    from srt_mobile_api import parse_reservation_hold_response
+    from srt_mobile_api.parsers import parse_reservation_hold_response
 
     with pytest.raises(SrtAppError):
         parse_reservation_hold_response(

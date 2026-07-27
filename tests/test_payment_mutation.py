@@ -60,8 +60,8 @@ from srt_mobile_api import (
     SrtProtocolError,
     SrtReservationSummary,
     SrtSession,
-    parse_card_payment_response,
 )
+from srt_mobile_api.parsers import parse_card_payment_response
 from srt_mobile_api.payloads import card_payment_payload
 from srt_mobile_api.safety import SRT_LIVE_MUTATION_CATEGORIES
 
@@ -392,7 +392,7 @@ def test_payment_envelope_differs_from_the_cancel_envelope():
     # already accepted both spellings, which is why supporting the difference
     # cost no third code path -- so a payment that answered in resultMap after
     # all still parses.
-    from srt_mobile_api import parse_unpaid_cancel_response
+    from srt_mobile_api.parsers import parse_unpaid_cancel_response
 
     out_data_sets = _payment_response("outDataSets")
     result_map = _payment_response("resultMap")
