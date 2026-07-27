@@ -441,6 +441,143 @@ def test_valid_pair_is_accepted_in_either_argument_order(
     )
 
 
+# `scripts/verify_distribution.py` is a byte-identical file in this repository
+# and in the sibling korail-mobile-api one -- it derives everything it checks
+# from `pyproject.toml`, so there is nothing repo-specific left in it. The
+# parsers below used to be covered on the korail side only, which meant half of
+# the shared gate shipped here with no test behind it. These exercise the three
+# pyproject readers directly, because reaching them through a built archive can
+# only show that a good pyproject passes, never that a bad one is refused.
+@pytest.mark.parametrize(
+    "value",
+    (
+        None,
+        [],
+        ["LICEN[CS]E*"],
+        ["LICENSE*"],
+        ["LICENSE?"],
+        [LICENSE_FILE, LICENSE_FILE],
+        [""],
+        [f"/{LICENSE_FILE}"],
+        [b"LICENSE"],
+        "LICENSE",
+    ),
+)
+def test_license_files_must_be_unique_literal_paths(value: object) -> None:
+    """A glob is legal PEP 639 and useless to a verifier.
+
+    `license-files = ["LICEN[CS]E*"]` builds fine, but leaves this script unable
+    to name the file it is supposed to require -- which is how a presence check
+    quietly stops checking anything.
+    """
+    project = {} if value is None else {"license-files": value}
+    with pytest.raises(VERIFIER.ContractError):
+        VERIFIER._license_files(ROOT, project)
+
+
+@pytest.mark.parametrize("problem", ("absent", "empty", "directory"))
+def test_license_files_must_name_readable_non_empty_files_in_the_checkout(
+    tmp_path: Path,
+    problem: str,
+) -> None:
+    """The declared path is resolved against the checkout, not merely parsed.
+
+    Those bytes are what both artifacts are later compared against, so a blank
+    or missing licence in the checkout would make the comparison vacuous: an
+    empty file copied into both archives matches itself.
+    """
+    if problem == "empty":
+        (tmp_path / LICENSE_FILE).write_bytes(b"  \n\t\n")
+    elif problem == "directory":
+        (tmp_path / LICENSE_FILE).mkdir()
+    with pytest.raises(VERIFIER.ContractError):
+        VERIFIER._license_files(tmp_path, {"license-files": [LICENSE_FILE]})
+
+
+def test_license_files_carries_the_checkouts_own_bytes() -> None:
+    """The positive that makes the negatives above mean something."""
+    declared = VERIFIER._license_files(ROOT, {"license-files": [LICENSE_FILE]})
+    assert declared == ((LICENSE_FILE, LICENSE_TEXT),)
+    assert b"Apache License" in declared[0][1]
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        None,
+        [],
+        [*EXPECTED_AUTHORS, {"name": "b", "email": "b@example.invalid"}],
+        [{"name": "yakisoba0728"}],
+        [{"email": "yakihyuk0728@gmail.com"}],
+        [{"name": "", "email": "a@example.invalid"}],
+        [{"name": "a", "email": ""}],
+        [{"name": "a <b>", "email": "a@example.invalid"}],
+        [{"name": "a, b", "email": "a@example.invalid"}],
+        [{"name": "a", "email": "a@example.invalid, b@example.invalid"}],
+        [{"name": " a ", "email": "a@example.invalid"}],
+        [{"name": "a", "email": "a@example.invalid", "extra": "x"}],
+    ),
+)
+def test_author_email_requires_exactly_one_unambiguous_owner(value: object) -> None:
+    """Two authors become one comma-joined header whose order nothing pins.
+
+    The `<`, `>` and `,` rejections matter for the same reason: they are the
+    characters that would let a name forge a second address inside the single
+    `Author-email` header this verifier asserts an exact value for.
+    """
+    project = {} if value is None else {"authors": value}
+    with pytest.raises(VERIFIER.ContractError):
+        VERIFIER._author_email(project)
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        None,
+        {},
+        {"Homepage": CANONICAL_URL.replace("https://", "http://")},
+        {"Home, page": CANONICAL_URL},
+        {"Homepage": ""},
+        {"Homepage": f" {CANONICAL_URL}"},
+        {"Homepage": 1},
+    ),
+)
+def test_project_urls_must_be_labelled_https_entries(value: object) -> None:
+    """A comma in a label would split into a second, unasserted `Project-URL`."""
+    project = {} if value is None else {"urls": value}
+    with pytest.raises(VERIFIER.ContractError):
+        VERIFIER._project_urls(project)
+
+
+@pytest.mark.parametrize(
+    "classifiers",
+    (["License :: OSI Approved :: Apache Software License"],),
+)
+def test_license_expression_and_license_classifiers_are_mutually_exclusive(
+    classifiers: list[str],
+) -> None:
+    with pytest.raises(VERIFIER.ContractError):
+        VERIFIER._license_expression({"license": EXPECTED_LICENSE}, classifiers)
+
+
+@pytest.mark.parametrize("value", (None, "", "   ", {"text": "Apache-2.0"}, 1))
+def test_license_expression_must_be_a_non_empty_spdx_string(value: object) -> None:
+    """The deprecated `license = {text = ...}` table must not come back."""
+    project = {} if value is None else {"license": value}
+    with pytest.raises(VERIFIER.ContractError):
+        VERIFIER._license_expression(project, [])
+
+
+def test_the_repository_pyproject_satisfies_every_contract_rule() -> None:
+    """The negatives above are only meaningful if the positive still holds."""
+    contract = VERIFIER._project_contract()
+    assert contract.license_expression == EXPECTED_LICENSE
+    assert contract.license_files == ((LICENSE_FILE, LICENSE_TEXT),)
+    assert contract.author_email == EXPECTED_AUTHOR_EMAIL
+    assert set(contract.project_urls) == set(EXPECTED_PROJECT_URLS)
+    assert len(contract.project_urls) == len(EXPECTED_PROJECT_URLS)
+
+
 def test_rejects_wrong_argument_count_and_artifact_types(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
