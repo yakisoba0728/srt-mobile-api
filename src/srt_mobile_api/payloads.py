@@ -1,6 +1,6 @@
 """요청 폼을 만드는 곳 —— 나가는 바이트가 결정되는 자리.
 
-:mod:`~srt_mobile_api.parsers` 가 받는 쪽이면 이쪽은 보내는 쪽이다. 각 함수는
+:mod:`~srt_mobile_api.parsers` 가 받는 쪽이면 이쪽은 보내는 쪽이다. 각 빌더는
 ``dict[str, str]`` 하나를 돌려주고, 그것이 그대로 폼 본문이 된다. 아무것도
 전송하지 않는다 —— 전송은 :class:`~srt_mobile_api.http.SrtHttpClient` 의 일이다.
 

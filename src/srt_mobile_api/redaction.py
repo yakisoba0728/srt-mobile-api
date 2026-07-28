@@ -1,7 +1,10 @@
 """로그·미리보기에 나가는 값에서 비밀을 가린다.
 
 :class:`~srt_mobile_api.consent.MutationPreview` 가 dry_run 요청 본문을 보여 줄
-때, 그리고 예외에 원문을 담을 때 이 모듈을 지난다. 가리는 방법은 두 가지다 ——
+때 이 모듈을 지나고, 예외 메시지도 :func:`redact_url` 을 지난다. 예외의 ``raw``
+는 대체로 원문 그대로다 —— 반환비밀번호가 실려 오는 환불 1단계만 예외다
+(:func:`~srt_mobile_api.parsers.parse_refund_ticket_info_response`).
+가리는 방법은 두 가지다 ——
 :data:`SENSITIVE_KEYS` 에 든 **키 이름**으로 값을 통째로 ``[REDACTED]`` 로
 바꾸고, 남은 문자열은 카드번호(13~19자리)·``JSESSIONID``·URL 사용자정보 패턴을
 찾아 마스킹한다. 키 이름은 대소문자를 구별하지 않는다.
