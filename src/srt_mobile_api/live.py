@@ -1,3 +1,18 @@
+"""실서버 스모크 —— 읽기 경로만 한 번씩 실제로 두드려 보는 도구.
+
+이 모듈의 함수들은 진짜 SRT 서버에 붙는다. 진입점 :func:`run_live_smoke_from_env`
+는 환경변수 ``SRT_MOBILE_API_LIVE=1`` 이 없으면 :class:`RuntimeError` 로
+멈춘다. 자격증명(``SRT_LOGIN_ID``/``SRT_LOGIN_PASSWORD``)과 여정
+(``SRT_TEST_DATE`` 등)도 환경변수로만 받는다 —— 인자로 넘기는 자리가 없다.
+
+**상태를 바꾸지 않는다.** 로그인, 페이지·선택기 조회, 검색, 좌석 페이지,
+시각표, 운임까지만 부른다. 예약·취소·결제·환불은 이 스모크에 없다.
+
+결과는 카멜케이스 키를 가진 평평한 ``dict`` 다. 값은 개수와 불리언뿐이고 승차권
+내용이나 개인정보는 담기지 않는다. 노선이 매진이어도 실패가 아니다 ——
+``seatPageErrorCode`` 에 서버의 거절 코드가 들어갈 뿐이다.
+"""
+
 from __future__ import annotations
 
 import os
@@ -20,10 +35,15 @@ from .payloads import (
 
 
 def live_enabled() -> bool:
+    """``SRT_MOBILE_API_LIVE`` 가 정확히 ``"1"`` 인지. 실서버 접속의 스위치다."""
     return os.environ.get("SRT_MOBILE_API_LIVE") == "1"
 
 
 def read_credentials_from_env() -> tuple[str, str]:
+    """``SRT_LOGIN_ID``/``SRT_LOGIN_PASSWORD`` 를 읽어 ``(아이디, 비밀번호)`` 로 준다.
+
+    둘 중 하나라도 비어 있으면 :class:`RuntimeError` 다.
+    """
     login_id = os.environ.get("SRT_LOGIN_ID")
     password = os.environ.get("SRT_LOGIN_PASSWORD")
     if not login_id or not password:
@@ -64,7 +84,7 @@ def _first_complete_srt_seat_train(
 def _first_reservable_srt_seat_train(
     trains: Sequence[TrainSummary],
 ) -> TrainSummary | None:
-    """The first completely-described SRT row the server also calls bookable."""
+    """서버가 예약 가능이라 말했고 필드도 다 갖춘 첫 SRT 행. 없으면 ``None``."""
     for train in trains:
         if train_is_reservable(train) and _first_complete_srt_seat_train([train]):
             return train
@@ -123,6 +143,21 @@ def run_live_smoke(
     password: str,
     query: TrainSearchQuery,
 ) -> dict[str, Any]:
+    """읽기 경로를 순서대로 한 번씩 호출하고 그 결과를 개수·불리언으로 요약한다.
+
+    로그인 → 메인·예매 페이지 → 선택기 여섯 → 공지 → 승차권 페이지 → 개인 검색
+    → 좌석 페이지 → 상호확인 → 단체 검색 → 시각표 → 운임 순이다. 단체 검색은
+    10명 미만이면 앱이 막으므로 ``query`` 와 무관하게 성인 10명으로 다시 만들어
+    보낸다.
+
+    좌석 페이지는 서버가 예약 가능이라고 말한 열차를 우선 고르고, 없으면 필드가
+    온전한 첫 SRT 행으로 물러선다. 그 열차마저 매진이면 서버는 좌석 대신 오류
+    껍데기를 주는데, 그것은 예외로 새어 나가지 않고 결과의
+    ``seatPageErrorCode`` 에 담긴다. 좌석 조회 인원은 검색과 같은 인원이다.
+
+    실패로 끝나는 것은 로그인·검색 같은 앞단계다. ``query`` 노선에 열차가 없으면
+    :class:`~srt_mobile_api.errors.SrtNoResultsError` 가 그대로 오른다.
+    """
     session = client.login(login_id, password)
     main = client.get_main()
     booking = client.get_booking_page()
@@ -206,7 +241,7 @@ def run_live_smoke(
 
 
 def read_passenger_counts_from_env() -> PassengerCounts:
-    """Build the passenger mix from the documented SRT_*_COUNT variables."""
+    """``SRT_*_COUNT`` 환경변수로 승객 구성을 만든다. 기본은 성인 1명이다."""
     return PassengerCounts(
         adult=int(os.environ.get("SRT_ADULT_COUNT", "1")),
         child=int(os.environ.get("SRT_CHILD_COUNT", "0")),
@@ -217,11 +252,14 @@ def read_passenger_counts_from_env() -> PassengerCounts:
 
 
 def read_query_from_env() -> TrainSearchQuery:
-    """Build the journey query from the documented live-smoke variables.
+    """환경변수로 여정 질의를 만든다. 기본 노선은 수서(0551) → 부산(0020) 06시다.
 
-    Extracted from :func:`run_live_smoke_from_env` so any other live tool reads
-    the SAME variables with the SAME defaults, rather than growing a second,
-    silently divergent set. ``SRT_TEST_DATE`` is the only one with no default.
+    ``SRT_TEST_DATE``(``YYYYMMDD``)만 기본값이 없고 없으면 :class:`RuntimeError`
+    다. 나머지는 ``SRT_DEPARTURE_STATION_CODE``·``SRT_ARRIVAL_STATION_CODE``·
+    ``SRT_DEPARTURE_TIME``·``SRT_DEPARTURE_STATION_NAME``·
+    ``SRT_ARRIVAL_STATION_NAME`` 과 :func:`read_passenger_counts_from_env` 다.
+
+    다른 실서버 도구도 이 함수를 거쳐야 같은 변수와 같은 기본값을 쓴다.
     """
     test_date = os.environ.get("SRT_TEST_DATE")
     if not test_date:
@@ -238,15 +276,18 @@ def read_query_from_env() -> TrainSearchQuery:
 
 
 def read_device_key_from_env() -> str:
+    """``SRT_DEVICE_KEY``, 없으면 ANDROID_ID 모양의 자리채움 값을 준다."""
     return os.environ.get("SRT_DEVICE_KEY", "0123456789ABCDEF")
 
 
 def train_is_reservable(train: TrainSummary) -> bool:
-    """Whether the server currently reports a bookable seat on ``train``.
+    """서버가 이 열차에 앉을 자리가 있다고 말하는지.
 
-    Uses the same availability strings srtgo reads (``general_seat_available`` /
-    ``special_seat_available``, srt.py:486-490). Either class counts, because
-    ``SeatType.GENERAL_FIRST`` falls back from general to special.
+    일반실과 특실 중 **하나라도** 예약가능이면 ``True`` 다. 좌석 선택이
+    일반실에서 특실로 내려가는 기본 동작과 같은 기준이다(srtgo srt.py:486-490 이
+    읽는 것과 같은 잔여석 문자열).
+
+    예약대기(매진이지만 대기를 걸 수 있는 상태)는 여기서 ``False`` 다.
     """
     return _general_seat_available(train) or _special_seat_available(train)
 
@@ -255,13 +296,15 @@ def first_reservable_srt_train(
     trains: Sequence[TrainSummary],
     passengers: PassengerCounts | None = None,
 ) -> TrainSummary | None:
-    """The first train that is both bookable AND completely described.
+    """예약 가능하면서 **예약 폼까지 만들어지는** 첫 열차. 없으면 ``None``.
 
-    A row can advertise a free seat yet still be missing a field the reserve
-    form requires, so availability alone is not enough. Rather than re-listing
-    those fields (and drifting from the builder), this asks the builder itself:
-    a row whose form cannot be built is skipped. That way a caller can only be
-    handed a train the reserve payload will actually accept.
+    잔여석이 있다고 표시된 행이라도 예약 폼이 요구하는 필드가 빠져 있을 수
+    있다. 그래서 필드 목록을 따로 나열하는 대신
+    :func:`~srt_mobile_api.payloads.personal_reservation_payload` 를 실제로
+    만들어 보고, :class:`ValueError` 가 나는 행은 건너뛴다. 돌려받은 열차는
+    예약 페이로드가 받아들이는 열차다.
+
+    ``passengers`` 를 주지 않으면 성인 1명 기준으로 판단한다.
     """
     for train in trains:
         if not train_is_reservable(train):
@@ -279,6 +322,11 @@ def first_reservable_srt_train(
 
 
 def run_live_smoke_from_env() -> dict[str, Any]:
+    """환경변수만으로 :func:`run_live_smoke` 를 실행한다 —— 실서버 진입점.
+
+    ``SRT_MOBILE_API_LIVE=1`` 이 아니면 아무것도 보내지 않고
+    :class:`RuntimeError` 다. 클라이언트는 여기서 만들고 끝나면 반드시 닫는다.
+    """
     if not live_enabled():
         raise RuntimeError("Set SRT_MOBILE_API_LIVE=1 to run live smoke")
     login_id, password = read_credentials_from_env()

@@ -1,41 +1,29 @@
-"""SRT 할인 (discount) code tables, taken from the app's own code table.
+"""할인 코드표 —— 서버가 보낸 할인 코드를 사람이 읽는 이름으로 바꾼다.
 
-Two independent tables live here, from two different kinds of evidence, and the
-difference matters more than their contents:
+성격이 다른 두 표가 있다.
 
-**할인종류코드 (``dcntKndCd``)** is a direct copy of the ``dcntKndCd`` run in the
-app's client-side code table (offline ``js/commCode.js``, the same file
-``stations.py``'s neighbour ``stationInfo.js`` sits beside). It is what the
-server means by a ``dcntKndCd`` value, and ``dcntKndCd`` is a real transmitted
-field: the booking form carries ``<input type="hidden" name="dcntKndCd">`` on
-every SRT reservation page this project has fetched. This library does not SET
-it -- nothing here asks for a discount -- so the table is here to DECODE what
-comes back, which is the only use a read-only client has for it.
+**할인종류코드(``dcntKndCd``)** 는 앱 코드표(``js/commCode.js``)의 ``dcntKndCd``
+구간을 그대로 옮긴 173개다. 예매 페이지마다 ``<input type="hidden"
+name="dcntKndCd">`` 로 실제 전송되는 필드이지만, 이 라이브러리는 그 값을
+**설정하지 않는다** —— 할인을 요청하는 기능이 없다. 표는 돌아온 값을 해독하는
+용도다. :func:`discount_kind_name` 로 읽는다.
 
-Three facts about the copy, all of them the source's and not ours:
+표에 관해 알아 둘 두 가지:
 
-* 173 codes, not 171. Two rows -- ``133`` 기본 특별할인(기준) and ``191``
-  정차역 할인 -- carry no ``code_group_cd`` key at all in ``commCode.js``
-  (:lines 487-495). They sit INSIDE the ``dcntKndCd`` run, between ``132`` and
-  ``192``, and every neighbour on both sides is a ``dcntKndCd``, so the omission
-  is a hole in the source rather than a different group. They are included, and
-  this sentence is why.
-* 25 of the rows carry ``"rmk": "V"``. What ``V`` marks is not stated anywhere
-  in the bundle, so nothing is built on it and no accessor exposes it. Guessing
-  would be the kind of inference this repository writes down rather than ships.
-* The codes are stable but four of the NAMES are not. A live fetch of
-  ``/js/commCode.js`` on 2026-07-26 -- the server's current copy of this same
-  file -- had renamed ``205``/``206`` from "1-3급 장애인 할인"/"4-6급 장애인할인"
-  to "장애의정도가심한장애인 할인"/"장애의정도가심하지않은장애인 할인", matching the
-  same rename on ``psgTpCd`` 2 and 3. The numeric codes did not move. This table
-  keeps the v2.0.41 bundle's wording because the bundle is the committed
-  evidence; a caller displaying a name to a human should expect the newer one.
+* ``133`` 기본 특별할인(기준)과 ``191`` 정차역 할인은 원본에 그룹 키
+  (``code_group_cd``)가 아예 없다(``commCode.js:487-495``). 그러나 ``132`` 와
+  ``192`` 사이, ``dcntKndCd`` 구간 한가운데에 있어 원본의 누락으로 보고
+  포함했다.
+* 코드는 안정적이지만 이름은 그렇지 않다. 서버가 현재 배포하는 같은 파일에서는
+  ``205``/``206`` 이 "장애의정도가심한장애인 할인"/"장애의정도가심하지않은장애인
+  할인" 으로 바뀌어 있다(``psgTpCd`` 2·3 의 개명과 같다). 숫자는 그대로다. 이
+  표는 근거로 커밋된 v2.0.41 번들의 표기를 유지하므로, 사람에게 보여 줄
+  이름이라면 더 새 표기가 올 수 있음을 감안해야 한다.
 
-**공공할인코드 (``PBL_DISC_CD``)** is NOT in the bundle at all -- neither the code
-nor its values appear anywhere in v2.0.41. It comes from a page the live server
-renders to our own authenticated session: the 승차인원선택 popup
-(``POST /common/ARA/ARA0901P/view.do``) writes the whole mapping out as a
-comment block in its own ``setPassenger`` function, fetched 2026-07-26::
+**공공할인코드(``PBL_DISC_CD``)** 는 앱 번들에 없다 —— 코드도 값도 v2.0.41
+어디에도 나오지 않는다. 출처는 서버가 인증된 세션에 렌더링해 주는 승차인원선택
+팝업(``POST /common/ARA/ARA0901P/view.do``)이고, 그 페이지의 ``setPassenger``
+함수가 대응표를 주석으로 적어 둔다::
 
     //다자녀             //01
     //임산부             //02
@@ -44,9 +32,9 @@ comment block in its own ``setPassenger`` function, fetched 2026-07-26::
     //모범 납세자        //05
     //3세대 동행할인      //06
 
-The 할인 승차권 page (``/common/ARA/ARA0301V/view.do``) branches on ``07`` and
-``08`` as well; nothing on any page this project has fetched names them, so they
-are absent here rather than invented.
+할인 승차권 페이지(``/common/ARA/ARA0301V/view.do``)에는 ``07``·``08`` 분기도
+있지만 이름을 밝히는 페이지가 없어 지어내지 않고 비워 두었다.
+:func:`public_discount_name` 로 읽는다.
 """
 
 # 할인종류코드. Generated from the ``dcntKndCd`` run of
@@ -273,11 +261,12 @@ YOUTH_PASSENGER_TYPE_CODE = "6"
 
 
 def discount_kind_name(code: str | None) -> str:
-    """Return the 할인종류 name for ``code``, or ``""`` if unknown.
+    """할인종류 코드를 이름으로 바꾼다. 모르는 코드는 ``""`` 다.
 
-    Follows ``stations.station_name_by_code``: unknown is ``""`` rather than an
-    exception, because this decodes values the SERVER chose and a client that
-    crashes on an unrecognised discount code is worse than one that shows none.
+    :func:`~srt_mobile_api.stations.station_name_by_code` 와 같은 규약이다 ——
+    예외를 던지지 않는다. 여기서 해독하는 값은 서버가 고른 값이고, 처음 보는
+    할인코드 하나에 클라이언트가 죽는 것이 이름을 못 보여 주는 것보다 나쁘다.
+    ``code`` 가 문자열이 아니어도 ``""`` 다.
     """
     if not isinstance(code, str):
         return ""
@@ -285,10 +274,10 @@ def discount_kind_name(code: str | None) -> str:
 
 
 def public_discount_name(code: str | None) -> str:
-    """Return the 공공할인 name for ``code``, or ``""`` if unknown.
+    """공공할인 코드를 이름으로 바꾼다. 모르는 코드는 ``""`` 다.
 
-    ``07`` and ``08`` are deliberately unknown here: the 할인 승차권 page has
-    branches for them and no page this project has fetched says what they are.
+    ``07``·``08`` 은 일부러 모르는 값으로 둔다. 할인 승차권 페이지에 두 코드의
+    분기는 있지만 이름을 밝히는 페이지는 아직 없다.
     """
     if not isinstance(code, str):
         return ""

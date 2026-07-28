@@ -1,3 +1,22 @@
+"""HTTP 전송 계층 —— 요청이 실제로 나가는 유일한 지점.
+
+:class:`SrtHttpClient` 는 ``httpx.Client`` 를 감싸면서 이 라이브러리의 안전
+규칙을 요청 하나하나에 적용한다. 읽기와 쓰기가 서로 다른 문으로 나간다:
+
+* 읽기(:meth:`~SrtHttpClient.get_text`, :meth:`~SrtHttpClient.get_json`,
+  :meth:`~SrtHttpClient.post_form`, :meth:`~SrtHttpClient.post_html_form`)는
+  :func:`~srt_mobile_api.safety.assert_read_only_request` 를 지난다. 등록된
+  읽기 경로가 아니면 나가지 못한다.
+* 쓰기는 :meth:`~SrtHttpClient.post_mutation_form` 하나뿐이고, 동의·경로·
+  카드비밀 검사를 통과해야 한다.
+
+전송 실패는 :class:`~srt_mobile_api.errors.SrtTransportError` 로 바뀐다.
+``httpx`` 예외가 밖으로 새지 않는다. 리다이렉트는 따라가지 않는다 —— 목적지가
+로그인 페이지면 :class:`~srt_mobile_api.errors.SrtSessionExpiredError`, 아니면
+역시 전송 오류다. 세션이 끊긴 뒤 서버가 HTTP 200 에 로그인 안내 페이지를 실어
+보내는 경우도 응답 본문을 보고 같은 예외로 바꾼다.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -52,6 +71,16 @@ def _is_login_redirect(request_url: httpx.URL, location: str) -> bool:
 
 
 class SrtHttpClient:
+    """쿠키와 안전 검사를 함께 들고 다니는 HTTP 클라이언트.
+
+    ``config`` 의 ``base_url``·``timeout``·``user_agent`` 로 ``httpx.Client`` 를
+    만든다. ``transport`` 는 테스트에서 가짜 응답을 물리기 위한 자리이고,
+    실제 사용에서는 넘기지 않는다.
+
+    로그인 세션은 :attr:`cookies` 에 산다. 다 쓰면 :meth:`close` 를 부른다 ——
+    :class:`~srt_mobile_api.client.SrtClient` 를 ``with`` 로 쓰면 대신 해 준다.
+    """
+
     def __init__(self, config: SrtConfig, *, transport: httpx.BaseTransport | None = None) -> None:
         self.config = config
         self._client = httpx.Client(
@@ -63,9 +92,11 @@ class SrtHttpClient:
 
     @property
     def cookies(self) -> httpx.Cookies:
+        """이 클라이언트의 쿠키 저장소. 로그인 세션(``JSESSIONID``)이 여기 있다."""
         return self._client.cookies
 
     def close(self) -> None:
+        """연결 풀을 닫는다. 이후의 요청은 실패한다."""
         self._client.close()
 
     @staticmethod
@@ -174,6 +205,13 @@ class SrtHttpClient:
         *,
         referer: str | None = None,
     ) -> str:
+        """읽기 GET 을 보내고 응답 본문을 문자열 그대로 돌려준다.
+
+        본문이 로그인 안내 페이지면
+        :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 다. 단, 서버가
+        JSON content-type 으로 유효한 JSON 을 보냈으면 그 검사를 건너뛰고 원문을
+        그대로 준다.
+        """
         headers = {}
         if referer:
             headers["Referer"] = referer
@@ -187,6 +225,12 @@ class SrtHttpClient:
         *,
         referer: str | None = None,
     ) -> dict[str, Any]:
+        """읽기 GET 을 보내고 JSON 객체로 해석한다.
+
+        본문이 JSON 이 아니면 :class:`~srt_mobile_api.errors.SrtProtocolError`,
+        로그인 안내 페이지면 :class:`~srt_mobile_api.errors.SrtSessionExpiredError`
+        다. 최상위가 객체가 아닌 JSON(배열 등)도 프로토콜 오류로 거른다.
+        """
         headers = {}
         if referer:
             headers["Referer"] = referer
@@ -194,6 +238,12 @@ class SrtHttpClient:
         return self._parse_json_object(response)
 
     def get_text_url(self, url: str, *, referer: str | None = None) -> str:
+        """절대 URL 로 읽기 GET 을 보낸다 —— NetFunnel 대기열 호스트용이다.
+
+        :meth:`get_text` 와 같은 처리를 하되 경로가 아니라 URL 을 받는다. 허용
+        출처는 여전히 :func:`~srt_mobile_api.safety.assert_read_only_request` 가
+        정한 두 곳뿐이다.
+        """
         headers = {}
         if referer:
             headers["Referer"] = referer
@@ -208,6 +258,16 @@ class SrtHttpClient:
         accept: str = "*/*",
         referer: str | None = None,
     ) -> dict[str, Any]:
+        """읽기 POST(ajax 폼)를 보낸다. 상태를 바꾸는 요청은 여기로 못 나간다.
+
+        앱의 ajax 헤더(``X-Requested-With``, ``Origin``, 폼 content-type)를 붙여
+        보내고, ``accept`` 또는 응답 content-type 이 JSON 이면 JSON 객체를,
+        아니면 본문을 ``{"html": ...}`` 로 감싸 돌려준다.
+
+        경로는 :func:`~srt_mobile_api.safety.assert_read_only_request` 의 허용
+        목록에 있어야 한다. 예약·취소·결제·환불 경로는 그 목록에 없으므로 이
+        메서드로는 보낼 수 없고 :meth:`post_mutation_form` 만이 보낼 수 있다.
+        """
         response = self._post_form_response(
             path,
             data,
@@ -318,55 +378,39 @@ class SrtHttpClient:
         referer: str | None = None,
         accept: str = "application/json, text/javascript, */*; q=0.01",
     ) -> dict[str, Any]:
-        """The sole send path for a state-changing form.
+        """상태를 바꾸는 폼이 나가는 **유일한** 경로.
 
-        This is the only method that can transmit to a mutation route. Gates are
-        applied in this order, and a call must clear all of them:
+        통과해야 할 관문은 다섯이고 순서대로 적용된다. 하나라도 걸리면
+        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` 또는
+        :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
 
-        1. ``require_mutation_consent(consent, category)`` — a
-           :class:`~srt_mobile_api.consent.MutationConsent` with the matching
-           per-category opt-in must be supplied.
-        2. ``consent.dry_run`` must be ``False`` — a dry-run preview must never
-           be transmitted.
-        3. ``category`` must be a member of
-           :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` — the
-           live-enablement block.
-        4. a ``payment`` also requires an unambiguous card-kind claim —
-           exactly one of ``consent.fake_card_only`` (a non-chargeable test
-           card) or ``consent.real_card_acknowledged`` (an acknowledged real
-           charge); neither and both are refused
+        1. ``category`` 에 해당하는 개별 동의가 켜진
+           :class:`~srt_mobile_api.consent.MutationConsent` 여야 한다.
+        2. ``consent.dry_run`` 이 ``False`` 여야 한다. 미리보기는 전송되지
+           않는다.
+        3. ``category`` 가 :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`
+           —— ``reserve``·``cancel``·``payment``·``refund`` —— 에 있어야 한다.
+           동의가 아무리 넓어도 이 넷 밖은 전송되지 않는다.
+        4. ``payment`` 는 카드 종류를 명확히 밝혀야 한다. ``fake_card_only``
+           (청구되지 않는 시험카드)와 ``real_card_acknowledged``(실제 청구를
+           인지) 중 **정확히 하나**여야 하고, 둘 다이거나 둘 다 아니면 거부다
            (:func:`~srt_mobile_api.consent.require_card_kind_claim`).
-        5. the client config must use the canonical origins, and
-           ``assert_mutation_route`` + ``assert_mutation_route_category``
-           restrict the target to
-           :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES` for exactly that
-           category.
+        5. 설정이 정규 출처여야 하고, 경로는
+           :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES` 중 **그
+           category 에 묶인** 것이어야 한다.
 
-        Gate 3 is the decisive one: ``SRT_LIVE_MUTATION_CATEGORIES`` holds
-        exactly ``{"reserve", "cancel", "payment", "refund"}`` — the four
-        categories a live run has answered (reserve/cancel 2026-07-25,
-        payment/refund 2026-07-26). Anything else is refused here
-        unconditionally with
-        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError`, no matter how
-        permissive the consent is, while a consented, non-dry-run call in one of
-        the four proceeds to the wire. ``_send_mutation_request``, the function
-        that actually calls ``send``, independently re-asserts all of gate 3 and
-        gate 5 — membership, ``assert_mutation_route`` and
-        ``assert_mutation_route_category`` — so both the membership check and the
-        route/category binding hold at the true send boundary, and no category
-        can be pointed at another category's route there. It also applies
-        :func:`~srt_mobile_api.safety.assert_no_card_secrets` to every
-        non-``payment`` category, which is the only thing that stops a
-        hand-assembled card body riding a genuine ``reserve`` consent now that
-        payment is enabled. Meanwhile the read-only path
-        (:func:`~srt_mobile_api.safety.assert_read_only_request`) refuses all
-        four routes by allowlist, so a mutation can only ever travel this
-        method.
+        3번과 5번은 실제로 ``send`` 를 부르는 ``_send_mutation_request`` 가 한 번
+        더 검사한다. 카테고리를 다른 카테고리의 경로로 겨눌 수 없고, ``payment``
+        가 아닌 요청의 본문에 카드 필드가 들어 있으면
+        :func:`~srt_mobile_api.safety.assert_no_card_secrets` 가 막는다 ——
+        정당한 ``reserve`` 동의에 손으로 만든 결제 본문을 태우는 경우가 그것이다.
 
-        For an enabled category, ``data`` (which includes the reserve payload's
-        ``netfunnelKey``) is sent verbatim via the same request mechanics as
-        :meth:`post_form`, with no read-only field allowlist applied, returning
-        the parsed JSON object response.
+        반대편 문인 :func:`~srt_mobile_api.safety.assert_read_only_request` 는 이
+        네 경로를 허용 목록에서 빼 놓았다. 그래서 상태 변경은 이 메서드로만
+        나간다.
+
+        관문을 다 지나면 ``data`` 는 손대지 않고 그대로 나간다 —— 읽기 쪽처럼
+        필드를 걸러 내지 않는다. 반환은 파싱된 JSON 객체다.
         """
         require_mutation_consent(consent, category)
         if consent.dry_run:
@@ -439,6 +483,15 @@ class SrtHttpClient:
         *,
         referer: str | None = None,
     ) -> str:
+        """HTML 조각을 돌려주는 읽기 POST —— 역·날짜 같은 선택기 화면용이다.
+
+        ``Accept: text/html`` 로 보내고 본문을 그대로 돌려준다.
+
+        **JSON 이 돌아오면 그것은 언제나 오류다.** 이 경로들은 성공하면 HTML 을
+        준다. ``ErrorCode`` 가 ``""``/``"0"`` 이 아닌 JSON 은
+        :class:`~srt_mobile_api.errors.SrtAppError` 로, 그 밖의 JSON 은
+        :class:`~srt_mobile_api.errors.SrtProtocolError` 로 올린다.
+        """
         response = self._post_form_response(
             path,
             data,

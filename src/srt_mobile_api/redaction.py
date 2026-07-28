@@ -1,3 +1,24 @@
+"""로그·미리보기에 나가는 값에서 비밀을 가린다.
+
+:class:`~srt_mobile_api.consent.MutationPreview` 가 dry_run 요청 본문을 보여 줄
+때, 그리고 예외에 원문을 담을 때 이 모듈을 지난다. 가리는 방법은 두 가지다 ——
+:data:`SENSITIVE_KEYS` 에 든 **키 이름**으로 값을 통째로 ``[REDACTED]`` 로
+바꾸고, 남은 문자열은 카드번호(13~19자리)·``JSESSIONID``·URL 사용자정보 패턴을
+찾아 마스킹한다. 키 이름은 대소문자를 구별하지 않는다.
+
+가리는 대상은 자격증명(비밀번호, 카드정보, 승차권 반환비밀번호, 할인쿠폰
+번호·비밀번호), 신원(로그인 아이디, 이름), 그리고 세션·예약을 가리키는
+식별자(``JSESSIONID``, PNR, NetFunnel 키)다. 서버 필드명과 이 라이브러리의
+dataclass 속성명을 **양쪽 다** 넣어 두었다 —— :func:`redact_value` 는 dataclass
+를 필드명 기준으로 가리기 때문이다.
+
+발권 식별자(``saleDt``/``saleWctNo``/``saleSqno`` 와 그 ``ogtk*`` 응답 철자)는
+일부러 가리지 않는다. 반환비밀번호가 가려진 이상 그것들만으로는 아무것도
+승인되지 않고, 이것마저 가리면 환불 미리보기가 전부 ``[REDACTED]`` 가 되어
+읽을 수 없다. 취소 폼에서 ``pnrNo`` 는 가리고 ``jrnyCnt`` 는 가리지 않는 것과
+같은 기준이다.
+"""
+
 from __future__ import annotations
 
 import re
@@ -145,12 +166,27 @@ def _redact_assignment(match: re.Match[str]) -> str:
 
 
 def redact_text(value: str) -> str:
+    """자유 문자열 하나를 마스킹한다 —— 키를 모르는 자리에 쓰는 마지막 그물.
+
+    URL 의 ``user:pass@`` 부분, ``key=value``/``key: value`` 형태로 박혀 있는
+    :data:`SENSITIVE_KEYS` 의 값, 카드번호로 보이는 13~19자리 숫자열, 그리고
+    ``JSESSIONID=`` 뒤를 가린다. 따옴표로 감싼 값은 따옴표를 남긴다.
+    """
     redacted = URL_USERINFO_RE.sub(r"\1[REDACTED]@", value)
     redacted = SENSITIVE_ASSIGNMENT_RE.sub(_redact_assignment, redacted)
     return SESSION_RE.sub(r"\1[REDACTED]", CARD_RE.sub("[REDACTED_CARD]", redacted))
 
 
 def redact_url(value: str) -> str:
+    """URL 을 조각내어 쿼리 파라미터를 이름으로 가린다.
+
+    :data:`SENSITIVE_KEYS` 에 해당하는 파라미터는 값 전체가 ``[REDACTED]`` 가
+    되고 나머지는 :func:`redact_text` 를 지난다. 스킴이나 호스트가 없어 URL 로
+    읽히지 않으면 통째로 :func:`redact_text` 로 넘긴다.
+
+    돌아온 문자열은 쿼리가 다시 인코딩되어 원문과 글자가 다를 수 있다. 표시용
+    이고 재요청용이 아니다.
+    """
     try:
         parsed = urlsplit(value)
     except ValueError:
@@ -176,6 +212,13 @@ def redact_url(value: str) -> str:
 
 
 def redact_value(value: Any, *, key: str | None = None) -> Any:
+    """임의의 값을 구조를 유지한 채 재귀적으로 가린다.
+
+    ``key`` 가 :data:`SENSITIVE_KEYS` 에 있으면 값을 보지 않고 ``[REDACTED]``
+    다. 그렇지 않으면 매핑·리스트·튜플·dataclass 를 따라 내려가며, dataclass 는
+    **필드명을 키로 삼아** 딕셔너리로 펴진다. 바닥의 문자열은
+    :func:`redact_url` 을 지나고, 숫자 같은 나머지 타입은 그대로 둔다.
+    """
     if key is not None and key.casefold() in SENSITIVE_KEYS:
         return "[REDACTED]"
     if isinstance(value, Mapping):
@@ -195,17 +238,21 @@ def redact_value(value: Any, *, key: str | None = None) -> Any:
 
 
 def redact_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
+    """매핑의 각 항목을 그 키 이름으로 :func:`redact_value` 에 넘긴다.
+
+    값의 타입은 보존된다. 전송 폼처럼 값이 전부 문자열이어야 하면
+    :func:`redact_payload` 를 쓴다.
+    """
     return {name: redact_value(item, key=str(name)) for name, item in data.items()}
 
 
 def redact_payload(payload: Mapping[str, str]) -> dict[str, str]:
-    """Redact a mutation form/payload mapping for a ``MutationPreview``.
+    """전송 폼을 :class:`~srt_mobile_api.consent.MutationPreview` 용으로 가린다.
 
-    Every sensitive key (card fields, PII, PNR, NetFunnel key) becomes
-    ``[REDACTED]``; every remaining value is card-masked via
-    :func:`redact_text` so a raw PAN can never surface in a preview even when it
-    appears under an unexpected key. The result is a plain ``dict[str, str]``
-    safe to log or display.
+    :data:`SENSITIVE_KEYS` 의 키는 값이 ``[REDACTED]`` 가 되고, 남은 값은 전부
+    :func:`redact_text` 를 지난다 —— 예상 못 한 키에 카드번호가 들어 있어도
+    미리보기에 원문이 뜨지 않게 하기 위해서다. 키와 값 모두 문자열로 변환된
+    ``dict[str, str]`` 을 돌려주므로 그대로 로그에 남겨도 된다.
     """
     return {
         str(key): "[REDACTED]"
