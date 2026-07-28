@@ -1623,6 +1623,14 @@ def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmi
     # statements in a sentence of their own. The English text dodged this only
     # because the subject test was English-only, which was the bug being fixed
     # here rather than a property worth keeping.
+    #
+    # The Korean entries are STEMS, not whole endings. README.md moved from
+    # 반말 to 존댓말 on 2026-07-28, which would have turned "전송할 수 없다" into
+    # a phrase the file can no longer contain -- a pin that cannot fire is a
+    # deleted pin, and the fix for that is to widen the pin rather than drop it.
+    # Cutting each entry before the verb ending matches both registers
+    # ("...없다", "...없습니다", "...없으며") with one string, so the next
+    # register change cannot silently disarm this test either.
     retired = (
         "cannot be transmitted",
         "cannot transmit",
@@ -1631,13 +1639,13 @@ def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmi
         "no client method",
         "remain unimplemented",
         "stay unimplemented",
-        "전송할 수 없다",
-        "전송될 수 없다",
-        "보낼 수 없다",
-        "아무도 보낸 적이 없다",
-        "클라이언트 메서드가 없다",
-        "구현되지 않은 채로 남는다",
-        "미구현으로 남는다",
+        "전송할 수 없",
+        "전송될 수 없",
+        "보낼 수 없",
+        "아무도 보낸 적이 없",
+        "클라이언트 메서드가 없",
+        "구현되지 않은 채로 남",
+        "미구현으로 남",
     )
     # Checked per SENTENCE rather than per character window. A window is the
     # wrong granularity here: "seat holding and selection have no client method

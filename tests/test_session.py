@@ -244,7 +244,7 @@ def test_zero_config_client_logs_in_with_no_configuration(load_json_fixture):
     """The README quickstart's bare ``SrtClient()`` must actually be able to log in.
 
     The README's "빠른 시작" opens with ``client = SrtClient()`` and the
-    paragraph under it states that ``SrtClient()`` 는 설정 없이 동작한다. (Named
+    paragraph under it states that ``SrtClient()`` 는 설정 없이 동작합니다. (Named
     by section rather than by line number: the line numbers this comment used
     to cite moved the first time the README was edited.) That was prose only,
     and the
