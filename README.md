@@ -44,7 +44,7 @@ python3 -m pip install -e ".[test]"
 python3 -m pytest -q -m "not live"
 ```
 
-`HEAD` 에서 `1766 passed, 1 deselected` 가 나온다. 빠진 하나는 실서비스 테스트이며
+`HEAD` 에서 `1769 passed, 1 deselected` 가 나온다. 빠진 하나는 실서비스 테스트이며
 그것만은 `SRT_MOBILE_API_LIVE=1` 을 따로 요구한다. `-m "not live"` 는 CI 와
 [docs/RELEASE.md](docs/RELEASE.md) 가 쓰는 것과 같은 게이트다.
 

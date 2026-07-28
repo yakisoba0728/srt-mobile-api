@@ -1129,20 +1129,45 @@ def test_unsupported_zip_compression_is_rejected_by_fixed_cli_boundary(
     _assert_rejected(capsys, [wheel, sdist])
 
 
-def test_success_output_sanitizes_controls_and_bounds_basenames(
+@pytest.mark.parametrize(
+    "forged",
+    (
+        ("w" * 110) + "\nforged.whl",
+        "a\rb\x00c\x1bd.whl",
+        ("\n" * 200) + ".whl",
+    ),
+)
+def test_bounded_name_strips_controls_and_caps_length(forged: str) -> None:
+    """The sanitiser itself, on names no filesystem would hold.
+
+    This used to be reachable only by creating a file whose basename carried
+    the control character, which Windows refuses outright -- so the one
+    assertion that mattered ran on two platforms out of three. ``_bounded_name``
+    takes a ``Path``, not an open file, so the forged name never has to exist.
+    """
+    display = VERIFIER._bounded_name(Path(forged))
+
+    assert len(display) <= 96
+    assert all(character.isprintable() for character in display)
+    assert "\n" not in display
+
+
+def test_success_output_bounds_the_basename_it_prints(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    wheel = _write_wheel(
-        tmp_path,
-        filename=("w" * 110) + "\nforged.whl",
-    )
+    """And the bound survives the trip through ``main``.
+
+    The name here is long but filesystem-legal everywhere, because this case is
+    about the printed line -- one line, no stderr, name capped -- and not about
+    the character classes, which the parametrisation above covers directly.
+    """
+    wheel = _write_wheel(tmp_path, filename=("w" * 110) + "forged.whl")
     sdist = _write_sdist(tmp_path)
     assert VERIFIER.main([str(wheel), str(sdist)]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
     assert len(captured.out.splitlines()) == 1
-    assert "\nforged" not in captured.out
     wheel_display = captured.out.split("wheel=", maxsplit=1)[1].split(
         " sdist=", maxsplit=1
     )[0]
