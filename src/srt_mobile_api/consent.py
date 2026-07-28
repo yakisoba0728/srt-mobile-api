@@ -64,43 +64,35 @@ _CONSENT_FLAG_BY_CATEGORY = {
 
 @dataclass(frozen=True)
 class MutationConsent:
-    """Explicit, per-category opt-in for state-changing SRT requests.
+    """상태를 바꾸는 SRT 요청에 범주별로 따로 주는 명시적 동의.
 
-    Each ``allow_*`` flag is an independent opt-in for exactly one category and
-    defaults to ``False``; a consent grants only what is named explicitly.
-    ``dry_run`` (default ``True``) makes a mutation call build-but-never-send,
-    returning a :class:`MutationPreview`.
+    ``allow_*`` 플래그는 범주 하나씩에 독립으로 붙고 전부 ``False`` 가 기본이다 —
+    consent 는 이름을 적은 것만 허락한다. ``dry_run`` 은 ``True`` 가 기본이라,
+    상태 변경 메서드는 폼을 만들어 검증만 하고 :class:`MutationPreview` 를
+    돌려주며 아무것도 전송하지 않는다.
 
-    ``fake_card_only`` (default ``True``) and ``real_card_acknowledged``
-    (default ``False``) state WHICH KIND of card the caller believes it is
-    sending. They are mutually exclusive claims, and the transmit gate requires
-    exactly one: both set is a caller bug and is refused rather than resolved
-    in either direction, and neither set is refused too, because an unstated
-    card kind is exactly the state a payment must not be sent on.
+    ``fake_card_only``(기본 ``True``)와 ``real_card_acknowledged``(기본
+    ``False``)는 **어떤 종류의 카드를 보낸다고 주장하는지**를 적는 자리다. 서로
+    배타적인 주장이고 전송 게이트
+    (:func:`require_card_kind_claim`)는 **정확히 하나**를 요구한다 — 둘 다 켠
+    consent 는 모순이라 어느 쪽으로도 해석하지 않고 거절하며, 둘 다 끈 consent 도
+    거절한다. 종류를 밝히지 않은 상태가 바로 결제를 보내면 안 되는 상태다.
 
     .. warning::
-       These flags do not restrict anything. No code inspects the PAN, by
-       design — see :class:`SrtPaymentCard`, which says outright that this
-       library must never be the thing that tells a caller whether a card
-       number is real. ``fake_card_only=True`` therefore records an assertion;
-       it does not verify one. A default consent whose ``allow_payment`` and
-       ``dry_run`` have been set to ``True``/``False`` WILL transmit whatever
-       PAN it was given, including a real one. The two flags that actually gate
-       a charge are ``allow_payment`` and ``dry_run``.
+       이 두 플래그는 아무것도 제한하지 않는다. 카드번호를 들여다보는 코드는 없다
+       — :class:`~srt_mobile_api.models.SrtPaymentCard` 가 밝히듯 이 라이브러리는
+       어떤 카드번호가 진짜인지 알려 주는 물건이 되지 않는다. 따라서
+       ``fake_card_only=True`` 는 주장을 기록할 뿐 검증하지 않는다. **기본값 그대로
+       ``fake_card_only=True``, ``real_card_acknowledged=False`` 인 consent 도
+       ``allow_payment=True`` 와 ``dry_run=False`` 만 붙으면 받은 카드번호를 그대로
+       전송한다.** 실제 청구를 가르는 것은 카드 종류 주장이 아니라
+       ``allow_payment`` 와 ``dry_run`` 둘이다.
 
-       This paragraph used to claim a real charge required inverting both card
-       flags. It never did; the 2026-07-27 audit reproduced all four
-       combinations and found ``(fake_card_only=True,
-       real_card_acknowledged=False)`` transmits. The gate was correct and the
-       description was not.
-
-    Setting it is NOT what enables a payment. Live enablement is
-    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`'s job and
-    ``allow_payment``'s; this flag only says which kind of card is in the form.
-    The card-kind claim is a requirement to send, never a permission to — but
-    since ``payment`` was live-enabled on 2026-07-26 it is the last gate before
-    a real PAN goes out, so ``real_card_acknowledged=True`` now means money can
-    actually move.
+    ``real_card_acknowledged`` 를 켜는 것이 결제를 열어 주는 것도 아니다. 라이브
+    활성화는 :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` 와
+    ``allow_payment`` 의 몫이고, 이 플래그는 폼에 든 카드가 어느 쪽인지만 말한다.
+    다만 ``payment`` 는 이미 라이브 범주라, 이 주장이 실제 카드번호가 나가기 전
+    마지막 관문이다.
     """
 
     allow_reserve: bool = False
@@ -119,11 +111,6 @@ class MutationConsent:
     #: against the account, and nobody who opted into placing a reservation, or
     #: into paying for one, opted into spending a coupon. The sibling KORAIL port
     #: drew the same line for 할인카드 구매 (its ``discount_card`` category).
-    #:
-    #: APPENDED, after ``real_card_acknowledged`` rather than beside the other
-    #: ``allow_*`` flags, for the same reason ``PassengerCounts.infant`` and
-    #: ``.youth`` were appended: every positional construction written before
-    #: this field existed keeps its exact meaning.
     #:
     #: Granting it does NOT make a registration transmittable.
     #: :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` stays
