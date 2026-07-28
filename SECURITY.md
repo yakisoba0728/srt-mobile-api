@@ -26,8 +26,9 @@ NetFunnel 키, PNR, 서버 원본 응답, 운영 식별자는 공개 이슈·토
 ## 이 패키지가 무엇을 막는가
 
 상태를 바꾸는 요청은 범주별로 명시된 `MutationConsent` 가 있고 그 안에
-`dry_run=False` 가 들어 있을 때만 나간다. 좌석 점유·좌석지정에는 클라이언트
-메서드 자체가 없다. 예약(`reserve`), 취소(`cancel`), 카드결제(`pay_with_card`),
+`dry_run=False` 가 들어 있을 때만 나간다. 좌석을 따로 잡거나 고르는 메서드는
+없다 — 좌석지정은 `reserve` 의 인자이고 같은 라우트·같은 consent 를 탄다.
+예약(`reserve`), 취소(`cancel`), 카드결제(`pay_with_card`),
 환불(`refund`) 네 가지는 각각 consent 로 잠긴 메서드를 가지며, 기본값은 미리보기다.
 자기 범주에 대한 non-dry-run consent 가 있을 때만 실제로 전송된다.
 
