@@ -10,6 +10,12 @@
 있다. 리버스 엔지니어링한 클라이언트에서는 근거 자체가 품질 보증이라 남겨 두는
 것이지, 패키지를 쓰는 데 읽어야 하는 것은 아니다.
 
+**`index.md`·`quickstart.md`·`safety.md`·`errors.md`·`changelog.md`·`reference/`
+는 문서 사이트의 원본이다.** 최상위 `mkdocs.yml` 이 이 여섯만 사이트로 올린다.
+산문은 README 와 CHANGELOG 의 절을 그대로 끌어다 쓰고(`include-markdown`),
+`reference/` 는 모듈마다 한 줄씩 mkdocstrings 지시자만 두어 docstring 에서
+생성한다. 사이트를 보려면 `pip install -e ".[docs]"` 뒤에 `mkdocs serve` 한다.
+
 개별 문서가 무엇을 담고 있는지는 최상위 README 의
 [**문서**](../README.md#문서) 표를 본다. 같은 목록을 여기에 한 벌 더 두지 않는
 것은 의도적이다 — 손으로 유지하는 사본이 둘이면 하나는 반드시 어긋난다.

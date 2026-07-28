@@ -166,6 +166,10 @@
   (`ara0101v.js:317-341`), 그리고 단체가 아닌 10명 이상 검색
   (`ara0101v.js:562-567`). 마지막 것이 payload 빌더가 아니라 클라이언트에 있는
   이유는 빌더가 개인 흐름과 단체 흐름을 구분할 수 없기 때문이다.
+- 문서 사이트. `mkdocs.yml` 이 `docs/` 아래 여섯 쪽을 만들고, API 레퍼런스는 공개면을
+  내보내는 모듈마다 docstring 에서 생성한다. 빌드 도구는 `docs` extra 로 들어간다
+  (`pip install -e ".[docs]"`). 런타임 의존성은 늘지 않는다 —
+  METADATA 에는 `Requires-Dist: ...; extra == "docs"` 로만 나간다.
 
 ### Changed
 
