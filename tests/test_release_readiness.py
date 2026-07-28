@@ -446,6 +446,7 @@ def test_only_repository_root_env_file_is_ignored() -> None:
             cwd=ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         assert result.returncode in {0, 1}
@@ -1146,8 +1147,8 @@ def test_success_output_sanitizes_controls_and_bounds_basenames(
 
 
 def test_ci_and_manual_release_gates_are_structurally_offline_and_fail_fast() -> None:
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-    release = (ROOT / "docs/RELEASE.md").read_text()
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    release = (ROOT / "docs/RELEASE.md").read_text(encoding="utf-8")
     release_lower = release.casefold()
     offline_command = 'pytest -q -m "not live"'
 
@@ -1180,8 +1181,8 @@ def test_ci_and_manual_release_gates_are_structurally_offline_and_fail_fast() ->
 
 
 def test_ambient_live_opt_in_is_deselected_by_the_release_command() -> None:
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-    release = (ROOT / "docs/RELEASE.md").read_text()
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    release = (ROOT / "docs/RELEASE.md").read_text(encoding="utf-8")
     offline_command = 'pytest -q -m "not live"'
     assert offline_command in workflow and offline_command in release
 
@@ -1201,7 +1202,11 @@ def test_ambient_live_opt_in_is_deselected_by_the_release_command() -> None:
         env=environment,
         capture_output=True,
         text=True,
-        timeout=30,
+        encoding="utf-8",
+        # Windows 러너에서는 pytest 의 콜드 스타트가 눈에 띄게 느리다.
+        # 이 값은 "이 하위 프로세스가 멈추지 않았다"를 보장하는 것이지
+        # 성능을 재는 것이 아니므로 넉넉히 잡는다.
+        timeout=60,
         check=False,
     )
     assert result.returncode == 5
@@ -1235,6 +1240,7 @@ def _collected_offline_test_count() -> tuple[int, int]:
         env=environment,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=120,
         check=False,
     )
@@ -1263,12 +1269,12 @@ def _collected_offline_test_count() -> tuple[int, int]:
 #     the four seat-grid truths, and (below) the whole cancel/payment/refund
 #     provenance family.
 def test_repository_truth_and_full_mutation_policy() -> None:
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     readme_lower = readme.casefold()
-    progress = (ROOT / "docs/IMPLEMENTATION_PROGRESS.md").read_text()
+    progress = (ROOT / "docs/IMPLEMENTATION_PROGRESS.md").read_text(encoding="utf-8")
     progress_lower = progress.casefold()
     progress_flat = " ".join(progress_lower.split())
-    verification = (ROOT / VERIFICATION_DOCUMENT).read_text()
+    verification = (ROOT / VERIFICATION_DOCUMENT).read_text(encoding="utf-8")
     verification_lower = verification.casefold()
     verification_flat = " ".join(verification_lower.split())
     assert "installable read-only" in readme_lower
@@ -1325,7 +1331,9 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     # keep pointing at its new home, or the evidence becomes a file nobody opens.
     assert VERIFICATION_DOCUMENT in readme
 
-    specification = (ROOT / "docs/analysis/srt-app-api-library-spec-2026-07-09.md").read_text()
+    specification = (
+        ROOT / "docs/analysis/srt-app-api-library-spec-2026-07-09.md"
+    ).read_text(encoding="utf-8")
     section_twelve = specification.split("## 12.", maxsplit=1)[1].split(
         "## 13.", maxsplit=1
     )[0]
@@ -1432,7 +1440,7 @@ CANCEL_PROVENANCE_DOCUMENTS = (
 
 def test_cancel_documentation_records_the_live_verification_and_its_srtgo_origin() -> None:
     for document in CANCEL_PROVENANCE_DOCUMENTS:
-        flat = " ".join((ROOT / document).read_text().casefold().split())
+        flat = " ".join((ROOT / document).read_text(encoding="utf-8").casefold().split())
         assert CANCEL_ROUTE_TOKEN in flat, document
         # The other half of the same round trip: a document describing the
         # verification without reserve's code describes only half of it.
@@ -1496,7 +1504,7 @@ def test_payment_and_refund_documentation_records_the_live_verification_and_its_
     route_token: str, success_code: str
 ) -> None:
     for document in CANCEL_PROVENANCE_DOCUMENTS:
-        flat = " ".join((ROOT / document).read_text().casefold().split())
+        flat = " ".join((ROOT / document).read_text(encoding="utf-8").casefold().split())
         assert route_token in flat, document
         windows = [
             flat[
@@ -1531,7 +1539,7 @@ def test_payment_and_refund_documentation_records_the_free_probe_that_came_first
     # before any money moved, and it is the part a future reader would otherwise
     # have to reinvent. Both codes must appear somewhere in each document.
     for document in CANCEL_PROVENANCE_DOCUMENTS:
-        flat = " ".join((ROOT / document).read_text().casefold().split())
+        flat = " ".join((ROOT / document).read_text(encoding="utf-8").casefold().split())
         assert PAYMENT_PROBE_CODE in flat, document
         assert REFUND_PROBE_CODE in flat, document
 
@@ -1575,7 +1583,7 @@ def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmi
         "SECURITY.md",
     )
     for document in documents:
-        flat = " ".join((ROOT / document).read_text().casefold().split())
+        flat = " ".join((ROOT / document).read_text(encoding="utf-8").casefold().split())
         for sentence in re.split(r"(?<=[.!?])\s+", flat):
             if not any(phrase in sentence for phrase in retired):
                 continue
