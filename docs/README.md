@@ -1,18 +1,16 @@
 # docs/
 
-This directory holds two different kinds of thing, and the difference matters
-more than any index of it would.
+이 디렉터리에는 성격이 다른 두 종류가 섞여 있다.
 
-**Everything directly under `docs/` describes the package** — what it sends,
-what the server answers, what has been proven against the live service and what
-has not. If you are using `srt-mobile-api`, this is material you may want.
+**`docs/` 바로 아래 문서는 패키지를 설명한다.** 무엇을 보내고, 서버가 무엇으로
+답하며, 어디까지가 실서버로 확인된 것이고 어디부터가 아닌지를 다룬다.
+`srt-mobile-api` 를 쓰는 쪽이 볼 만한 것은 여기에 있다.
 
-**`docs/internal/` is the development record** — audits, superseded plans and
-design specs. It is kept because the evidence behind a reverse-engineered client
-is the client's main warranty, not because anyone using the package needs to
-read it.
+**`docs/internal/` 은 개발 기록이다.** 감사 결과, 폐기된 계획, 설계 명세가 들어
+있다. 리버스 엔지니어링한 클라이언트에서는 근거 자체가 품질 보증이라 남겨 두는
+것이지, 패키지를 쓰는 데 읽어야 하는 것은 아니다.
 
-For what each individual document contains, see [**Where the deep material
-lives**](../README.md#where-the-deep-material-lives) in the top-level README.
-That table is not repeated here on purpose: a second hand-maintained copy of the
-same list is how the first one goes stale.
+개별 문서가 무엇을 담고 있는지는 최상위 README 의 [**Where the deep material
+lives**](../README.md#where-the-deep-material-lives) 표를 본다. 같은 목록을 여기에
+한 벌 더 두지 않는 것은 의도적이다 — 손으로 유지하는 사본이 둘이면 하나는 반드시
+어긋난다.

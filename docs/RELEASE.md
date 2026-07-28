@@ -1,21 +1,20 @@
-# Release Gate
+# 릴리스 게이트
 
-This is the build and verification workflow this repository runs before every
-release. It does not by itself authorize a production-service request — that
-authorization is a separate, explicit decision recorded below — and it never
-runs a live test: "verification" here means the offline suite plus a clean
-package build, never a request to `app.srail.or.kr`.
+이 저장소가 릴리스 전에 매번 돌리는 빌드·검증 절차다. 이 게이트를 통과했다고
+운영 서비스로 요청을 보낼 권한이 생기는 것은 아니다 — 그 승인은 아래에 따로
+기록된 별개의 결정이다. 여기서 말하는 "검증"은 오프라인 테스트와 깨끗한 패키지
+빌드를 뜻하며, `app.srail.or.kr` 로는 한 번도 요청하지 않는다.
 
-## Preconditions
+## 전제
 
-- Start from a clean tracked worktree.
-- Use Python 3.11 or newer and install the test and build tools locally.
-- Live tests are forbidden during this release gate. Do not load credentials,
-  local live configuration, cookies, tokens, or production response data.
+- 추적 파일에 변경이 없는 워크트리에서 시작한다.
+- Python 3.11 이상을 쓰고, 테스트·빌드 도구를 로컬에 설치한다.
+- 이 게이트 동안 라이브 테스트는 금지다. 자격증명, 로컬 라이브 설정, 쿠키, 토큰,
+  운영 응답 데이터를 어느 것도 불러오지 마라.
 
-## Test, build, and verify
+## 테스트·빌드·검증
 
-Run from the repository root:
+저장소 루트에서 실행한다.
 
 ```bash
 set -euo pipefail
@@ -67,49 +66,44 @@ cleanup
 trap - EXIT
 ```
 
-The verifier must receive exactly one wheel and one source distribution. The
-fresh import must resolve from `site-packages`, outside the checkout.
+검증기에는 wheel 하나와 sdist 하나가 정확히 들어가야 한다. 새 가상환경에서의
+import 는 체크아웃 밖의 `site-packages` 에서 풀려야 한다.
 
-## Cleanup
+## 정리
 
-The `EXIT` trap removes temporary directories and local build metadata on both
-success and failure. The explicit final cleanup disarms that trap only after all
-checks pass.
+`EXIT` 트랩이 성공·실패를 가리지 않고 임시 디렉터리와 로컬 빌드 산출물을 지운다.
+마지막의 명시적 `cleanup` 은 모든 검사가 통과한 뒤에야 그 트랩을 해제한다.
 
-Finish with `git status --short` and `git diff --check`.
+끝으로 `git status --short` 와 `git diff --check` 를 확인한다.
 
-## Version policy
+## 버전 정책
 
-From `1.0.0`, this project follows semantic versioning: patch for compatible
-fixes, minor for backward-compatible additions to the public API, major for a
-breaking change to it.
+`1.0.0` 부터 semantic versioning 을 따른다. 호환되는 수정은 patch, 공개 API 에
+대한 하위 호환 추가는 minor, 공개 API 를 깨는 변경은 major 다.
 
-That promise is about **this library's Python API only** —
-`srt_mobile_api.__all__`, the shape of the objects it returns, the exceptions
-it raises. It is not, and cannot be, a promise about SRT (에스알) itself. The
-mobile app's routes, field names, response shapes and business rules can
-change without notice on their side, since SR offers no documented API and
-owes this project no compatibility. A patch release here can be forced by a
-change on their end that this project had no part in and did not choose.
+이 약속의 대상은 **이 라이브러리의 Python API 뿐이다** — `srt_mobile_api.__all__`,
+반환 객체의 모양, 발생시키는 예외. SRT(에스알) 자체에 대한 약속은 아니고, 될 수도
+없다. 모바일 앱의 라우트·필드명·응답 모양·업무 규칙은 예고 없이 바뀔 수 있다.
+SR 은 문서화된 API 를 제공하지 않고 이 프로젝트에 호환성 의무도 없다. 이쪽의
+patch 릴리스가 이 프로젝트가 관여하지도 선택하지도 않은 저쪽 변경 때문에 강제될
+수 있다.
 
-## Public-release blockers
+## 공개 배포 차단 항목
 
-Every public release was blocked until four items existed and were reviewed: a
-license, owner metadata, a canonical URL, and explicit authorization. All four
-are satisfied as of 2026-07-27:
+공개 배포는 네 항목이 갖춰지고 검토될 때까지 막혀 있었다. 라이선스, 소유자
+메타데이터, 정본 URL, 명시적 승인이다. 2026-07-27 기준으로 넷 다 충족됐다.
 
-- **License.** `LICENSE` carries the verbatim Apache-2.0 text, and
-  `pyproject.toml` states `license = "Apache-2.0"` / `license-files =
-  ["LICENSE"]` in PEP 639 SPDX form.
-- **Owner metadata.** `pyproject.toml`'s `authors` names the repository owner
-  (`yakisoba0728`) and a contact address.
-- **Canonical URL.** `pyproject.toml`'s `[project.urls]` states the GitHub
-  Homepage, Repository, Issues and Changelog URLs under
-  `github.com/yakisoba0728/srt-mobile-api`.
-- **Explicit authorization.** The repository owner explicitly authorized a
-  public release of this repository under Apache-2.0 on GitHub on 2026-07-27.
+- **라이선스.** `LICENSE` 는 Apache-2.0 원문을 그대로 담고, `pyproject.toml` 은
+  PEP 639 SPDX 형식으로 `license = "Apache-2.0"` / `license-files = ["LICENSE"]`
+  를 명시한다.
+- **소유자 메타데이터.** `pyproject.toml` 의 `authors` 가 저장소 소유자
+  (`yakisoba0728`)와 연락처를 밝힌다.
+- **정본 URL.** `pyproject.toml` 의 `[project.urls]` 가
+  `github.com/yakisoba0728/srt-mobile-api` 아래로 Homepage, Repository, Issues,
+  Changelog URL 을 명시한다.
+- **명시적 승인.** 저장소 소유자가 2026-07-27 이 저장소를 Apache-2.0 으로 GitHub
+  에 공개하는 것을 명시적으로 승인했다.
 
-`scripts/verify_distribution.py` enforces the first three of these as part of
-this gate: it checks the built wheel and sdist against the exact license,
-author and URL values in `pyproject.toml`, so a distribution that drifts from
-them fails the gate rather than shipping quietly.
+`scripts/verify_distribution.py` 가 앞의 셋을 이 게이트의 일부로 강제한다.
+빌드된 wheel 과 sdist 를 `pyproject.toml` 의 라이선스·저자·URL 값과 정확히
+대조하므로, 값이 어긋난 배포물은 조용히 나가지 못하고 게이트에서 걸린다.

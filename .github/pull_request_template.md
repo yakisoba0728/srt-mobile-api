@@ -1,45 +1,44 @@
 <!--
-DO NOT paste real credentials, cookies, NetFunnel keys, PNRs, card-shaped
-values, or raw response bodies from SRT into this pull request or its commits.
-It is public. Fixtures under tests/fixtures/ must be sanitized or
-reconstructed, never a raw capture — see CONTRIBUTING.md's "Fixtures" section.
+실제 자격증명, 쿠키, NetFunnel 키, PNR, 카드 형태의 값, SRT 서버 원본 응답을 이
+pull request 나 그 커밋에 붙여넣지 마라. 공개된다. tests/fixtures/ 아래 픽스처는
+살균하거나 재구성한 것이어야 하고 원본 캡처여서는 안 된다 — CONTRIBUTING.md 의
+"픽스처" 절을 본다.
 -->
 
-## What this changes
+## 무엇을 바꾸는가
 
-<!-- One or two sentences. -->
+<!-- 한두 문장. -->
 
-## Evidence
+## 근거
 
 <!--
-Per CONTRIBUTING.md's "Evidence, not assertion": every route, field, default
-value or claim about server behavior needs one of bundle-evidenced (file:line
-citation), live-verified (date + server confirmation code), or inferred
-(labelled as such). State which tier applies here.
+CONTRIBUTING.md 의 "주장 말고 근거"에 따라, 라우트·필드·기본값·서버 동작에 관한
+주장에는 번들 근거(file:line 인용), 실서버 검증(날짜 + 서버 확인 코드), 추론(그렇게
+표시할 것) 중 하나가 필요하다. 여기에 해당하는 등급을 밝힌다.
 -->
 
-## Does this touch the mutation consent / safety model?
+## mutation consent·안전 모델을 건드리는가
 
 <!--
 `consent.py`, `safety.py`, `MutationConsent`, `assert_mutation_route`,
-`assert_mutation_route_category`, `assert_no_card_secrets`, or
-`SRT_LIVE_MUTATION_CATEGORIES` — if none of these are touched, delete this
-section. If any are, read CONTRIBUTING.md's "Changing the mutation consent /
-safety model" section and answer:
+`assert_mutation_route_category`, `assert_no_card_secrets`,
+`SRT_LIVE_MUTATION_CATEGORIES` — 하나도 건드리지 않았다면 이 절을 지운다.
+건드렸다면 CONTRIBUTING.md 의 "mutation consent·안전 모델을 바꿀 때" 절을 읽고
+답한다.
 -->
 
-- [ ] Which of the four gates (consent object / `dry_run` / per-category
-      opt-in / transport-layer kill switch) does this change, and how?
-- [ ] If this widens `SRT_LIVE_MUTATION_CATEGORIES`: date and confirmation
-      code of the live round trip that verified it.
-- [ ] If this adds a card-secret-bearing field: confirm it is covered by
-      `assert_no_card_secrets` and `SENSITIVE_KEYS` in this same PR.
+- [ ] 네 게이트(consent 객체 / `dry_run` / 범주별 opt-in / 전송 계층 차단 스위치)
+      중 무엇을 어떻게 바꾸는가?
+- [ ] `SRT_LIVE_MUTATION_CATEGORIES` 를 넓힌다면: 그것을 검증한 실서버 왕복의
+      날짜와 확인 코드.
+- [ ] 카드 비밀값을 나르는 필드를 더한다면: 같은 PR 안에서
+      `assert_no_card_secrets` 와 `SENSITIVE_KEYS` 가 그것을 덮는지 확인.
 
-## Checklist
+## 체크리스트
 
-- [ ] `python3 -m pytest -q -m "not live"` passes locally.
-- [ ] No live request was made as part of this change.
-- [ ] No credential, cookie, NetFunnel key, PNR, card-shaped value, or raw
-      response body is present anywhere in this diff, including fixtures.
-- [ ] Any new hardcoded count (test count, route count, etc.) is derived by a
-      test rather than hand-maintained in a second place.
+- [ ] `python3 -m pytest -q -m "not live"` 가 로컬에서 통과한다.
+- [ ] 이 변경 과정에서 라이브 요청을 하지 않았다.
+- [ ] 자격증명, 쿠키, NetFunnel 키, PNR, 카드 형태의 값, 원본 응답이 픽스처를
+      포함해 이 diff 어디에도 없다.
+- [ ] 새로 하드코딩한 개수(테스트 개수, 라우트 개수 등)는 두 번째 사본을 손으로
+      유지하는 대신 테스트가 유도한다.

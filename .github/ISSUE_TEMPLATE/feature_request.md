@@ -1,38 +1,34 @@
 ---
-name: Feature or route request
-about: A route, field, or behavior the app has that this library doesn't cover yet
+name: 기능·라우트 요청
+about: 앱에는 있는데 이 라이브러리가 아직 다루지 않는 라우트·필드·동작
 title: ""
 labels: enhancement
 assignees: ""
 ---
 
 <!--
-DO NOT paste real credentials, cookies, NetFunnel keys, PNRs, card-shaped
-values, or raw response bodies from SRT into this issue. It is public.
-Sanitize every value below. If you have to share a real response to make the
-request concrete, use a GitHub Security Advisory instead, which is private.
+실제 자격증명, 쿠키, NetFunnel 키, PNR, 카드 형태의 값, SRT 서버 원본 응답을
+이 이슈에 붙여넣지 마라. 이 이슈는 공개된다.
+아래의 모든 값을 살균하라. 요청을 구체화하려고 실제 응답을 공유해야 한다면 대신
+비공개인 GitHub Security Advisory 를 쓴다.
 -->
 
-**What's missing**
+**무엇이 없는가**
 
-What the app can do that this library can't, or what this library refuses
-that you believe the app allows.
+앱은 할 수 있는데 이 라이브러리가 못 하는 것, 또는 앱은 허용한다고 보는데 이
+라이브러리가 거부하는 것.
 
-**Evidence**
+**근거**
 
-This project implements only what it can evidence — see `CONTRIBUTING.md`'s
-"Evidence, not assertion" section. The more of this you can give, the more
-directly actionable the request is:
+이 프로젝트는 근거를 댈 수 있는 것만 구현한다 — `CONTRIBUTING.md` 의 "주장 말고
+근거" 절을 본다. 아래를 많이 줄수록 바로 처리할 수 있다.
 
-- A `file:line` citation from the decompiled app (a JS bundle path and line
-  range), if you have one.
-- A sanitized description of a live request/response shape — field *names*,
-  not real values.
-- Whether this touches a mutation (reserve/cancel/pay/refund/coupon). If so,
-  read `CONTRIBUTING.md`'s "Changing the mutation consent / safety model"
-  section before proposing an implementation — a mutation category cannot be
-  live-enabled without a real live-verified round trip.
+- 디컴파일한 앱의 `file:line` 인용(JS 번들 경로와 줄 범위)이 있다면 그것.
+- 라이브 요청/응답 모양에 대한 살균된 설명 — 실제 값이 아니라 필드 *이름*.
+- mutation(예약/취소/결제/환불/쿠폰)에 닿는지 여부. 닿는다면 구현을 제안하기 전에
+  `CONTRIBUTING.md` 의 "mutation consent·안전 모델을 바꿀 때" 절을 읽어라 —
+  mutation 범주는 실서버 왕복 검증 없이 라이브로 열리지 않는다.
 
-**Why it matters**
+**왜 필요한가**
 
-What you're trying to do that you currently can't.
+지금 하지 못해서 막혀 있는 일.

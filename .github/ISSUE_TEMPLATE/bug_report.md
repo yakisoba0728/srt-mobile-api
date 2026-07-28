@@ -1,45 +1,43 @@
 ---
-name: Bug report
-about: Something in the library behaves incorrectly against the SRT app or server
+name: 버그 신고
+about: SRT 앱·서버를 상대로 이 라이브러리가 잘못 동작한다
 title: ""
 labels: bug
 assignees: ""
 ---
 
 <!--
-DO NOT paste real credentials, cookies, NetFunnel keys, PNRs, card-shaped
-values, or raw response bodies from SRT into this issue. It is public.
-Sanitize every value below before you post it — replace a real PNR with
-"PNR000000", a real card number with "[REDACTED]", and so on. If reproducing
-the bug genuinely requires sharing a real response, use a GitHub Security
-Advisory instead (see the "Report a security vulnerability" link when opening
-a new issue), which is private.
+실제 자격증명, 쿠키, NetFunnel 키, PNR, 카드 형태의 값, SRT 서버 원본 응답을
+이 이슈에 붙여넣지 마라. 이 이슈는 공개된다.
+아래의 모든 값을 올리기 전에 살균하라 — 실제 PNR 은 "PNR000000" 으로, 실제 카드
+번호는 "[REDACTED]" 로 바꾸는 식이다. 버그 재현에 실제 응답 공유가 정말로
+필요하다면 대신 비공개인 GitHub Security Advisory 를 쓴다(새 이슈를 열 때 나오는
+보안 취약점 신고 링크).
 -->
 
-**What happened**
+**무슨 일이 일어났는가**
 
-A clear description of the incorrect behavior.
+잘못된 동작을 분명하게 적는다.
 
-**What you expected**
+**무엇을 기대했는가**
 
-What the library should have done instead.
+라이브러리가 대신 무엇을 했어야 하는지.
 
-**Minimal reproduction**
+**최소 재현**
 
 ```python
-# The smallest script that reproduces it. Sanitize any station, date, or
-# account-shaped values you don't need to keep for the bug to reproduce.
+# 재현되는 가장 작은 스크립트. 버그 재현에 필요하지 않은 역·날짜·계정 형태의
+# 값은 살균한다.
 ```
 
-**Environment**
+**환경**
 
-- `srt_mobile_api` version:
-- Python version:
+- `srt_mobile_api` 버전:
+- Python 버전:
 - OS:
 
-**Evidence, if you have it**
+**근거가 있다면**
 
-If this relates to what the real app or server does, a `file:line` citation
-from the decompiled app, or the date and (sanitized) shape of a live response,
-is more useful than a description — see `CONTRIBUTING.md`'s "Evidence, not
-assertion" section.
+실제 앱이나 서버가 무엇을 하는지에 관한 것이라면, 디컴파일한 앱의 `file:line`
+인용이나 라이브 응답의 날짜와 (살균한) 모양이 설명보다 쓸모 있다 —
+`CONTRIBUTING.md` 의 "주장 말고 근거" 절을 본다.
