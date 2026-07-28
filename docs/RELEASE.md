@@ -94,8 +94,10 @@ patch 릴리스가 이 프로젝트가 관여하지도 선택하지도 않은 �
 메타데이터, 정본 URL, 명시적 승인이다. 2026-07-27 기준으로 넷 다 충족됐다.
 
 - **라이선스.** `LICENSE` 는 Apache-2.0 원문을 그대로 담고, `pyproject.toml` 은
-  PEP 639 SPDX 형식으로 `license = "Apache-2.0"` / `license-files = ["LICENSE"]`
-  를 명시한다.
+  PEP 639 SPDX 형식으로 `license = "Apache-2.0"` /
+  `license-files = ["LICENSE", "NOTICE"]` 를 명시한다. `NOTICE` 가 함께 들어가는
+  것은 Apache-2.0 §4(d) 가 재배포자에게 저작자 표시를 이어 나르게 하는데 그 파일이
+  빠진 wheel 로는 그럴 수 없기 때문이다.
 - **소유자 메타데이터.** `pyproject.toml` 의 `authors` 가 저장소 소유자
   (`yakisoba0728`)와 연락처를 밝힌다.
 - **정본 URL.** `pyproject.toml` 의 `[project.urls]` 가
