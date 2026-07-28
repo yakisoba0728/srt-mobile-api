@@ -11,6 +11,7 @@ from .models import (
     SrtRefundTicketInfo,
     SrtReservationHold,
     SrtReservationSummary,
+    SrtTrainGroupCode,
     TrainSearchQuery,
     TrainSummary,
     TransferItinerary,
@@ -436,7 +437,7 @@ def seat_option_selector_payload(
 
 
 def train_group_selector_payload(
-    train_group_code: str = "109",
+    train_group_code: SrtTrainGroupCode = "109",
     train_group_name: str = "전체",
 ) -> dict[str, str]:
     if train_group_code not in TRAIN_GROUP_OPTIONS:
@@ -1129,6 +1130,8 @@ def _require_availability(value: str | None, *, seat_type: SeatType, field: str)
 #: they are values a real user reaches, not dead constants. commCode.js lists
 #: more, but the rest are the shared KORAIL set with no SRT call site.
 SRT_REQUEST_SEAT_ATTR_CODES = frozenset({"015", "021", "028"})
+#: 같은 셋의 정적 타입은 :data:`~srt_mobile_api.models.SrtSeatAttrCode` 다. 두
+#: 형태가 어긋나지 않는지는 ``tests/test_literal_aliases.py`` 가 검사한다.
 
 
 def _inherited_seat_attr_code(train: TrainSummary, explicit: str | None) -> str:

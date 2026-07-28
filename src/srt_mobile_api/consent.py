@@ -38,12 +38,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 from .errors import SrtMutationNotAllowedError
 from .redaction import redact_payload
 
 
 MUTATION_CATEGORIES = ("reserve", "payment", "cancel", "refund", "coupon")
+
+#: :func:`require_mutation_consent` 가 아는 다섯 가지 상태변경 범주. 서버가 주는
+#: 코드가 아니라 이 라이브러리 자신의 게이트 어휘이므로 집합이 완전히 닫혀 있다 —
+#: 각 값은 :class:`MutationConsent` 의 ``allow_<범주>`` 플래그 하나에 대응한다.
+#: ``"reserve"`` 예약, ``"payment"`` 결제, ``"cancel"`` 예약취소, ``"refund"``
+#: 환불, ``"coupon"`` 할인쿠폰 등록.
+MutationCategory = Literal["reserve", "payment", "cancel", "refund", "coupon"]
 
 _CONSENT_FLAG_BY_CATEGORY = {
     "reserve": "allow_reserve",
@@ -151,7 +159,7 @@ class MutationPreview:
 
 def require_mutation_consent(
     consent: MutationConsent | None,
-    category: str,
+    category: MutationCategory,
 ) -> None:
     """Deny a mutation unless ``consent`` explicitly opts into ``category``.
 

@@ -1,6 +1,24 @@
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
+
+#: 열차그룹코드(``trnGpCd``) — 예약 화면의 열차 종류 선택이 보내는 세 값.
+#: ``"300"`` SRT, ``"900"`` KTX+SRT, ``"109"`` 전체. 앱이 자기 코드에 단 주석이
+#: 그대로 이 셋이다(``ara0101v.js:85-86``). :class:`TrainSearchQuery` 의
+#: ``__post_init__`` 과 :func:`~srt_mobile_api.payloads.train_group_selector_payload`
+#: 가 런타임에서도 이 셋만 받는다 — 별칭은 자동완성용이고 검사를 대신하지 않는다.
+SrtTrainGroupCode = Literal["300", "900", "109"]
+
+#: 예약 본문에 실리는 요구좌석속성(``seatAttCd``) — ``"015"`` 일반, ``"021"``
+#: 휠체어, ``"028"`` 전동휠체어. 휠체어 두 값은 앱이 별도 동의 팝업 뒤에 두고 실제로
+#: 보내는 값이다(``ara0101v.js:611-628``).
+#: :meth:`~srt_mobile_api.client.SrtClient.reserve` 와
+#: :meth:`~srt_mobile_api.client.SrtClient.reserve_transfer` 의 ``seat_attr_code``
+#: 가 이 셋만 받고, 런타임 검사는
+#: :data:`~srt_mobile_api.payloads.SRT_REQUEST_SEAT_ATTR_CODES` 가 계속 한다.
+#: 검색 질의(:attr:`TrainSearchQuery.seat_attr_code`)와 좌석 페이지 인자는 세 자리
+#: 숫자인지만 보므로 이 별칭을 쓰지 않는다.
+SrtSeatAttrCode = Literal["015", "021", "028"]
 
 
 def _is_digits(value: object) -> bool:
@@ -208,7 +226,7 @@ class TrainSearchQuery:
     # already default to "109"/"전체". TRAIN_GROUP_OPTIONS pairs it with
     # stlbTrnClsfCd "05" (역무차종별코드 05:전체), which is what ara0101v.js:87
     # seeds alongside it.
-    train_group_code: str = "109"
+    train_group_code: SrtTrainGroupCode = "109"
     seat_attr_code: str = "015"
     departure_station_name: str | None = None
     arrival_station_name: str | None = None

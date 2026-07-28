@@ -6,6 +6,7 @@ import httpx
 
 from .config import APP_ORIGIN, NETFUNNEL_ORIGIN, SrtConfig
 from .consent import (
+    MutationCategory,
     MutationConsent,
     require_card_kind_claim,
     require_mutation_consent,
@@ -236,7 +237,7 @@ class SrtHttpClient:
         self,
         path: str,
         *,
-        category: str,
+        category: MutationCategory,
         data: Mapping[str, Any],
         headers: Mapping[str, str],
     ) -> httpx.Response:
@@ -309,7 +310,7 @@ class SrtHttpClient:
         data: Mapping[str, Any],
         *,
         consent: MutationConsent,
-        category: str,
+        category: MutationCategory,
         referer: str | None = None,
         accept: str = "application/json, text/javascript, */*; q=0.01",
     ) -> dict[str, Any]:

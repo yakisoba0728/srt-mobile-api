@@ -49,7 +49,9 @@ from .models import (
     SrtReservationHold,
     SrtReservationListResult,
     SrtReservationSummary,
+    SrtSeatAttrCode,
     SrtSession,
+    SrtTrainGroupCode,
     TimetablePage,
     TrainSearchQuery,
     TrainSearchResult,
@@ -542,7 +544,7 @@ class SrtClient:
 
     def get_train_group_selector(
         self,
-        train_group_code: str = "109",
+        train_group_code: SrtTrainGroupCode = "109",
         train_group_name: str = "전체",
     ) -> HtmlPage:
         """열차 종류 선택 화면의 HTML 을 파싱 없이 돌려준다.
@@ -1404,7 +1406,7 @@ class SrtClient:
         standby: bool = False,
         round_trip: bool = False,
         designated_seats: SeatDesignation | None = None,
-        seat_attr_code: str | None = None,
+        seat_attr_code: SrtSeatAttrCode | None = None,
     ) -> MutationPreview | SrtReservationHold:
         """개인예약(개인 예약 홀드)을 만든다. consent 필수.
 
@@ -1496,7 +1498,7 @@ class SrtClient:
         seat_type: SeatType = SeatType.GENERAL_FIRST,
         window_seat: bool | None = None,
         netfunnel_key: str | None = None,
-        seat_attr_code: str | None = None,
+        seat_attr_code: SrtSeatAttrCode | None = None,
     ) -> MutationPreview | SrtReservationHold:
         """환승 예약 — 두 다리를 **한 요청**으로 예약한다. consent 필수.
 

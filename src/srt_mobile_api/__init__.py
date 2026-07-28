@@ -7,6 +7,7 @@ __version__ = "1.0.0"
 from .client import SrtClient
 from .config import SrtConfig
 from .consent import (
+    MutationCategory,
     MutationConsent,
     MutationPreview,
     require_card_kind_claim,
@@ -58,7 +59,9 @@ from .models import (
     SrtReservationHold,
     SrtReservationListResult,
     SrtReservationSummary,
+    SrtSeatAttrCode,
     SrtSession,
+    SrtTrainGroupCode,
     TimetablePage,
     TimetableRow,
     TrainSearchQuery,
@@ -81,6 +84,7 @@ from .models import (
 __all__ = [
     "SrtClient",
     "SrtConfig",
+    "MutationCategory",
     "MutationConsent",
     "MutationPreview",
     "require_card_kind_claim",
@@ -128,7 +132,9 @@ __all__ = [
     "SrtReservationHold",
     "SrtReservationListResult",
     "SrtReservationSummary",
+    "SrtSeatAttrCode",
     "SrtSession",
+    "SrtTrainGroupCode",
     "TimetablePage",
     "TimetableRow",
     "TrainSearchQuery",
