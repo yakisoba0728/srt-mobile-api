@@ -347,8 +347,8 @@ class SrtClient:
         쿠폰번호와 비밀번호가 조회를 타고 나갈 수 없다.
 
         경로 근거: v2.0.41 번들에는 ``/apa/`` 라우트가 아예 없고, 서버가 렌더링하는
-        MY SRT 메뉴(``/ara/ara0101v.do``)에서 찾았다. 빈 상태는 2026-07-26 실검증,
-        채워진 상태는 미검증 — 필드명 근거는
+        MY SRT 메뉴(``/ara/ara0101v.do``)에서 찾았다. 확인된 것은 빈 상태뿐이고
+        채워진 상태는 미검증이다 — 필드명 근거는
         :class:`~srt_mobile_api.models.DiscountCoupon` 참고.
         """
         with self._session_guard():
@@ -368,8 +368,8 @@ class SrtClient:
         **자격이 하나도 없는 계정도 정상 반환이다** —
         :attr:`~srt_mobile_api.models.PublicDiscountPage.is_eligible` 가 ``False`` 로
         올 뿐 예외가 아니다. 페이지 자신은 알림을 띄우고 메인으로 튕기지만 이 메서드는
-        그러지 않는다. 자격을 가진 계정의 응답은 미검증이다(2026-07-26 실검증은 여덟
-        개 ``dataNCheck`` 플래그가 전부 빈 계정 하나뿐).
+        그러지 않는다. 자격을 가진 계정의 응답은 미검증이다 — 확인된 것은 여덟 개
+        ``dataNCheck`` 플래그가 전부 빈 계정 하나뿐이다.
 
         **할인 승차권 검색은 하지 않고, 할 수도 없다.** 이 페이지가 곧 그 검색 폼이고,
         검색은 :meth:`search_public_discount_trains` 가 따로 보낸다.
@@ -405,10 +405,10 @@ class SrtClient:
         :attr:`~srt_mobile_api.models.SrtReservationListResult.total_page_count`
         (``totPageCnt``)가 전체 페이지 수를 말한다.
 
-        **예약이 없으면 빈 결과가 정상이다.** 2026-07-26 실검증에서 서버는
-        ``strResult="SUCC"`` / ``IRZ000005`` / "조회할 자료가 없습니다." 를
-        ``trainListMap: []`` 와 함께 보냈고, 이 메서드는 빈 결과를 돌려줬다. 채워진
-        모양은 미검증이고 행 필드명은 srtgo(``srt.py:1069-1082``) 출처다.
+        **예약이 없으면 빈 결과가 정상이다.** 서버는 ``strResult="SUCC"`` /
+        ``IRZ000005`` / "조회할 자료가 없습니다." 를 ``trainListMap: []`` 와 함께
+        보내고, 이 메서드는 그것을 빈 결과로 돌려준다. 채워진 모양은 미검증이고 행
+        필드명은 srtgo(``srt.py:1069-1082``) 출처다.
         """
         with self._session_guard():
             return parse_reservation_list_response(
@@ -573,8 +573,8 @@ class SrtClient:
         (KTX) 예약 분기에서 네이티브 브리지로 넘기는 데 쓴다(``ara1001l.js:229-241``).
         이 라이브러리의 예약 경로는 쓰지 않으므로, 발급까지가 전부다.
 
-        **로그인이 필요 없다.** 2026-07-26 실검증에서 세션 쿠키 없이도 ``SUCC`` 와 새
-        ``mutMrkVrfCd`` 를 돌려줬다 — 이 클라이언트의 다른 읽기와 달리 공개 경로다.
+        **로그인이 필요 없다.** 세션 쿠키 없이도 ``SUCC`` 와 새 ``mutMrkVrfCd`` 가
+        온다 — 이 클라이언트의 다른 읽기와 달리 공개 경로다.
 
         반환은 :class:`~srt_mobile_api.models.MutualVerificationResult`. ``strResult``
         가 ``"FAIL"`` 이면 :class:`~srt_mobile_api.errors.SrtAppError` 계열로 오르고,
@@ -893,10 +893,10 @@ class SrtClient:
         :data:`~srt_mobile_api.safety.READ_ONLY_ROUTES` 에 자기 23필드 계약과 함께 등록돼
         있다. 반환은 :class:`~srt_mobile_api.models.TrainSearchResult`. 로그인이 필요하다.
 
-        **한 번도 보내 본 적이 없다.** 필드명·값·응답 키는 2026-07-26 에 서버가
-        렌더링해 준 페이지에서 읽은 것이고, 이 요청의 응답에서 읽은 것은 하나도 없다 —
-        보내려면 승인된 공공할인이 필요한데 여기 계정은 자격이 없다. **요청 모양에는
-        근거가 있고 효과에는 없다.**
+        **한 번도 보내 본 적이 없다.** 필드명·값·응답 키는 서버가 렌더링해 주는 할인
+        승차권 페이지에서 읽은 것이고, 이 요청의 응답에서 읽은 것은 하나도 없다 —
+        보내려면 승인된 공공할인 자격이 있는 계정이 필요하다. **요청 모양에는 근거가
+        있고 효과에는 없다.**
 
         ``discount`` 의 ``PBL_DISC_CD`` 는 알려진 값 범위(``01`` 다자녀 … ``06`` 3세대
         동행할인, 그리고 ``07``/``08`` 분기)이고 ``TGT_DTRM_YN`` 은 늘 ``"Y"`` 다.
@@ -985,7 +985,7 @@ class SrtClient:
         :class:`~srt_mobile_api.models.TransferItinerary` 와 :meth:`reserve_transfer`
         쌍으로 갈라 두었다.
 
-        응답은 2026-07-26 실검증이고 **한 다리에 한 행**이다. 반환
+        응답은 **한 다리에 한 행**이다. 반환
         :class:`~srt_mobile_api.models.TransferSearchResult` 에는 깨끗이 짝지어진
         ``itineraries``, 짝이 맞지 않아 이유와 함께 남겨 둔 ``unpaired``, 그리고 손대지
         않은 원본 검색 결과 ``search`` 가 같이 들어 있다 — 짝짓기는 서버가 아니라 이쪽의
@@ -996,8 +996,8 @@ class SrtClient:
         :class:`~srt_mobile_api.errors.SrtProtocolError` 다. 빈 목록으로 돌려주면 이
         읽기에서 유일하게 조용한 실패가 되기 때문이다.
 
-        페이징은 지원하지 않는다 — 둘째 커서 ``fllwPgExt2`` 가 실검증에서도 ``null``
-        이라 용도를 모른다.
+        페이징은 지원하지 않는다 — 둘째 커서 ``fllwPgExt2`` 는 관측된 응답에서 늘
+        ``null`` 이라 용도를 모른다.
 
         여기 닿는 자연스러운 길은 직통 검색이 ``WRD000061`` 로 답하는 것이다 — 그것이
         :class:`~srt_mobile_api.errors.SrtNoDirectTrainError` 다.
@@ -1220,7 +1220,6 @@ class SrtClient:
         아니다. 로그인이 필요하고, 응답이 로그인 페이지면
         :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 다.
 
-        2026-07-26 실검증(수서→동탄, 20260812, 315 열차, 25,930바이트에 좌석 셀 74개).
         이 경로도 ``trnScarSeatFrm`` 도 v2.0.41 번들에는 없고 서버가 렌더링하는
         페이지에만 있다.
         """
@@ -1411,7 +1410,7 @@ class SrtClient:
         designated_seats: SeatDesignation | None = None,
         seat_attr_code: SrtSeatAttrCode | None = None,
     ) -> MutationPreview | SrtReservationHold:
-        """개인예약(개인 예약 홀드)을 만든다. consent 필수.
+        """직통 열차 한 편에 결제 전 개인예약 홀드를 만든다. consent 게이트가 있다.
 
         ``POST /arc/selectListArc05013_n.do``. ``require_mutation_consent(consent,
         "reserve")`` 가 첫 관문이라, 기본
@@ -1459,16 +1458,12 @@ class SrtClient:
         달라도, ``standby``·``round_trip`` 과 섞어도 전송 전에 :class:`ValueError` 다.
         :meth:`reserve_transfer` 에는 아예 없다 — 좌석지정은 환승의 둘째 슬롯을 비운다.
 
-        **근거의 층이 다르다.** 좌석을 읽어 오는 :meth:`get_seat_grid` 는 2026-07-26
-        실검증이고, 폼의 좌석 필드(``seatNo1_1..N``, ``scarGridcnt1``, ``scarNo1`` 등,
-        ``ara0101v.js:866-882``)와 ``jobId=1103``(``ara1001l.js:1435-1436``)은 번들
-        근거이며, **좌석지정 본문이 이 경로로 간다는 것만은 추론**이다 — 앱의 좌석
-        콜백은 서버가 렌더링하는 ``fn_submit()`` 으로 끝나고 그 정의는 번들에 없다.
-
-        예약 자체는 2026-07-25 에 한 번 실제로 돌렸다: 예약이 ``SUCC``/``IRR000018`` 로
-        PNR 을 돌려줬고 이어서 :meth:`cancel` 이 ``IRG000000`` 으로 풀었다. 확인된 것은
-        성인 1명·1여정·일반실·직통 한 건뿐이고, 다인원·다여정·예약대기·좌석지정은
-        미검증이다.
+        확인된 조합은 성인 1명·1여정·일반실·직통 하나뿐이고(``SUCC``/``IRR000018``),
+        다인원·다여정·예약대기·좌석지정은 미검증이다. 폼의 좌석 필드
+        (``seatNo1_1..N``, ``scarGridcnt1``, ``scarNo1`` 등, ``ara0101v.js:866-882``)와
+        ``jobId=1103``(``ara1001l.js:1435-1436``)은 번들 근거가 있지만 **좌석지정
+        본문이 이 경로로 간다는 것은 추론**이다 — 앱의 좌석 콜백은 서버가 렌더링하는
+        ``fn_submit()`` 으로 끝나고 그 정의는 번들에 없다.
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
@@ -1583,11 +1578,10 @@ class SrtClient:
         ``dry_run=False`` 면 전송되고
         :class:`~srt_mobile_api.models.SrtCancelResult` 를 돌려준다.
 
-        2026-07-25 실검증: 실계정의 미결제 홀드 하나가 ``SUCC``/``IRG000000``/
-        "정상처리되었습니다" 로 풀렸고 승차권 목록에서도 사라졌다. 1여정·성인 1명 한
-        건이라 ``jrnyCnt="1"`` 만 확인된 셈이다. 경로 자체는 v2.0.41 번들에 없지만,
-        서버가 렌더링하는 승차권 목록 페이지의 ``cncConfirm()`` 이 같은 경로·같은 세
-        필드·같은 응답 봉투를 쓴다.
+        확인된 것은 1여정·성인 1명 한 건이라 ``jrnyCnt="1"`` 뿐이다
+        (``SUCC``/``IRG000000``/"정상처리되었습니다"). 경로 자체는 v2.0.41 번들에
+        없지만, 서버가 렌더링하는 승차권 목록 페이지의 ``cncConfirm()`` 이 같은 경로·
+        같은 세 필드·같은 응답 봉투를 쓴다.
         """
         require_mutation_consent(consent, "cancel")
         if self.session.current is None:
@@ -1652,7 +1646,7 @@ class SrtClient:
         그렇게 말한다(쿠폰등록 요청을 완료하였습니다 … 바로 조회 되지 않을 수 있습니다).
         등록 직후 :meth:`get_discount_coupons` 가 아무것도 못 봐도 정상일 수 있다.
 
-        경로·필드명·응답 키는 2026-07-26 의 실제 페이지에서 읽었다. v2.0.41 번들에는
+        경로·필드명·응답 키는 서버가 렌더링하는 실제 페이지에서 읽었다. v2.0.41 번들에는
         ``/arb/`` 라우트가 아예 없고, 번들이 뒷받침하는 것은 양쪽 어휘뿐이다
         (``js/common/messages.js:111-113``, ``sub/main.html:475`` 의 ``DSCP_YN``).
         """
@@ -1696,7 +1690,7 @@ class SrtClient:
         passenger_count: str | None = None,
         settlement_date: str | None = None,
     ) -> MutationPreview | SrtPaymentResult:
-        """미결제 PNR 에 카드 결제를 건다(카드결제). consent 필수. **실제로 돈이 나간다.**
+        """미결제 PNR 하나를 카드로 결제해 발권까지 끝낸다. consent 게이트가 있다.
 
         ``POST /ata/selectListAta09036_n.do``, 31개 필드.
         ``require_mutation_consent(consent, "payment")``, 인증 세션, 그리고 세션에
@@ -1719,18 +1713,15 @@ class SrtClient:
         ``real_card_acknowledged`` 중 정확히 하나. 둘 다도, 둘 다 아님도 거절이다).
         이 주장은 여기서 한 번, 전송 경계에서 다시 확인된다.
 
-        2026-07-26 실검증: 수서→동탄 2026-08-09 315 열차, 성인 1명 7,500원을 실제
-        카드로 결제하고 같은 실행에서 환불했다(``SUCC``/``IRT000000``). 앞서 가짜 카드와
-        없는 PNR 로 찔러 본 무료 탐침이 404 나 HTML 오류가 아니라 정상 업무 응답
-        (``FAIL``/``WRT100170``)을 줘서, 돈을 쓰기 전에 경로 존재가 확인됐다. 확인된
-        것은 1여정·성인 1명·일반실·개인카드·일시불 한 건뿐이다.
+        확인된 조합은 1여정·성인 1명·일반실·개인카드·일시불 하나뿐이다
+        (``SUCC``/``IRT000000``). 없는 PNR 로 찌르면 404 나 HTML 오류가 아니라 정상
+        업무 응답(``FAIL``/``WRT100170``)이 돌아온다.
 
-        **출처는 이 파일에서 가장 얇다.** 이 경로는 v2.0.41 번들 전체에서 0-hit 이고
-        (``Ata09*`` 계열 전부), 앱 자신은 이 길로 결제하지 않는다 — ``#rsvForm`` 을
+        **출처가 얇은 경로다.** ``Ata09*`` 계열 전체가 v2.0.41 번들에서 0-hit 이고,
+        앱 자신은 이 길로 결제하지 않는다 — ``#rsvForm`` 을
         ``/ard/selectListArd02017_n.do`` 로 보내고 TransKey 보안 키패드와 RaonSecure
         FIDO 를 거친다. 참조 구현 둘은 한 벌이라(srtgo 가 ryanking13/SRT 의 결제 코드를
-        그대로 벤더링) 서로를 뒷받침하지 못한다. 서버가 이 평문 경로를 아직 받아 준다는
-        것이 실행으로 확인됐을 뿐이다.
+        그대로 벤더링) 서로를 뒷받침하지 못한다.
         """
         require_mutation_consent(consent, "payment")
         session = self.session.current
@@ -1806,9 +1797,8 @@ class SrtClient:
         ``Referer`` 는 이 요청에만 붙는다. 참조 구현은 이걸 세션 헤더로 박아 두고 지우지
         않아서 이후 모든 요청이 PNR 을 들고 다닌다.
 
-        2026-07-26 실검증: 없는 PNR 로도 정상 업무 응답(``WRT300005``, "조회자료가
-        없습니다.")이 왔고, 이어진 왕복에서 실제 승차권의 식별 정보를 읽었다. 경로는
-        v2.0.41 번들에 없고 참조 구현 하나만 이걸 안다.
+        없는 PNR 도 오류가 아니라 정상 업무 응답(``WRT300005``, "조회자료가
+        없습니다.")으로 돌아온다. 경로는 v2.0.41 번들에 없고 참조 구현 하나만 이걸 안다.
         """
         if not isinstance(pnr_no, str) or not pnr_no.strip():
             raise ValueError("refund ticket info requires a non-empty PNR")
@@ -1847,7 +1837,7 @@ class SrtClient:
         *,
         consent: MutationConsent,
     ) -> MutationPreview | SrtRefundResult:
-        """발권된 승차권을 환불한다(환불) — 2단계. consent 필수. **실제로 반환된다.**
+        """발권까지 끝난 승차권을 환불한다 — 2단계 흐름의 둘째. consent 게이트가 있다.
 
         ``POST /atc/selectListAtc02063_n.do``, 7개 필드.
         ``require_mutation_consent(consent, "refund")`` 와 인증 세션이 필요하고, 두 검사
@@ -1863,17 +1853,14 @@ class SrtClient:
         ``dry_run=True``(기본)면 반환비밀번호·구매자명·PNR 을 가리고 판매 식별자는 남긴
         :class:`~srt_mobile_api.consent.MutationPreview` 만 돌려준다.
 
-        2026-07-26 실검증: 같은 실행에서 방금 결제한 수서→동탄 승차권이
-        ``SUCC``/``IRT200277`` 로 환불됐고, 별도 세션에서 계정에 예약도 승차권도 남지
-        않은 것을 확인했다. 1여정·성인 1명 한 건이다.
+        확인된 것은 1여정·성인 1명 한 건이고(``SUCC``/``IRT200277``), 성공 뒤 계정에는
+        예약도 승차권도 남지 않는다.
 
         출처는 :meth:`pay_with_card` 보다도 얇다 — 참조 구현 **하나**에만 있고
         (ryanking13/SRT 에는 환불이 아예 없다), ``Atc02063`` 은 v2.0.41 번들 전체에서
-        0-hit 이며 ``Atc02*`` 계열 자체가 없다.
-
-        필드명 ``tkRetPwd``·``psgNm`` 은 srtgo 출처이고 2026-07-26 실행에서 서버가
-        그대로 받았다. 앱 쪽 철자 ``retPwd``/``buyPsNm`` 은 로컬 승차권 캐시
-        핸들러의 것이라 이 요청과 무관하다.
+        0-hit 이며 ``Atc02*`` 계열 자체가 없다. 필드명 ``tkRetPwd``·``psgNm`` 은 srtgo
+        철자이고 서버가 그대로 받는다. 앱 쪽 철자 ``retPwd``/``buyPsNm`` 은 로컬
+        승차권 캐시 핸들러의 것이라 이 요청과 무관하다.
         """
         require_mutation_consent(consent, "refund")
         if self.session.current is None:
