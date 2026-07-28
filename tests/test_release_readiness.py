@@ -1416,6 +1416,10 @@ CANCEL_ROUTE_TOKEN = "ard02045"
 # Substance, not sentences: every element may be reworded, but all of them have
 # to stay attached to the route rather than merely coexist in the same file.
 CANCEL_LIVE_VERIFICATION_DATE = "2026-07-25"
+# The Korean spellings were ADDED rather than substituted when CHANGELOG.md was
+# translated. Two of the three documents this pin covers are still English, and
+# a phrase list that swapped languages would have stopped checking them. Widening
+# an `any(...)` keeps every document that already passed passing.
 CANCEL_LIVE_VERIFICATION_PHRASES = (
     "live server",
     "live-verified",
@@ -1423,6 +1427,9 @@ CANCEL_LIVE_VERIFICATION_PHRASES = (
     "verified live",
     "live round trip",
     "live reserve->cancel round trip",
+    "라이브 서버",
+    "라이브 검증",
+    "실서버 검증",
 )
 # The server's own confirmation code for a successful cancel, and the reserve
 # code from the same run. Codes rather than prose: they are the observation, and
@@ -1437,6 +1444,10 @@ CANCEL_VERIFICATION_SCOPE_PHRASES = (
     "single-journey",
     "one adult",
     "one-adult",
+    # Korean, added alongside the English rather than replacing it — see the
+    # note on CANCEL_LIVE_VERIFICATION_PHRASES.
+    "성인 1명",
+    "편도 1건",
 )
 CANCEL_PROVENANCE_WINDOW = 900
 # README.md was the first of these three until 2026-07-26. The provenance record
