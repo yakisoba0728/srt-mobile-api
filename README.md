@@ -31,7 +31,7 @@ python3 -m pip install "srt-mobile-api @ git+https://github.com/yakisoba0728/srt
 
 # 고쳐 볼 생각이면 클론한 뒤
 python3 -m pip install -e ".[test]"
-python3 -m pytest -q -m "not live"      # 1769 passed, 1 deselected
+python3 -m pytest -q -m "not live"      # 1770 passed, 1 deselected
 ```
 
 빠진 하나는 `SRT_MOBILE_API_LIVE=1` 을 따로 요구하는 실서비스 테스트입니다. `-m "not live"`
@@ -205,7 +205,7 @@ TransKey 키패드와 RaonSecure FIDO SDK 를 지나므로, 어느 HTTP 클라�
 | --- | --- |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | 검증 기록. 확인 코드, 확정하지 **못한** 것, 모든 경로의 정적 출처. |
 | [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md) | 구현 로그. |
-| [docs/analysis/](docs/analysis/) | 정적 분석 산출물과 참조 클라이언트 대조 결과. |
+| [docs/analysis/](docs/analysis/README.md) | 정적 분석 산출물과 참조 클라이언트 대조 결과. |
 | [docs/RELEASE.md](docs/RELEASE.md) | 릴리스 전에 돌리는 빌드·검증 게이트. |
 | [SECURITY.md](SECURITY.md) | 자격증명 취급, 커밋하면 안 되는 것, 문제 신고 방법. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 오프라인 게이트 세 개와 변경에 필요한 근거 등급. |
