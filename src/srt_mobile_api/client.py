@@ -1410,7 +1410,7 @@ class SrtClient:
         designated_seats: SeatDesignation | None = None,
         seat_attr_code: SrtSeatAttrCode | None = None,
     ) -> MutationPreview | SrtReservationHold:
-        """직통 열차 한 편에 결제 전 개인예약 홀드를 만든다. consent 게이트가 있다.
+        """열차 한 편에 결제 전 개인예약 홀드를 만든다. consent 게이트가 있다.
 
         ``POST /arc/selectListArc05013_n.do``. ``require_mutation_consent(consent,
         "reserve")`` 가 첫 관문이라, 기본
@@ -1498,7 +1498,7 @@ class SrtClient:
         netfunnel_key: str | None = None,
         seat_attr_code: SrtSeatAttrCode | None = None,
     ) -> MutationPreview | SrtReservationHold:
-        """환승 예약 — 두 다리를 **한 요청**으로 예약한다. consent 필수.
+        """환승 예약 — 두 다리를 **한 요청**으로 예약한다. consent 게이트가 있다.
 
         SRT 가 다구간 본문으로 받는 유일한 모양이다. 환승 토글이 ``jrnyTpCd="14"`` 와
         ``jrnyCnt="2"`` 를 같이 세우고(``ara0101v.js:302-303``), ``jrnyCnt="2"`` 는
@@ -1556,7 +1556,7 @@ class SrtClient:
         consent: MutationConsent,
         journey_count: str | None = None,
     ) -> MutationPreview | SrtCancelResult:
-        """만들어졌지만 결제되지 않은 예약을 취소한다(예약취소). consent 필수.
+        """만들어졌지만 결제되지 않은 예약을 취소한다(예약취소). consent 게이트가 있다.
 
         ``POST /ard/selectListArd02045_n.do``, 본문은 ``pnrNo``/``jrnyCnt``/
         ``rsvChgTno`` 셋뿐이다. ``require_mutation_consent(consent, "cancel")`` 로
@@ -1616,7 +1616,7 @@ class SrtClient:
         *,
         consent: MutationConsent,
     ) -> MutationPreview | SrtCouponRegistrationResult:
-        """할인쿠폰을 계정에 등록한다(할인쿠폰 등록). consent 필수. **전송은 막혀 있다.**
+        """할인쿠폰을 계정에 등록한다(할인쿠폰 등록). consent 게이트가 있고, 전송은 막혀 있다.
 
         ``POST /arb/selectListArb02A01_n.do``, 본문은 ``{dscp_no, dscp_pwd}``.
         :meth:`get_discount_coupons` 가 읽는 페이지의 나머지 절반이다 — 그 페이지가
@@ -1690,7 +1690,7 @@ class SrtClient:
         passenger_count: str | None = None,
         settlement_date: str | None = None,
     ) -> MutationPreview | SrtPaymentResult:
-        """미결제 PNR 하나를 카드로 결제해 발권까지 끝낸다. consent 게이트가 있다.
+        """미결제 PNR 하나를 카드로 결제한다. consent 게이트가 있다.
 
         ``POST /ata/selectListAta09036_n.do``, 31개 필드.
         ``require_mutation_consent(consent, "payment")``, 인증 세션, 그리고 세션에
