@@ -3,10 +3,10 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
-SRT(수서고속철도) 안드로이드 앱이 쓰는 HTTP API 를 파이썬에서 그대로 부르는 클라이언트입니다.
-앱과 같은 경로에 같은 폼 필드를 실어 조회·운임·좌석배치도를 읽고 예약·취소·결제·환불을 합니다.
-설치 가능한 기본 읽기 전용 패키지이며, 상태를 바꾸는 요청은 호출마다 동의 객체를 명시하지
-않으면 만들어지지도 않습니다.
+SRT(수서고속철도) 앱이 쓰는 HTTP API 를 파이썬에서 그대로 부릅니다. 앱과 같은 경로에
+같은 폼 필드를 실어 조회·운임·좌석배치도를 읽고, 예약·취소·결제·환불을 합니다.
+설치 가능한 기본 읽기 전용 패키지라, 상태를 바꾸는 요청은 호출마다 동의 객체를
+건네야만 만들어집니다.
 
 > [!WARNING]
 > - **리버스 엔지니어링 결과입니다.** SR 은 API 를 공개하지 않습니다. 경로·필드명·응답 형태는
@@ -81,11 +81,12 @@ client.close()
 
 ### `korail-mobile-api` 와 같이 쓸 때
 
-두 패키지가 `TrainSearchQuery`, `DiscountCoupon`, `MutationCategory` 를 각자 export 하는데
-호환되지 않습니다(`passengers` 는 여기 `PassengerCounts` / KORAIL `int`, `departure_time`
-기본값은 여기 `"060000"` / KORAIL `"000000"`). 잘못 import 해도
-타입 검사는 통과하고 요청만 틀리게 만들어지므로, 둘 다 쓴다면 `srt_mobile_api.TrainSearchQuery`
-처럼 패키지를 붙여 써야 합니다.
+`TrainSearchQuery`, `DiscountCoupon`, `MutationCategory` 는 두 패키지가 각자 export
+하는데 호환되지 않습니다. `passengers` 는 여기가 `PassengerCounts`, KORAIL 이 `int`
+이고, `departure_time` 기본값도 `"060000"` 대 `"000000"` 으로 다릅니다.
+
+잘못 import 해도 타입 검사는 통과하고 요청만 틀리게 만들어집니다. 둘 다 쓴다면
+`srt_mobile_api.TrainSearchQuery` 처럼 패키지를 붙이세요.
 
 ## 무엇을 할 수 있나
 
@@ -136,9 +137,10 @@ client.close()
 | `refund` | 예 | 위에서 결제한 그 승차권 한 건뿐. |
 | `coupon` | **아니오** | 구현과 미리보기는 되지만, 답을 받아 본 적이 없습니다. |
 
-검토된 읽기 전용 경로 26개가 허용목록의 전부이고 상태변경 경로 다섯 개는 그 바깥에 있어서
-`assert_read_only_request` 가 구조적으로 거절합니다. 카드 비밀값(`stlCrCrdNo1`, `vanPwd1`,
-`crdVlidTrm1`, `athnVal1`)은 경로가 아니라 본문에서 단속하므로 `payment` 로만 나갑니다.
+허용목록은 검토된 읽기 전용 경로 26개가 전부입니다. 상태변경 경로 다섯은 그 바깥이라
+`assert_read_only_request` 가 구조적으로 거절합니다. 카드 비밀값(`stlCrCrdNo1`,
+`vanPwd1`, `crdVlidTrm1`, `athnVal1`)은 경로가 아니라 본문에서 단속해서 `payment`
+로만 나갑니다.
 
 ```python
 from srt_mobile_api import MutationConsent
@@ -151,17 +153,17 @@ hold = client.reserve(train, consent=MutationConsent(allow_reserve=True, dry_run
 print(hold.pnr_no)      # 미결제 홀드 — 이제 호출자 책임
 ```
 
-결제는 카드 종류 주장을 하나 더 요구합니다. `fake_card_only=True`(과금되지 않는 테스트 카드,
-기본값)와 `real_card_acknowledged=True`(실제 PAN, 돈이 움직임) 중 **정확히 하나**여야 하며,
-둘 다 비워도 둘 다 세워도 거절합니다.
+결제는 카드 종류를 하나 더 밝혀야 합니다. `fake_card_only=True`(과금 없는 테스트
+카드, 기본값)와 `real_card_acknowledged=True`(실제 PAN, 돈이 움직임) 중 **정확히
+하나**여야 하고, 둘 다 비거나 둘 다 세우면 거절합니다.
 
-이 라이브러리는 NetFunnel 키를 다시 받는 경우를 빼면 스스로 재시도하지 않습니다. 예약은 절대
-재시도하지 않습니다 — 재시도한 예약은 이중예약입니다.
+NetFunnel 키를 다시 받는 경우 말고는 스스로 재시도하지 않습니다. 예약은 절대로요 —
+재시도한 예약은 이중예약입니다.
 
 ## 에러 처리
 
-실패는 이름 붙은 예외로 옵니다. 전부 `SrtApiError` 아래에 있고 서버가 준 `.code` 와 `.raw`
-를 들고 있으며, 응답 코드를 예외로 옮기는 규칙은 export 된 `classify_app_error` 에 있습니다.
+실패는 이름 붙은 예외로 옵니다. 전부 `SrtApiError` 아래이고 서버가 준 `.code` 와
+`.raw` 를 들고 있습니다. 코드를 예외로 옮기는 규칙은 `classify_app_error` 입니다.
 
 | 예외 | 상위 | 언제 |
 | --- | --- | --- |
@@ -183,8 +185,8 @@ print(hold.pnr_no)      # 미결제 홀드 — 이제 호출자 책임
 
 ## 한계
 
-SRT 앱은 **WebView 껍데기**입니다. 화면 대부분이 서버 렌더링 HTML 이고 앱 자신의 결제 단계는
-TransKey 키패드와 RaonSecure FIDO SDK 를 지나므로, 어느 HTTP 클라이언트도 재현하지 못합니다.
+SRT 앱은 **WebView 껍데기**입니다. 화면 대부분이 서버 렌더링 HTML 이고, 결제 단계는
+TransKey 키패드와 RaonSecure FIDO SDK 를 지나서 HTTP 클라이언트로는 재현할 수 없습니다.
 
 - **단체 예약** — 일부러 뺐습니다. 엔드포인트가 PNR 홀드가 아니라 서버 렌더링 결제 페이지를
   돌려줍니다. 조회는 그대로 남아 있습니다.
@@ -196,8 +198,8 @@ TransKey 키패드와 RaonSecure FIDO SDK 를 지나므로, 어느 HTTP 클라�
 
 무엇을 하면 각각이 확인되는지는 [docs/VERIFICATION.md](docs/VERIFICATION.md) 에 있습니다.
 
-조회는 NetFunnel 대기열 뒤에 있고 이 클라이언트는 앱과 구별되지 않습니다. 반복문으로 조회를
-두드리면 자신은 IP 차단을, 다른 사람들은 대기열 오염을 얻습니다.
+조회는 NetFunnel 대기열 뒤에 있고, 서버가 보기에 이 클라이언트는 앱과 구별되지
+않습니다. 반복문으로 두드리면 본인은 IP 차단을, 남들은 대기열 오염을 얻습니다.
 
 ## 문서
 
@@ -211,11 +213,11 @@ TransKey 키패드와 RaonSecure FIDO SDK 를 지나므로, 어느 HTTP 클라�
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 오프라인 게이트 세 개와 변경에 필요한 근거 등급. |
 | [CHANGELOG.md](CHANGELOG.md) / [NOTICE](NOTICE) | 변경 이력 / 참조 클라이언트를 어떻게 다뤘는지. |
 
-운영용 스크립트는 `scripts/` 에 있습니다 — 읽기 전용 스모크, 원본 응답 저장, 예약·취소 왕복
-검증, 떠 있는 홀드를 풀어 주는 `recover_hold.py`.
+운영용 스크립트는 `scripts/` 에 있습니다. 읽기 전용 스모크, 원본 응답 저장, 예약·취소
+왕복 검증, 떠 있는 홀드를 푸는 `recover_hold.py` 입니다.
 
 ## 라이선스
 
-Apache License 2.0. [LICENSE](LICENSE) 와 [NOTICE](NOTICE) 를 보면 됩니다. 이 프로젝트는
-SR(수서고속철도)와 제휴·승인·후원 관계가 없으며, "SRT" 는 상호운용성을 설명하기 위해서만
+Apache License 2.0 — [LICENSE](LICENSE), [NOTICE](NOTICE).
+SR(수서고속철도)와 제휴·승인·후원 관계가 없고, "SRT" 는 상호운용성을 설명하려고
 썼습니다.
