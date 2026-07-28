@@ -2,8 +2,7 @@ import httpx
 import pytest
 
 from srt_mobile_api import SrtClient
-from srt_mobile_api.errors import SrtSessionExpiredError
-from srt_mobile_api.errors import SrtAppError, SrtProtocolError
+from srt_mobile_api.errors import SrtAppError, SrtProtocolError, SrtSessionExpiredError
 from srt_mobile_api.models import SrtSession
 from srt_mobile_api.parsers import parse_mutual_verification_response
 
@@ -61,9 +60,31 @@ def test_mutual_parser_hides_verification_value_repeated_in_success_message():
         {"ErrorCode": "0", "outDataSets": None},
         {"ErrorCode": "0", "outDataSets": {"dsOutput0": []}},
         {"ErrorCode": "0", "outDataSets": {"dsOutput0": ["row"]}},
-        {"ErrorCode": "0", "outDataSets": {"dsOutput0": [{"msgCd": "IRZ000008", "strResult": "SUCC", "mutMrkVrfCd": ""}]}},
-        {"ErrorCode": "0", "outDataSets": {"dsOutput0": [{"msgCd": "IRZ000008", "strResult": "SUCC", "mutMrkVrfCd": 123}]}},
-        {"ErrorCode": "0", "outDataSets": {"dsOutput0": [{"msgCd": "IRZ000008", "msgTxt": 123, "strResult": "SUCC", "mutMrkVrfCd": "code"}]}},
+        {
+            "ErrorCode": "0",
+            "outDataSets": {
+                "dsOutput0": [{"msgCd": "IRZ000008", "strResult": "SUCC", "mutMrkVrfCd": ""}]
+            },
+        },
+        {
+            "ErrorCode": "0",
+            "outDataSets": {
+                "dsOutput0": [{"msgCd": "IRZ000008", "strResult": "SUCC", "mutMrkVrfCd": 123}]
+            },
+        },
+        {
+            "ErrorCode": "0",
+            "outDataSets": {
+                "dsOutput0": [
+                    {
+                        "msgCd": "IRZ000008",
+                        "msgTxt": 123,
+                        "strResult": "SUCC",
+                        "mutMrkVrfCd": "code",
+                    }
+                ]
+            },
+        },
     ],
 )
 def test_mutual_parser_rejects_malformed_framing(payload):

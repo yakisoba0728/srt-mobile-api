@@ -1,5 +1,9 @@
 import re
 
+from .discounts import (
+    PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE,
+    PUBLIC_DISCOUNT_NAMES_BY_CODE,
+)
 from .errors import SrtProtocolError
 from .models import (
     PassengerCounts,
@@ -15,10 +19,6 @@ from .models import (
     TrainSearchQuery,
     TrainSummary,
     TransferItinerary,
-)
-from .discounts import (
-    PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE,
-    PUBLIC_DISCOUNT_NAMES_BY_CODE,
 )
 from .stations import SRT_STATION_CODES, station_name_by_code
 

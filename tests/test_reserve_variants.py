@@ -63,6 +63,7 @@ from srt_mobile_api.safety import (
     assert_mutation_route,
 )
 
+
 RESERVE_ROUTE = "/arc/selectListArc05013_n.do"
 # The removed 단체 endpoint, kept only so the last test in this file can assert
 # it is gone. Nothing here may send to it, and _Recorder no longer answers it.

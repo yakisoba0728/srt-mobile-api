@@ -3,14 +3,13 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urljoin, urlsplit
 
 from .config import APP_ORIGIN
 from .discounts import public_discount_name
 from .errors import (
     SrtAppError,
-    SrtNetFunnelError,
     SrtNetFunnelKeyError,
     SrtProtocolError,
     SrtSeatUnavailableError,
@@ -69,8 +68,8 @@ class _TextExtractor(HTMLParser):
 
 
 class _SeatPageMarkerParser(HTMLParser):
-    _HIDDEN_TAGS = {"script", "style"}
-    _VOID_TAGS = {
+    _HIDDEN_TAGS: ClassVar[set[str]] = {"script", "style"}
+    _VOID_TAGS: ClassVar[set[str]] = {
         "area",
         "base",
         "br",
@@ -158,7 +157,9 @@ class _LoginFormParser(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {name.casefold(): value or "" for name, value in attrs}
         if tag.casefold() == "form":
-            self._form_stack.append(_is_login_form_action(values.get("action", ""), base_url=self.base_url))
+            self._form_stack.append(
+                _is_login_form_action(values.get("action", ""), base_url=self.base_url)
+            )
         elif (
             tag.casefold() == "input"
             and any(self._form_stack)

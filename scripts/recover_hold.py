@@ -154,7 +154,7 @@ def _run_list(client: SrtClient, login_id: str, password: str) -> int:
         client.login(login_id, password)
         print(f"Logged in as {_mask_login_id(login_id)}")
         result = list_holds(client)
-    except Exception as exc:  # noqa: BLE001 - report, never traceback at an operator
+    except Exception as exc:  # 넓게 잡는다: 운영자에게 트레이스백을 던지지 않고 보고한다
         print(f"ERROR: could not list reservations: {type(exc).__name__}: {exc}")
         return 1
     finally:
@@ -236,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"Logged in as {masked}")
         result = cancel_hold(client, pnr, args.journey_count)
-    except Exception as exc:  # noqa: BLE001 - the PNR must survive ANY failure
+    except Exception as exc:  # 넓게 잡는다: 어떤 실패에도 PNR 은 살아남아야 한다
         _print_banner(
             [
                 "CANCEL FAILED -- THE HOLD MAY STILL EXIST",

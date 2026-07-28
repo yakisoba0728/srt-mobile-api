@@ -62,6 +62,7 @@ from srt_mobile_api.safety import (
     assert_mutation_route_category,
 )
 
+
 RESERVE_ROUTE = "/arc/selectListArc05013_n.do"
 CANCEL_ROUTE = "/ard/selectListArd02045_n.do"
 PAYMENT_ROUTE = "/ata/selectListAta09036_n.do"

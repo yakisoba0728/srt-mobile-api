@@ -17,7 +17,6 @@ import pytest
 from srt_mobile_api import SrtClient, SrtConfig
 from srt_mobile_api.errors import SrtAppError, SrtSessionExpiredError
 from srt_mobile_api.parsers import (
-    parse_train_search_response,
     is_login_form,
     is_login_redirect_page,
     is_unauthenticated_page,
@@ -25,6 +24,7 @@ from srt_mobile_api.parsers import (
     parse_html_page,
     parse_seat_selection_page,
     parse_timetable_page,
+    parse_train_search_response,
 )
 
 
@@ -517,8 +517,8 @@ def test_group_search_rows_omit_the_wait_and_standing_names():
 
 def test_trn_sort_is_the_display_name_of_the_service_class():
     """getStlbTrnClsfCdNm(stlbTrnClsfCd), per the live page's two call sites."""
-    from srt_mobile_api.payloads import fare_payload, stlb_train_class_name, timetable_payload
     from srt_mobile_api.models import PassengerCounts, TrainSummary
+    from srt_mobile_api.payloads import fare_payload, stlb_train_class_name, timetable_payload
 
     assert stlb_train_class_name("17") == "SRT"
     assert stlb_train_class_name("00") == "KTX"
@@ -542,8 +542,8 @@ def test_trn_sort_does_not_depend_on_a_field_no_live_row_sends():
     Deriving trnSort from it meant every timetable and fare request we ever made
     carried trnSort= empty.
     """
-    from srt_mobile_api.payloads import timetable_payload
     from srt_mobile_api.models import TrainSummary
+    from srt_mobile_api.payloads import timetable_payload
 
     train = TrainSummary(
         train_no="999",
@@ -563,8 +563,8 @@ def test_fare_form_uses_the_live_passenger_field_names():
     estimated total as 0원 under a "기준" line naming no party at all. With
     these names the identical journey returned "어른 1명 기준" and real totals.
     """
-    from srt_mobile_api.payloads import fare_payload
     from srt_mobile_api.models import PassengerCounts, TrainSummary
+    from srt_mobile_api.payloads import fare_payload
 
     train = TrainSummary(
         train_no="999",
@@ -589,8 +589,8 @@ def test_timetable_and_fare_date_is_the_departure_date():
     do not for a past-midnight departure. The RESERVE form is unaffected and
     still sends the operating date, which is what its own call site does.
     """
-    from srt_mobile_api.payloads import fare_payload, timetable_payload
     from srt_mobile_api.models import PassengerCounts, TrainSummary
+    from srt_mobile_api.payloads import fare_payload, timetable_payload
 
     overnight = TrainSummary(
         train_no="999",

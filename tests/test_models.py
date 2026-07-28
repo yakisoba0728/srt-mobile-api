@@ -192,9 +192,21 @@ def test_passenger_counts_reject_boolean_values(kwargs):
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"departure_station_code": "", "arrival_station_code": "0020", "departure_date": "20260710"},
-        {"departure_station_code": "0551", "arrival_station_code": "", "departure_date": "20260710"},
-        {"departure_station_code": "0551", "arrival_station_code": "0020", "departure_date": "2026-07-10"},
+        {
+            "departure_station_code": "",
+            "arrival_station_code": "0020",
+            "departure_date": "20260710",
+        },
+        {
+            "departure_station_code": "0551",
+            "arrival_station_code": "",
+            "departure_date": "20260710",
+        },
+        {
+            "departure_station_code": "0551",
+            "arrival_station_code": "0020",
+            "departure_date": "2026-07-10",
+        },
         {
             "departure_station_code": "0551",
             "arrival_station_code": "0020",
@@ -340,8 +352,6 @@ def test_html_page_has_text_and_raw_fields():
     page = HtmlPage(text="parsed", raw="<html></html>")
     assert page.text == "parsed"
     assert page.raw == "<html></html>"
-    TimetablePage,
-    TimetableRow,
 
 
 def test_mutual_verification_model_is_frozen_and_repr_safe():

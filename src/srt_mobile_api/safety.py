@@ -1,6 +1,6 @@
+import re
 from collections import Counter
 from dataclasses import dataclass
-import re
 from urllib.parse import parse_qsl, urlsplit
 
 import httpx
@@ -614,7 +614,11 @@ def _assert_exact_form_contract(
     except (UnicodeDecodeError, ValueError):
         raise SrtProtocolError(f"SRT {context} form encoding is invalid") from None
     counts = Counter(name for name, _value in items)
-    if set(counts) != fields or any(count != 1 for count in counts.values()):
+    # ``frozenset`` 인 이유는 런타임이 아니라 타입 검사기 때문이다. ``set`` 과
+    # ``frozenset`` 은 파이썬에서 내용으로 같다고 비교되지만, pyright strict 는
+    # 두 타입이 겹치지 않는다고 보고 이 조건을 "항상 참"이라고 경고한다.
+    # 양쪽을 ``frozenset`` 으로 맞추면 의미는 그대로고 경고만 사라진다.
+    if frozenset(counts) != fields or any(count != 1 for count in counts.values()):
         raise SrtProtocolError(f"SRT {context} form keys do not match the registered contract")
     values = dict(items)
     if any(values.get(name) != value for name, value in fixed_values.items()):
@@ -922,7 +926,9 @@ EXCLUDED_API_DOMAINS = frozenset(
 )
 
 SAFETY_STATEMENTS = (
-    "No user credentials, cookies, NetFunnel keys, raw response bodies, or payment tokens are stored here.",
-    "Do not store credentials, cookies, NetFunnel keys, raw response bodies, PNRs, or card-shaped values in the repository.",
+    "No user credentials, cookies, NetFunnel keys, raw response bodies, or payment "
+    "tokens are stored here.",
+    "Do not store credentials, cookies, NetFunnel keys, raw response bodies, PNRs, "
+    "or card-shaped values in the repository.",
     "Library rule: do not implement real card approval in the core client.",
 )

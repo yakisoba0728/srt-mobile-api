@@ -64,14 +64,15 @@ from .models import (
     SrtTrainGroupCode,
     TimetablePage,
     TimetableRow,
-    TrainSearchQuery,
     TrainSearchMetadata,
+    TrainSearchQuery,
     TrainSearchResult,
     TrainSummary,
     TransferItinerary,
     TransferSearchResult,
     UnpairedTransferGroup,
 )
+
 
 #: Deliberately NOT re-exported here: ``parsers`` and the request/attempt models
 #: that only its functions produce. ``SrtClient`` already calls every one of

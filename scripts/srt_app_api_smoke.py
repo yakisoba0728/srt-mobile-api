@@ -16,7 +16,9 @@ def main() -> int:
     parser.add_argument("--depart-name", default="수서")
     parser.add_argument("--arrive-code", default="0020")
     parser.add_argument("--arrive-name", default="부산")
-    parser.add_argument("--device-key", default=os.environ.get("SRT_DEVICE_KEY", "0123456789ABCDEF"))
+    parser.add_argument(
+        "--device-key", default=os.environ.get("SRT_DEVICE_KEY", "0123456789ABCDEF")
+    )
     args = parser.parse_args()
     login_id, password = read_credentials_from_env()
     query = TrainSearchQuery(

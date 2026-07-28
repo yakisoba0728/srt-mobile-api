@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import dataclasses
-
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 
 import httpx
 
@@ -71,6 +70,7 @@ from .netfunnel import (
     queue_wait_seconds,
 )
 from .parsers import (
+    pair_transfer_itineraries,
     parse_card_payment_response,
     parse_coupon_registration_response,
     parse_discount_coupon_page,
@@ -88,7 +88,6 @@ from .parsers import (
     parse_search_page_state,
     parse_seat_grid_response,
     parse_seat_selection_page,
-    pair_transfer_itineraries,
     parse_timetable_page,
     parse_train_search_response,
     parse_unpaid_cancel_response,
@@ -109,8 +108,8 @@ from .payloads import (
     search_continuation_payload,
     search_page_payload,
     seat_grid_payload,
-    seat_page_payload,
     seat_option_selector_payload,
+    seat_page_payload,
     station_map_selector_payload,
     station_selector_payload,
     timetable_payload,
@@ -327,7 +326,9 @@ class SrtClient:
         빈 승차권 목록으로 읽히는 일을 막기 위한 것이다.
         """
         with self._session_guard():
-            raw = self.http.get_text("/atc/selectListAtc14017_n.do", params={"pageNo": str(page_no)})
+            raw = self.http.get_text(
+                "/atc/selectListAtc14017_n.do", params={"pageNo": str(page_no)}
+            )
             return parse_html_page(raw, context="ticket list", require_authenticated=True)
 
     def get_discount_coupons(self) -> DiscountCouponList:
@@ -455,7 +456,9 @@ class SrtClient:
         with self._session_guard():
             return self._get_selector_page(
                 "/common/ARA/ARA0501P/view.do",
-                station_selector_payload(departure_name, arrival_name, departure_code, arrival_code),
+                station_selector_payload(
+                    departure_name, arrival_name, departure_code, arrival_code
+                ),
                 context="station selector",
             )
 

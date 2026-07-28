@@ -15,6 +15,7 @@ import ast
 import importlib.util
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -226,7 +227,7 @@ def test_a_failing_step_is_recorded_and_the_walk_continues(capture):
 
     class _Recorder:
         step = ""
-        exchanges: list[object] = []
+        exchanges: ClassVar[list[object]] = []
 
         def record(self, request, response):  # pragma: no cover - unused here
             raise AssertionError("no I/O in this test")
@@ -251,7 +252,7 @@ def test_a_failing_step_is_recorded_and_the_walk_continues(capture):
 def test_deselected_steps_are_skipped_without_running_them(capture):
     class _Recorder:
         step = ""
-        exchanges: list[object] = []
+        exchanges: ClassVar[list[object]] = []
 
     run = capture.ReadSurfaceCapture(
         object(), _Recorder(), pace=0.0, selected=frozenset({"wanted"})

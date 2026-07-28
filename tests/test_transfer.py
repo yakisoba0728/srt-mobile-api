@@ -95,6 +95,7 @@ from srt_mobile_api.safety import (
     SRT_MUTATION_ROUTES,
 )
 
+
 RESERVE_ROUTE = "/arc/selectListArc05013_n.do"
 SEARCH_ROUTE = "/ara/selectListAra10007_n.do"
 GROUP_SEARCH_ROUTE = "/ara/selectListAra10082_n.do"
@@ -1172,7 +1173,7 @@ def test_an_ambiguous_leg_order_is_refused_rather_than_broken_by_a_tiebreak():
         arrival_date=None,
     )
     result = pair_transfer_itineraries(
-        _search_result(_probe_rows() + [loop_out, loop_back])
+        _search_result([*_probe_rows(), loop_out, loop_back])
     )
 
     assert len(result.itineraries) == 3

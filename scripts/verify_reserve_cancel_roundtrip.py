@@ -166,7 +166,7 @@ def _stranded(pnr: str, reason: str) -> None:
             f"reason: {reason}",
             "",
             "Cancel it NOW with:",
-            f"  SRT_LOGIN_ID=$SRT_LOGIN_ID SRT_LOGIN_PASSWORD='<password>' \\",
+            "  SRT_LOGIN_ID=$SRT_LOGIN_ID SRT_LOGIN_PASSWORD='<password>' \\",
             f"    python3 {RECOVERY_SCRIPT} {pnr}",
             "",
             "If that also fails, cancel it in the SRT app immediately.",
@@ -196,7 +196,7 @@ def _reserve_failed_check_for_orphan(
         return
     try:
         after = client.get_ticket_list().raw
-    except Exception as sweep_exc:  # noqa: BLE001
+    except Exception as sweep_exc:  # 넓게 잡는다: 정리 실패가 본 검증을 가려서는 안 된다
         _banner(
             [
                 "RESERVE FAILED AND THE TICKET LIST COULD NOT BE RE-READ",
@@ -269,7 +269,7 @@ def run_roundtrip(client: SrtClient, *, login_id: str, password: str) -> int:
     # ticket list before and after is the only way left to notice that.
     try:
         before = client.get_ticket_list().raw
-    except Exception as exc:  # noqa: BLE001 - a failed snapshot must not block
+    except Exception as exc:  # 넓게 잡는다: 스냅샷 실패가 진행을 막아서는 안 된다
         print(f"(could not snapshot the ticket list: {exc})", flush=True)
         before = None
 
@@ -281,7 +281,7 @@ def run_roundtrip(client: SrtClient, *, login_id: str, password: str) -> int:
             passengers=passengers,
             seat_type=SeatType.GENERAL_FIRST,
         )
-    except Exception as exc:  # noqa: BLE001 - a hold may exist despite this
+    except Exception as exc:  # 넓게 잡는다: 이 실패에도 예약이 잡혀 있을 수 있다
         _reserve_failed_check_for_orphan(client, before, exc)
         raise
     if not isinstance(hold, SrtReservationHold):
@@ -340,7 +340,7 @@ def run_roundtrip(client: SrtClient, *, login_id: str, password: str) -> int:
                     print(f"Cancelled PNR={pnr} on the retry.", flush=True)
                 else:
                     _stranded(pnr, f"retry refused ({retry.status})")
-            except Exception as exc:  # noqa: BLE001 - the PNR must survive
+            except Exception as exc:  # 넓게 잡는다: PNR 은 살아남아야 한다
                 _stranded(pnr, f"retry raised {type(exc).__name__}: {exc}")
 
 
@@ -369,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
     client = SrtClient(SrtConfig(device_key=read_device_key_from_env()))
     try:
         return run_roundtrip(client, login_id=login_id, password=password)
-    except Exception as exc:  # noqa: BLE001 - report, never traceback-and-lose
+    except Exception as exc:  # 넓게 잡는다: 트레이스백으로 잃지 말고 보고한다
         print(f"ROUND TRIP FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     finally:

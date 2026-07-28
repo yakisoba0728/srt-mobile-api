@@ -185,7 +185,10 @@ def redact_value(value: Any, *, key: str | None = None) -> Any:
     if isinstance(value, tuple):
         return tuple(redact_value(item) for item in value)
     if is_dataclass(value) and not isinstance(value, type):
-        return {field.name: redact_value(getattr(value, field.name), key=field.name) for field in fields(value)}
+        return {
+            field.name: redact_value(getattr(value, field.name), key=field.name)
+            for field in fields(value)
+        }
     if isinstance(value, str):
         return redact_url(value)
     return value

@@ -58,9 +58,10 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from srt_mobile_api import PassengerCounts, SrtClient, SrtConfig, TrainSearchQuery
 from srt_mobile_api.live import (
@@ -196,7 +197,7 @@ class Recorder:
     def record(self, request: Any, response: Any) -> None:
         try:
             request_body = request.content.decode("utf-8", "replace")
-        except Exception:  # noqa: BLE001 - recording must never break the run
+        except Exception:  # 넓게 잡는다: 기록이 실행을 깨뜨려서는 안 된다
             request_body = "<unreadable>"
         exchange = Exchange(
             seq=len(self.exchanges) + 1,
@@ -232,14 +233,14 @@ def attach_recorder(client: SrtClient, recorder: Recorder) -> Callable[[], None]
     different from what the parsers receive. Here the body is exactly the string
     the parser is about to be handed, which is the only version worth capturing.
     """
-    transport = client.http._client  # noqa: SLF001 - see docstring
+    transport = client.http._client  # 비공개 속성 접근: 이유는 docstring 참조
     original_send = transport.send
 
     def send(request, **kwargs):  # type: ignore[no-untyped-def]
         response = original_send(request, **kwargs)
         try:
             recorder.record(request, response)
-        except Exception as exc:  # noqa: BLE001 - never break the live run
+        except Exception as exc:  # 넓게 잡는다: 라이브 실행을 절대 깨뜨리지 않는다
             say(f"    (recording failed: {type(exc).__name__}: {exc})")
         return response
 
@@ -295,7 +296,7 @@ class ReadSurfaceCapture:
         time.sleep(self.pace * (SEARCH_PACE_MULTIPLIER if heavy else 1.0))
         try:
             value = action()
-        except Exception as exc:  # noqa: BLE001 - a failure is data here
+        except Exception as exc:  # 넓게 잡는다: 여기서는 실패도 데이터다
             detail = f"{type(exc).__name__}: {exc}"
             self.results.append(StepResult(name, False, detail))
             say(f"    !! {detail}")

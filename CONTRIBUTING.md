@@ -13,13 +13,39 @@ development — this repository's own workflow forbids it (see
 ## Workflow
 
 1. Python 3.11 or newer.
-2. `python3 -m pip install -e ".[test]"`
+2. `python3 -m pip install -e ".[dev]"` — `dev` is `test` plus the two tools
+   below. `".[test]"` still works if you only want to run the suite.
 3. Make your change.
-4. `python3 -m pytest -q -m "not live"` must pass before you open a pull
-   request. This is the only gate: there is no separate lint step and no
-   live-service step in CI.
-5. Open the pull request. CI runs the same offline suite across Python
-   3.11–3.14 and a distribution-build check; both must be green.
+4. All three gates must pass locally before you open a pull request. There is
+   still no live-service step in CI, and there must never be one.
+
+   | Gate | Command | Passes when |
+   | --- | --- | --- |
+   | Tests | `python3 -m pytest -q -m "not live"` | every test passes |
+   | Lint | `ruff check .` | zero findings |
+   | Types | `pyright` | zero errors |
+
+5. Open the pull request. CI runs the offline suite on Python 3.11–3.14 on
+   Linux plus one macOS and one Windows run, the two gates above, and a
+   distribution-build check. All must be green.
+
+### About the lint and type gates
+
+Both read their configuration from `pyproject.toml` and nowhere else, so your
+editor (Pylance + the Ruff extension — see `.vscode/extensions.json`) reports
+exactly what CI will. If you disagree with a rule, argue with the comment next
+to it in `[tool.ruff.lint]` or `[tool.pyright]`; each one records what was
+measured and why it was set that way.
+
+Two things that are settled and should not be quietly reversed:
+
+- **`ruff format` is not adopted.** The hand-aligned comment tables and
+  evidence blocks in this codebase are its documentation, and a formatter
+  rewrites them. `ruff check` is the gate; formatting is not.
+- **pyright runs in `basic` mode, with a `strict` list of individual modules.**
+  That list is not a taste judgement — it is every module that already measures
+  zero errors under `strict`, re-derivable by running pyright once per file.
+  Adding a module to it is welcome; making a module on it fail is a regression.
 
 `-m "not live"` deselects exactly one test — the live-service smoke test,
 which additionally requires an explicit `SRT_MOBILE_API_LIVE=1` and real SRT

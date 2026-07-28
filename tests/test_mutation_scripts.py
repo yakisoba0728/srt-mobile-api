@@ -492,7 +492,9 @@ class _RoundTripClient:
 
         self.trains = [_train()] if trains is None else trains
         self.hold = (
-            SrtReservationHold(pnr_no=FAKE_PNR, raw={"resultMap": [{"strResult": "SUCC", "msgCd": "R-OK"}]})
+            SrtReservationHold(
+                pnr_no=FAKE_PNR, raw={"resultMap": [{"strResult": "SUCC", "msgCd": "R-OK"}]}
+            )
             if hold is None
             else hold
         )

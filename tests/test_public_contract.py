@@ -143,7 +143,8 @@ def test_selector_method_signatures_are_stable():
     assert list(inspect.signature(SrtClient.get_station_map_selector).parameters) == ["self"]
     date_parameters = inspect.signature(SrtClient.get_date_selector).parameters
     assert list(date_parameters) == ["self", "date"]
-    assert list(inspect.signature(SrtClient.get_passenger_selector).parameters) == ["self", "passengers"]
+    passenger_parameters = inspect.signature(SrtClient.get_passenger_selector).parameters
+    assert list(passenger_parameters) == ["self", "passengers"]
     seat_parameters = inspect.signature(SrtClient.get_seat_option_selector).parameters
     assert list(seat_parameters) == [
         "self",

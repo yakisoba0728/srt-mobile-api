@@ -292,7 +292,7 @@ def test_hold_parser_yields_a_usable_hold_for_a_third_status_value(
     assert hold.pnr_no == "NOT-A-REAL-PNR"
 
 
-@pytest.mark.parametrize("status", THIRD_STATUS_VALUES + ("", "SUCC"))
+@pytest.mark.parametrize("status", (*THIRD_STATUS_VALUES, "", "SUCC"))
 def test_declared_failure_probe_ignores_a_third_status_value(status):
     # The salvage gate itself, read straight off the raw payload. Only "FAIL"
     # may close it -- an empty or absent status included, since neither declares

@@ -1,5 +1,5 @@
-from dataclasses import replace
 import traceback
+from dataclasses import replace
 
 import pytest
 
@@ -22,8 +22,8 @@ from srt_mobile_api.payloads import (
     search_ajax_payload,
     search_continuation_payload,
     search_page_payload,
-    seat_page_payload,
     seat_option_selector_payload,
+    seat_page_payload,
     station_map_selector_payload,
     station_selector_payload,
     timetable_payload,
@@ -424,7 +424,7 @@ def test_search_following_page_metadata_rejects_missing_or_invalid_flag(metadata
         "outDataSets": {"dsOutput0": metadata, "dsOutput1": []},
     }
 
-    with pytest.raises(SrtProtocolError, match="fllwPgExt|dsOutput0"):
+    with pytest.raises(SrtProtocolError, match=r"fllwPgExt|dsOutput0"):
         parse_search_has_following_page(data)
 
 
@@ -817,7 +817,10 @@ def test_parse_train_search_response_classifies_netfunnel_failure(load_json_fixt
         {"ErrorCode": "ERR", "ErrorMsg": "wrapper failed"},
         {"ErrorCode": "0", "outDataSets": {}},
         {"ErrorCode": "0", "outDataSets": {"dsOutput0": [], "dsOutput1": []}},
-        {"ErrorCode": "0", "outDataSets": {"dsOutput0": [{"msgCd": "", "strResult": ""}], "dsOutput1": []}},
+        {
+            "ErrorCode": "0",
+            "outDataSets": {"dsOutput0": [{"msgCd": "", "strResult": ""}], "dsOutput1": []},
+        },
         {
             "ErrorCode": "0",
             "outDataSets": {

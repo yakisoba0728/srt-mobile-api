@@ -2,6 +2,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Literal
 
+
 #: 열차그룹코드(``trnGpCd``) — 예약 화면의 열차 종류 선택이 보내는 세 값.
 #: ``"300"`` SRT, ``"900"`` KTX+SRT, ``"109"`` 전체. 앱이 자기 코드에 단 주석이
 #: 그대로 이 셋이다(``ara0101v.js:85-86``). :class:`TrainSearchQuery` 의

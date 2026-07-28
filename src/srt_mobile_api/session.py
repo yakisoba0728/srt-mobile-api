@@ -84,7 +84,9 @@ class SrtSessionClient:
                     message = user_map.get("MSG")
                 raise SrtAuthError(str(message or "SRT login failed"))
             parse_html_page(
-                self.http.get_text("/main/main.do", params={"deviceId": self.http.config.device_key}),
+                self.http.get_text(
+                    "/main/main.do", params={"deviceId": self.http.config.device_key}
+                ),
                 context="main page",
                 require_authenticated=True,
             )

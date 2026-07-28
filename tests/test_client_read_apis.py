@@ -4,7 +4,12 @@ import httpx
 import pytest
 
 from srt_mobile_api import SrtClient, SrtConfig
-from srt_mobile_api.errors import SrtAppError, SrtNetFunnelError, SrtProtocolError, SrtSessionExpiredError
+from srt_mobile_api.errors import (
+    SrtAppError,
+    SrtNetFunnelError,
+    SrtProtocolError,
+    SrtSessionExpiredError,
+)
 from srt_mobile_api.models import (
     FarePage,
     NoticeListResult,
@@ -241,9 +246,9 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
         client.close()
 
     assert [request.url.path for request in seen] == [path for path, _fixture, _payload in expected]
-    assert [dict(parse_qsl(request.content.decode(), keep_blank_values=True)) for request in seen] == [
-        payload for _path, _fixture, payload in expected
-    ]
+    assert [
+        dict(parse_qsl(request.content.decode(), keep_blank_values=True)) for request in seen
+    ] == [payload for _path, _fixture, payload in expected]
     assert all(request.method == "POST" for request in seen)
     assert all(request.headers["accept"] == "text/html, */*; q=0.01" for request in seen)
     assert all(
@@ -251,7 +256,10 @@ def test_selector_methods_send_exact_path_form_accept_and_referer(load_text_fixt
         for request in seen
     )
     assert all(request.headers["origin"] == "https://app.srail.or.kr" for request in seen)
-    assert all(request.headers["referer"] == "https://app.srail.or.kr/ara/ara0101v.do" for request in seen)
+    assert all(
+        request.headers["referer"] == "https://app.srail.or.kr/ara/ara0101v.do"
+        for request in seen
+    )
     assert [page.raw for page in pages] == [
         load_text_fixture(fixture) for _path, fixture, _payload in expected
     ]
@@ -400,9 +408,14 @@ def test_search_uses_act10_and_search_endpoint(load_json_fixture, load_text_fixt
     # Two searches: each acquires a key (5101) and releases its slot (5004)
     # once the guarded POST is done -- the app's TS_AUTO_COMPLETE behaviour.
     assert _netfunnel_opcodes(calls) == ["5101", "5004", "5101", "5004"]
-    assert all(str(request.url).endswith("&1712345678901") for request in calls if request.url.path == "/ts.wseq")
+    assert all(
+        str(request.url).endswith("&1712345678901")
+        for request in calls
+        if request.url.path == "/ts.wseq"
+    )
     assert sum(
-        request.method == "GET" and request.url.path == "/ara/selectListAra10007_n.do" for request in calls
+        request.method == "GET" and request.url.path == "/ara/selectListAra10007_n.do"
+        for request in calls
     ) == 2
     search_posts = [request for request in calls if request.method == "POST"]
     for request in search_posts:
@@ -721,7 +734,11 @@ def test_iter_continuation_net000001_refreshes_only_failing_cursor_once(
             key = "FIRST" if _acquisitions(calls) == 1 else "SECOND"
             return httpx.Response(200, text=f"NetFunnel.gControl.result='5101:200:key={key}';")
         if request.method == "GET":
-            key = "FIRST" if sum(call.method == "GET" and call.url.path != "/ts.wseq" for call in calls) == 1 else "SECOND"
+            key = (
+                "FIRST"
+                if sum(call.method == "GET" and call.url.path != "/ts.wseq" for call in calls) == 1
+                else "SECOND"
+            )
             return httpx.Response(
                 200,
                 text=(
@@ -771,9 +788,13 @@ def test_iter_continuation_second_net000001_raises_without_replaying_first_page(
         if request.url.host == "nf.letskorail.com":
             return httpx.Response(200, text="NetFunnel.gControl.result='5101:200:key=NF';")
         if request.method == "GET":
-            return httpx.Response(200, text='<form><input name="unknownField" value="keep-me"></form>')
+            return httpx.Response(
+                200, text='<form><input name="unknownField" value="keep-me"></form>'
+            )
         post_count += 1
-        post_cursors.append(dict(parse_qsl(request.content.decode(), keep_blank_values=True))["dptTm"])
+        post_cursors.append(
+            dict(parse_qsl(request.content.decode(), keep_blank_values=True))["dptTm"]
+        )
         if post_count == 1:
             return httpx.Response(200, json=_paginated_search_response(["060000"], "Y"))
         return httpx.Response(200, json=load_json_fixture("search_netfunnel_failure.json"))
@@ -926,7 +947,9 @@ def test_net000001_repeats_full_flow_once_with_fresh_keys(load_json_fixture, loa
             return httpx.Response(200, json=load_json_fixture("search_netfunnel_failure.json"))
         return httpx.Response(200, json=load_json_fixture("search_success.json"))
 
-    client = SrtClient(SrtConfig(), transport=httpx.MockTransport(handler), clock=lambda: 1712345678.901)
+    client = SrtClient(
+        SrtConfig(), transport=httpx.MockTransport(handler), clock=lambda: 1712345678.901
+    )
     result = client.search_trains(TrainSearchQuery("0551", "0020", "20260710"))
     assert result.trains[0].train_no == "303"
     # Each attempt of _search_once releases its own slot before the next one

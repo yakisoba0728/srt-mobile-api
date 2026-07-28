@@ -1,4 +1,4 @@
-from .redaction import redact_text, redact_url
+from .redaction import redact_url
 
 
 class SrtApiError(Exception):

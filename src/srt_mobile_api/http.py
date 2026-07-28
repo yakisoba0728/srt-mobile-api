@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
 
@@ -13,7 +14,6 @@ from .consent import (
 )
 from .errors import (
     SrtAppError,
-    SrtAuthError,
     SrtIpBlockedError,
     SrtMutationNotAllowedError,
     SrtProtocolError,
@@ -114,7 +114,9 @@ class SrtHttpClient:
                 and "Your IP Address Blocked" in response.text
             ):
                 raise SrtIpBlockedError(response.text.strip()) from None
-            raise SrtProtocolError("Expected JSON object but response body was not valid JSON") from None
+            raise SrtProtocolError(
+                "Expected JSON object but response body was not valid JSON"
+            ) from None
         if not isinstance(payload, dict):
             raise SrtProtocolError("Expected JSON object but received a non-object JSON payload")
         return payload
@@ -160,7 +162,9 @@ class SrtHttpClient:
                 f"SRT HTTP {response.status_code} redirect for {method.upper()} {request.url.path}"
             )
         if response.is_error:
-            raise SrtTransportError(f"SRT HTTP {response.status_code} for {method.upper()} {request.url.path}")
+            raise SrtTransportError(
+                f"SRT HTTP {response.status_code} for {method.upper()} {request.url.path}"
+            )
         return response
 
     def get_text(

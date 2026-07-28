@@ -22,7 +22,7 @@ import httpx
 import pytest
 
 from srt_mobile_api import SrtClient, SrtConfig
-from srt_mobile_api.errors import SrtNetFunnelError
+from srt_mobile_api.errors import SrtNetFunnelError, SrtProtocolError
 from srt_mobile_api.netfunnel import (
     MAX_TTL_SECONDS,
     NETFUNNEL_OPCODES,
@@ -37,7 +37,6 @@ from srt_mobile_api.netfunnel import (
     queue_wait_seconds,
 )
 from srt_mobile_api.safety import assert_read_only_request
-from srt_mobile_api.errors import SrtProtocolError
 
 
 NF = SrtConfig().netfunnel_url

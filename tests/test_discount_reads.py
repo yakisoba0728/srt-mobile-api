@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from srt_mobile_api import SrtClient, SrtConfig
+from srt_mobile_api.consent import MUTATION_CATEGORIES
 from srt_mobile_api.errors import SrtProtocolError, SrtSessionExpiredError
 from srt_mobile_api.models import (
     DiscountCoupon,
@@ -15,17 +16,16 @@ from srt_mobile_api.parsers import (
     parse_discount_coupon_page,
     parse_public_discount_page,
 )
-from srt_mobile_api.consent import MUTATION_CATEGORIES
 from srt_mobile_api.safety import (
     COUPON_LIST_PATH,
     PUBLIC_DISCOUNT_PAGE_PATH,
     PUBLIC_DISCOUNT_SEARCH_PATH,
     READ_ONLY_ROUTES,
-    MutationRoute,
-    ReadOnlyRoute,
     SRT_LIVE_MUTATION_CATEGORIES,
     SRT_MUTATION_ROUTE_CATEGORIES,
     SRT_MUTATION_ROUTES,
+    MutationRoute,
+    ReadOnlyRoute,
     assert_mutation_route,
     assert_mutation_route_category,
 )

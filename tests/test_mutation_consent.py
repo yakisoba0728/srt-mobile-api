@@ -17,7 +17,6 @@ from srt_mobile_api import (
     MutationConsent,
     MutationPreview,
     PassengerCounts,
-    SeatType,
     SrtClient,
     SrtConfig,
     SrtMutationNotAllowedError,

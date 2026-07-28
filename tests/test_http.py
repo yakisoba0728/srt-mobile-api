@@ -43,7 +43,10 @@ def test_normalize_result_row_accepts_list_and_object():
 
 
 def test_extract_text_collapses_html_text():
-    assert extract_text("<html><body><h1>열차조회</h1><p>  test </p></body></html>") == "열차조회 test"
+    assert (
+        extract_text("<html><body><h1>열차조회</h1><p>  test </p></body></html>")
+        == "열차조회 test"
+    )
 
 
 def test_get_json_returns_object():
@@ -99,7 +102,9 @@ def test_post_form_raises_protocol_error_for_invalid_json_when_json_is_requested
 
 def test_post_form_returns_html_when_html_is_requested():
     def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="<html><body>ok</body></html>", headers={"content-type": "text/html"})
+        return httpx.Response(
+            200, text="<html><body>ok</body></html>", headers={"content-type": "text/html"}
+        )
 
     client = SrtHttpClient(SrtConfig(), transport=httpx.MockTransport(handler))
 

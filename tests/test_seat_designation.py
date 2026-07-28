@@ -46,16 +46,17 @@ from srt_mobile_api.payloads import (
     transfer_reservation_payload,
 )
 from srt_mobile_api.safety import (
+    READ_ONLY_ROUTES,
     SEAT_GRID_PATH,
     SRT_LIVE_MUTATION_CATEGORIES,
     SRT_MUTATION_ROUTE_CATEGORIES,
     SRT_MUTATION_ROUTES,
     MutationRoute,
-    READ_ONLY_ROUTES,
     ReadOnlyRoute,
     assert_mutation_route,
     assert_read_only_request,
 )
+
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SEAT_GRID_ROUTE = "/arc/selectListArc02011_n.do"

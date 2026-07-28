@@ -324,7 +324,7 @@ none of it was dropped.
 | [docs/internal/](docs/internal/) | Development history — audits, superseded plans and design specs. Not user documentation; see its own `README.md`. |
 | [SECURITY.md](SECURITY.md) | Credential handling, what must never be committed, and how to report a problem. |
 | [CHANGELOG.md](CHANGELOG.md) | Historical record, superseded in place rather than rewritten. |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | The offline test gate, the evidence tiers a change needs, and what changing the mutation-consent safety model specifically requires. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | The three offline gates (tests, `ruff check`, pyright), the evidence tiers a change needs, and what changing the mutation-consent safety model specifically requires. |
 | [NOTICE](NOTICE) | What this project studied in reference clients, and why nothing was copied from them. |
 
 Operator tooling lives in `scripts/`: `srt_app_api_smoke.py` (read-only smoke
