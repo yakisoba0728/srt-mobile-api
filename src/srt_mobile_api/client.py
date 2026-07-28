@@ -600,35 +600,29 @@ class SrtClient:
         return self.http.get_text_url(url, referer=referer)
 
     def _get_act10_key(self, referer: str) -> str:
-        """Acquire an ``act_10`` queue key, WAITING if the queue engages.
+        """``act_10`` 대기열 키를 받는다. 줄이 서 있으면 정해진 한도 안에서 기다린다.
 
-        Sends ``getTidChkEnter`` (5101) once. A pass (200, or a 300 bypass that
-        carries no key) returns immediately, which is what happens at normal
-        load and is the only outcome this repository has ever observed live.
+        ``getTidChkEnter``(5101)를 한 번 보낸다. 통과(200, 또는 키 없는 300 우회)면
+        곧바로 돌아온다. 평상시 부하에서는 이쪽이다.
 
-        A 201/202 means we are actually in line, and the app's answer to that is
-        to poll ``chkEnter`` (5002) until admitted
-        (``_showResultChkEnter`` arms ``setTimeout(chkEnterCont, ttl * 1000)``).
-        Before this, we simply failed there and the search died of a queue that
-        was working as designed.
+        201/202 는 실제로 줄에 섰다는 뜻이고, 앱은 입장할 때까지 ``chkEnter``(5002)를
+        폴링한다(``_showResultChkEnter`` 가 ``setTimeout(chkEnterCont, ttl * 1000)``
+        을 건다).
 
-        The loop is BOUNDED, unlike the app's. The app polls forever behind a
-        wait popup a human can close; a library has no such escape hatch, so
-        both a poll count (:data:`~srt_mobile_api.netfunnel.QUEUE_POLL_LIMIT`)
-        and a wall-clock budget
-        (:data:`~srt_mobile_api.netfunnel.QUEUE_WAIT_LIMIT_SECONDS`) cap it, and
-        whichever is reached first raises :class:`SrtNetFunnelError` rather than
-        waiting on. Each wait is the server's own ``ttl``, clamped to the app's
-        1..5s (``TS_MAX_TTL``), so this cannot become a tight retry loop — which
-        matters, because tight retries against a queue are exactly the traffic
-        shape that earns an IP block.
+        **폴링에 한도가 있다는 점이 앱과 다르다.** 앱은 사람이 닫을 수 있는 대기
+        팝업 뒤에서 무한히 폴링하지만 라이브러리에는 그런 탈출구가 없다. 그래서 폴링
+        횟수(:data:`~srt_mobile_api.netfunnel.QUEUE_POLL_LIMIT`)와 실시간 예산
+        (:data:`~srt_mobile_api.netfunnel.QUEUE_WAIT_LIMIT_SECONDS`) 둘로 막고, 먼저
+        닿는 쪽에서 더 기다리지 않고 :class:`SrtNetFunnelError` 를 올린다. 대기 간격은
+        서버가 준 ``ttl`` 을 앱과 같이 1~5초로 자른 값이라(``TS_MAX_TTL``) 촘촘한
+        재시도 루프가 될 수 없다 — 대기열을 향한 촘촘한 재시도가 바로 IP 차단을 부르는
+        트래픽이다.
 
-        Every acquired key is recorded so it can be released with ``setComplete``
-        once the guarded request is done; see :meth:`_release_netfunnel_slots`.
+        받은 키는 기록해 두었다가 요청이 끝나면 ``setComplete`` 로 반납한다
+        (:meth:`_release_netfunnel_slots`).
 
-        **Live status: the polling path is OFFLINE-TESTED ONLY.** At normal load
-        the SRT queue does not engage, so no run of this code has seen a 201,
-        and load was deliberately not synthesised to force one.
+        **폴링 경로는 실제로 대기가 걸린 적이 없다.** 평상시 부하에서는 SRT 대기열이
+        작동하지 않아 이 코드가 201 을 받아 본 적이 없다.
         """
         body = self._netfunnel_get(
             build_act10_url(
@@ -678,20 +672,18 @@ class SrtClient:
         return key
 
     def _hold_netfunnel_key(self, previous: str | None, key: str) -> str:
-        """Register ``key`` as the slot we hold, retiring ``previous``.
+        """지금 잡고 있는 대기열 자리를 ``key`` 로 바꾸고 ``previous`` 는 놓는다.
 
-        Kept separate so that acquisition and release stay symmetric no matter
-        which path leaves :meth:`_get_act10_key`: whatever this has recorded is
-        exactly what :meth:`_release_netfunnel_slots` will send ``setComplete``
-        for.
+        따로 떼어 둔 이유는 :meth:`_get_act10_key` 가 어느 경로로 빠져나가든 획득과
+        반납이 어긋나지 않게 하기 위해서다 — 여기 기록된 것이 곧
+        :meth:`_release_netfunnel_slots` 가 ``setComplete`` 를 보낼 대상이다.
 
-        ``key`` is a ``str`` and never ``None``: every value passed in comes from
-        :attr:`~srt_mobile_api.models.NetFunnelToken.key`, which
-        :func:`~srt_mobile_api.netfunnel._parse_result_token` builds with
-        ``params.get("key", "")``. "No key" is therefore the EMPTY STRING -- what
-        a 300 bypass yields -- and the falsiness tests here and in
-        :meth:`_get_act10_key` are about that, not about ``None``. ``previous``
-        stays optional because the first acquisition has nothing to retire.
+        ``key`` 는 ``str`` 이고 ``None`` 이 오지 않는다. 넘어오는 값이 전부
+        :attr:`~srt_mobile_api.models.NetFunnelToken.key` 이고 그것은
+        ``params.get("key", "")`` 로 만들어지기 때문이다. **"키 없음"은 빈 문자열이고**
+        (300 우회가 그렇다) 여기와 :meth:`_get_act10_key` 의 참거짓 검사는 ``None`` 이
+        아니라 그것을 본다. ``previous`` 만 선택인 것은 첫 획득에는 놓을 자리가 없기
+        때문이다.
         """
         if previous == key:
             return key
@@ -702,19 +694,18 @@ class SrtClient:
         return key
 
     def _release_netfunnel_slots(self, referer: str) -> None:
-        """Send ``setComplete`` (5004) for every key we still hold. Best effort.
+        """아직 잡고 있는 키마다 ``setComplete``(5004)를 보내 자리를 반납한다.
 
-        Without this our place in line is held until it times out, and at peak
-        load that is queue pollution we caused. ``TS_AUTO_COMPLETE = true`` in
-        the bundle's own config, so the app releases automatically too.
+        반납하지 않으면 그 자리는 시간이 다 될 때까지 붙잡혀 있고, 혼잡할 때 그것은
+        우리가 만든 대기열 오염이다. 번들 설정도 ``TS_AUTO_COMPLETE = true`` 라 앱은
+        자동으로 반납한다.
 
-        Deliberately swallows everything. A release is housekeeping that happens
-        AFTER the caller's real request has already succeeded or failed on its
-        own terms; letting a failed release replace that outcome would mean a
-        successful search reported as an error because we could not tidy up. It
-        is also unbounded-retry-free by construction: each key is popped before
-        it is sent, so a failure drops the key rather than queueing another
-        attempt.
+        **모든 예외를 삼킨다.** 반납은 호출자의 진짜 요청이 이미 성공했거나 실패한
+        **뒤에** 하는 뒷정리다. 여기서 난 오류가 그 결과를 덮으면, 뒤처리를 못 했다는
+        이유로 성공한 검색이 오류로 보고된다.
+
+        구조상 무한 재시도도 되지 않는다. 키를 꺼낸 다음에 보내므로 실패하면 그 키는
+        버려지지 다시 줄을 서지 않는다.
         """
         while self._netfunnel_slots:
             key = self._netfunnel_slots.pop()
@@ -1302,28 +1293,18 @@ class SrtClient:
         consent: MutationConsent,
         netfunnel_key: str | None,
     ) -> MutationPreview | SrtReservationHold:
-        """The one reservation send path, shared by :meth:`reserve` and :meth:`reserve_transfer`.
+        """예약을 보내는 단 하나의 경로. :meth:`reserve` 와
+        :meth:`reserve_transfer` 가 함께 쓴다.
 
-        Extracted rather than copied because every safety property of a
-        reservation lives here — the consent gate, the session requirement, the
-        no-I/O dry run, the single NetFunnel acquisition, the guaranteed slot
-        release, the never-retry rule, and the PNR-salvaging parse. A second
-        body deserves a second builder, not a second copy of that list; the app
-        itself keeps one ``#rsvForm`` for every reservation shape.
-        ``build_form`` is called with the NetFunnel key exactly once, and only
-        after the key exists, so no form is ever built twice or sent twice. It
-        is HANDED the authenticated session rather than left to reach back for
-        ``self.session.current`` itself: the session requirement is checked
-        here, and a builder that re-read the attribute would be relying on a
-        guard in another function that stays true only because
-        :meth:`_session_guard` re-raises anything that clears it. Passing the
-        object makes the dependency the signature's business.
+        예약의 안전 속성이 전부 여기 모여 있다 — consent 게이트, 세션 필수,
+        I/O 없는 dry-run, NetFunnel 키 1회 획득, 자리 반납 보장, 재시도 없음, 그리고
+        모양이 어긋나도 PNR 만은 건지는 파싱. 앱도 예약 모양마다 폼을 만들지 않고
+        ``#rsvForm`` 하나를 쓴다.
 
-        ``route`` stays a parameter even though both callers now pass the same
-        URL: it keeps each public method's target visible where that method is
-        defined, which is the pairing
-        :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTE_CATEGORIES` re-checks at
-        the send boundary.
+        ``build_form`` 은 키가 생긴 **뒤에 정확히 한 번** 불린다. 폼이 두 번 만들어지지도
+        두 번 보내지지도 않는다는 뜻이다. 인증된 세션을 인자로 건네받는 것도 같은
+        이유다 — 세션 검사는 여기서 하고, 빌더가 ``self.session.current`` 를 다시 읽으면
+        다른 함수의 가드에 기대게 된다.
         """
         require_mutation_consent(consent, "reserve")
         session = self.session.current

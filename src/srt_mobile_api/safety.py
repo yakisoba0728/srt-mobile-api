@@ -24,12 +24,11 @@ class MutationRoute:
 
 
 SEAT_PAGE_PATH = "/arc/selectListArc02012_n.do"
-# 환불 1단계. Its whole documented contract is "POST with NO body at all" — the
-# Referer carries the PNR and the body is empty. That is enforced rather than
-# merely written down, because this is the one read route whose neighbours in a
-# caller's mind are a card payment and a refund: without a body check,
-# ``post_form`` would happily send a PAN or a ticket return password to this
-# path, which is allowlisted. See _assert_empty_body_request.
+# 환불 1단계. 계약 전체가 "본문이 전혀 없는 POST" 다 -- PNR 은 Referer 로 가고 본문은
+# 비어 있다. 그것을 적어만 두지 않고 검사하는 이유는, 허용 목록에 든 읽기 경로 가운데
+# 호출자의 머릿속에서 카드결제·환불과 나란히 놓이는 것이 여기 하나이기 때문이다.
+# 본문 검사가 없으면 post_form 이 카드번호나 승차권 반환 비밀번호를 이 경로로 그대로
+# 실어 보낸다. _assert_empty_body_request 참고.
 REFUND_TICKET_INFO_PATH = "/atc/getListAtc14087.do"
 SEAT_PAGE_FIELDS = frozenset(
     {
@@ -535,13 +534,15 @@ SRT_MUTATION_ROUTE_CATEGORIES = {
 
 
 def assert_mutation_route(method: str, path: str) -> None:
-    """Allow only the four evidenced state-changing routes (host "app", POST).
+    """등록된 상태변경 경로가 아니면 전송을 막는다.
 
-    This is the mutation counterpart to :func:`assert_read_only_request`, used
-    solely by the dedicated mutation send path. A route must be an exact member
-    of :data:`SRT_MUTATION_ROUTES`; anything else — including a read-only route —
-    is rejected, so the mutation send path can never be repurposed to reach an
-    arbitrary or read endpoint.
+    :func:`assert_read_only_request` 의 상태변경 쪽 짝이고, 전용 전송 경로만
+    호출한다. ``method``/``path`` 가 :data:`SRT_MUTATION_ROUTES` 의 항목과 정확히
+    같아야 하며(호스트는 앱, 메서드는 POST), 그 밖의 것은 **읽기 전용 경로라도**
+    거절한다. ``path`` 에 스킴·호스트·질의·프래그먼트가 붙어 있어도 거절이다.
+
+    이렇게 두 목록을 갈라 놓으면 상태변경 전송 경로를 임의의 엔드포인트나 읽기
+    엔드포인트로 돌려 쓸 수 없다. 어기면 :class:`SrtProtocolError` 다.
     """
     parsed = urlsplit(path)
     if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
@@ -557,11 +558,15 @@ def assert_mutation_route(method: str, path: str) -> None:
 
 
 def assert_mutation_route_category(path: str, category: str) -> None:
-    """Ensure ``category`` is the one that owns mutation route ``path``.
+    """상태변경 경로와 동의 범주가 짝이 맞는지 본다.
 
-    Raises :class:`SrtProtocolError` when the path is not a known mutation route
-    or when the caller's category does not match the route's category, so a
-    per-category consent cannot be redirected to a different category's route.
+    :data:`SRT_MUTATION_ROUTE_CATEGORIES` 는 경로 하나에 범주 하나를 못박은 표다.
+    ``path`` 가 그 표에 없거나 ``category`` 가 그 경로의 주인이 아니면
+    :class:`SrtProtocolError` 다.
+
+    :func:`assert_mutation_route` 와 따로 있는 이유는 막는 것이 다르기 때문이다.
+    그쪽은 등록되지 않은 경로를 막고, 이쪽은 범주별 동의를 남의 경로에 돌려쓰는 것을
+    막는다 — 예약에만 동의한 consent 로 환불 경로를 두드릴 수 없다.
     """
     parsed_path = urlsplit(path).path
     expected = SRT_MUTATION_ROUTE_CATEGORIES.get(parsed_path)
@@ -596,12 +601,16 @@ def _assert_exact_form_contract(
     fixed_values: dict[str, str],
     value_patterns: dict[str, str],
 ) -> None:
-    """Require a POST read's body to be EXACTLY one registered form contract.
+    """POST 읽기의 본문이 등록된 폼 계약과 **정확히** 같은지 본다.
 
-    Shared by the seat page and the seat grid, which are the same kind of route:
-    a POST read whose body is a fixed set of journey identifiers. Extracted
-    rather than copied so that a second such route cannot be registered with a
-    quietly weaker check than the first.
+    필드 집합이 ``fields`` 와 한 글자도 다르지 않아야 하고 — 모자라도, 남아도, 같은
+    이름이 두 번 와도 거절이다 — ``fixed_values`` 의 필드는 정해진 값이어야 하며,
+    ``value_patterns`` 의 필드는 그 정규식에 처음부터 끝까지 맞아야 한다. 본문은 URL
+    인코딩 폼이어야 하고 URL 질의 문자열은 못 쓴다.
+
+    좌석 페이지와 좌석배치도가 같이 쓴다. 둘 다 본문이 여정 식별자 고정 집합인 POST
+    읽기라서, 같은 검사를 한 곳에 두어 나중에 등록되는 경로가 더 느슨한 검사를 갖는
+    일이 없게 한다. 어기면 :class:`SrtProtocolError` 다.
     """
     if b"?" in request.url.raw_path:
         raise SrtProtocolError(f"SRT {context} request must not use URL query parameters")
@@ -809,12 +818,11 @@ CARD_SECRET_FIELDS = frozenset(
 
 
 def _carried_card_secret_fields(request: httpx.Request) -> set[str]:
-    """The card-secret field names appearing in a request's body or query.
+    """요청의 본문이나 질의에 나타난 카드 비밀정보 필드명을 모은다.
 
-    Matched as raw substrings rather than by parsing, so a body this library
-    would not otherwise decode (a different encoding, a nested payload) cannot
-    smuggle one past. These names are distinctive enough that a substring match
-    has no realistic false positive.
+    파싱하지 않고 **날바이트 부분문자열**로 찾는다. 이 라이브러리가 해독하지 않을
+    본문(다른 인코딩, 중첩된 페이로드)에 숨겨 지나가는 일을 막기 위해서다. 이름들이
+    충분히 특이해서 부분문자열 대조로 인한 오탐은 현실적으로 없다.
     """
     haystack = request.url.raw_path + b"\n" + request.content
     return {
@@ -823,7 +831,12 @@ def _carried_card_secret_fields(request: httpx.Request) -> set[str]:
 
 
 def assert_no_card_secrets(request: httpx.Request) -> None:
-    """Refuse any request carrying card secrets. See :data:`CARD_SECRET_FIELDS`."""
+    """카드 비밀정보를 실은 요청을 거절한다 — 결제 경로만 예외다.
+
+    :data:`CARD_SECRET_FIELDS`(카드번호·카드 비밀번호·유효기간·생년월일) 가운데
+    하나라도 실려 있으면 :class:`SrtProtocolError` 다. 결제가 아닌 요청에 카드가
+    실리는 경로 자체를 없애는 검사이므로, 결제 경로에서는 부르지 않는다.
+    """
     carried = _carried_card_secret_fields(request)
     if carried:
         raise SrtProtocolError(
@@ -836,18 +849,17 @@ def assert_no_card_secrets(request: httpx.Request) -> None:
 
 
 def _assert_empty_body_request(request: httpx.Request) -> None:
-    """Require a POST read whose contract is "no body" to actually carry none.
+    """본문이 없어야 하는 POST 읽기가 정말로 아무것도 싣지 않았는지 본다.
 
-    The read-only guard otherwise validates the ROUTE and not the BODY, which is
-    fine for reads whose bodies are ordinary query parameters. It is not fine
-    for :data:`REFUND_TICKET_INFO_PATH`: that route is allowlisted, sits in the
-    middle of the refund flow, and its neighbours in a caller's mind are a card
-    payment and a refund form. Without this check ``post_form`` would transmit
-    whatever mapping it was handed to an allowlisted path — a PAN, a card PIN or
-    a ticket return password included — with no gate anywhere refusing it,
-    because none of the mutation gates apply to a read route.
+    :data:`REFUND_TICKET_INFO_PATH`(환불 1단계)의 계약은 "본문 없는 POST" 다 — PNR 은
+    Referer 로 가고 본문은 비어 있다. 본문이 있거나 URL 질의가 붙으면
+    :class:`SrtProtocolError` 다.
 
-    So the emptiness the docstrings claim is enforced here rather than trusted.
+    읽기 전용 가드는 경로만 보고 본문은 보지 않는다. 본문이 평범한 조회 파라미터인
+    읽기라면 그것으로 충분하지만 이 경로는 다르다. 허용 목록에 든 읽기 경로이면서
+    환불 흐름 한가운데 있어서, 이 검사가 없으면 ``post_form`` 이 넘겨받은 매핑을
+    — 카드번호든 카드 비밀번호든 승차권 반환 비밀번호든 — 그대로 실어 보낸다.
+    상태변경 게이트는 읽기 경로에 걸리지 않으므로 아무 데서도 막히지 않는다.
     """
     if request.content:
         raise SrtProtocolError(

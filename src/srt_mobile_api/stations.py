@@ -1,13 +1,14 @@
-"""Static SRT/korail station code -> name table.
+"""역 코드 -> 역 이름 정적 표 (SRT·korail 공용).
 
-Direct copy of the app's client-side ``stationList`` (offline
-``js/stationInfo.js``), used to reproduce ``getStnNameByCd`` (offline
-``sub/main.html:613``): resolve a station name from its code, returning ``""``
-for an unknown code. The app builds ``stnCourseNm`` for the timetable/fare
-requests as ``getStnNameByCd(dptRsStnCd) + "-" + getStnNameByCd(arvRsStnCd)``
-(``js/ara/ara1001l.js:1176-1185`` timetable, ``:1203-1218`` fare), so both names
-are resolved purely from codes. This table is generated from that ground-truth
-source; do not hand-edit.
+앱이 클라이언트에 들고 다니는 ``stationList``(오프라인 ``js/stationInfo.js``)를 그대로
+옮긴 것이다. 서버에 묻지 않고 코드만으로 이름을 푼다.
+
+이 표가 필요한 이유는 시각표·운임 요청이 역 이름을 문자열로 요구하기 때문이다. 앱은
+``stnCourseNm`` 을 ``getStnNameByCd(dptRsStnCd) + "-" + getStnNameByCd(arvRsStnCd)``
+로 만든다(시각표 ``js/ara/ara1001l.js:1176-1185``, 운임 ``:1203-1218``). 즉 두 이름
+모두 코드에서만 나온다.
+
+**손으로 고치지 마라.** 위 원본에서 생성한 표다.
 """
 
 STATION_NAMES_BY_CODE: dict[str, str] = {
@@ -358,20 +359,18 @@ STATION_NAMES_BY_CODE: dict[str, str] = {
 }
 
 
-#: The 17 station codes ``stationList`` flags ``gubun == "SRT"``
-#: (``js/stationInfo.js:29-45``). Every other code in
-#: :data:`STATION_NAMES_BY_CODE` -- including ones SRT trains physically pass
-#: through -- is ``gubun == "korail"`` there instead.
+#: ``stationList`` 에서 ``gubun == "SRT"`` 로 표시된 역 코드
+#: (``js/stationInfo.js:29-45``). :data:`STATION_NAMES_BY_CODE` 의 나머지 코드는 —
+#: SRT 열차가 실제로 지나가는 역이라 해도 — 거기서 ``gubun == "korail"`` 이다.
 #:
-#: This is the SAME set the app's own ``lfn_isKorailStn`` (offline
-#: ``sub/main.html:568-578``) tests: it scans ``stationList`` for an entry
-#: with ``gubun == "SRT"`` matching the code and returns ``False`` (i.e. "not
-#: Korail") only on a hit, ``True`` otherwise -- so a code absent from this
-#: set counts as "코레일" for that function, regardless of whether
-#: :data:`STATION_NAMES_BY_CODE` happens to know its name. It gates the 왕복
-#: (round trip) checkbox: ``ara0101v.js:337-341`` calls ``lfn_isKorailStn`` on
-#: both the departure and arrival station and refuses the round trip if
-#: either comes back ``True``.
+#: 앱의 ``lfn_isKorailStn``(오프라인 ``sub/main.html:568-578``)이 보는 집합과 같다.
+#: 그 함수는 ``stationList`` 를 훑어 코드가 맞는 ``gubun == "SRT"`` 항목을 찾으면
+#: ``False``("코레일 역이 아니다")를, 못 찾으면 ``True`` 를 준다. 그러므로 이 집합에
+#: 없는 코드는 :data:`STATION_NAMES_BY_CODE` 가 이름을 알든 모르든 코레일 역으로
+#: 취급된다.
+#:
+#: 이 구분이 실제로 쓰이는 곳은 왕복 체크박스다. ``ara0101v.js:337-341`` 은 출발역과
+#: 도착역 양쪽에 ``lfn_isKorailStn`` 을 걸어, 하나라도 ``True`` 면 왕복을 막는다.
 SRT_STATION_CODES: frozenset[str] = frozenset(
     {
         "0036",  # 광주송정
@@ -396,10 +395,12 @@ SRT_STATION_CODES: frozenset[str] = frozenset(
 
 
 def station_name_by_code(code: str | None) -> str:
-    """Return the station name for ``code``, or ``""`` if unknown.
+    """역 코드를 이름으로 바꾼다. 모르는 코드는 빈 문자열이다.
 
-    Mirrors the app's ``getStnNameByCd`` (offline ``sub/main.html:613-621``),
-    which linearly scans ``stationList`` and returns ``""`` on no match.
+    **모르는 코드에 예외를 올리지 않는다.** 앱의 ``getStnNameByCd``
+    (오프라인 ``sub/main.html:613-621``)가 ``stationList`` 를 훑다가 못 찾으면 ``""``
+    를 주는 것과 같은 동작이다. ``code`` 는 앞뒤 공백이 있어도 되고, 문자열이 아니면
+    역시 ``""`` 다.
     """
     if not isinstance(code, str):
         return ""
