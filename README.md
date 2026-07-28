@@ -68,6 +68,12 @@ client.close()
 `SrtConfig` 는 타임아웃·User-Agent·기기키용이며 `app.srail.or.kr` 와 NetFunnel
 원점(`nf.letskorail.com`) 외의 주소는 거부합니다.
 
+기기키 기본값은 `ANDROID_ID` 모양의 자리채움 값입니다. 실기기 값을 쓰려면
+`SRT_DEVICE_KEY` 로 넘기고, 값은 `adb shell settings get secure android_id` 로
+읽으면 됩니다. 안드로이드 8부터 이 값은 앱 서명키별로 갈리므로 `adb shell` 이 보는
+것과 SRT 앱이 보는 것은 다릅니다 — 여기서 중요한 건 진짜냐가 아니라 실행 간에
+안정적이냐입니다.
+
 ### 타입이 좁혀진 파라미터
 
 셋은 export 된 `Literal` 별칭이라 오타가 타입 오류가 됩니다. 응답에서 읽어 온 코드는 좁히지
