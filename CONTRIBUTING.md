@@ -5,7 +5,7 @@
 이 클라이언트는 실제로 운영 중인 공공 서비스를 리버스 엔지니어링한 것이다.
 mutation(`reserve`, `cancel`, `pay_with_card`, `refund`,
 `register_discount_coupon`)에 닿는 코드를 쓰기 전에 [SECURITY.md](SECURITY.md)
-와 [README.md](README.md) 의 "Nothing sends by accident" 절을 읽어라.
+와 [README.md](README.md) 의 "안전 모델" 절을 읽어라.
 평소 개발 과정에서 `app.srail.or.kr` 로 실제 요청을 보내지 마라 — 이 저장소의
 릴리스 절차 자체가 그것을 금지하며([docs/RELEASE.md](docs/RELEASE.md)), pull
 request 에 실요청이 들어가서는 안 된다.
@@ -79,7 +79,7 @@ docstring 이나 커밋 메시지에 적혀 있어야 한다. "테스트가 통�
 `pay_with_card`, `refund`, `register_discount_coupon` 은 독립된 네 겹(consent
 객체, `dry_run`, 범주별 opt-in, 전송 계층 차단 스위치
 `safety.SRT_LIVE_MUTATION_CATEGORIES`)으로 잠겨 있고, 그 구조는 README 의
-"Nothing sends by accident" 에 있다. `consent.py`, `safety.py`,
+"안전 모델" 에 있다. `consent.py`, `safety.py`,
 `MutationConsent`, `assert_mutation_route`, `assert_mutation_route_category`,
 `assert_no_card_secrets`, `SRT_LIVE_MUTATION_CATEGORIES` 중 하나라도 건드린다면
 
