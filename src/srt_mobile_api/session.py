@@ -68,8 +68,11 @@ class SrtSessionClient:
                 referer=f"{self.http.config.base_url}/login/login.do",
             )
             user_map = response.get("userMap")
-            authenticated = isinstance(user_map, dict) and user_map.get("RTNCD") == "Y"
-            if not authenticated:
+            # Spelled as one negated condition rather than via an `authenticated`
+            # flag so the success path below is provably reached only with
+            # user_map a dict -- the same test, stated where a reader (and a type
+            # checker) can see that SrtSession never receives a non-mapping.
+            if not isinstance(user_map, dict) or user_map.get("RTNCD") != "Y":
                 # On a failed login the app reads the TOP-LEVEL MSG and treats it as an
                 # auth failure (srtgo srt.py:716,718 -> raise SRTLoginError(r.json()["MSG"])
                 # for both non-existent-member and wrong-password cases; MSG is sibling to

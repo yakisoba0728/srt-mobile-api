@@ -498,13 +498,21 @@ class SrtClient:
             key = self._hold_netfunnel_key(key, token.key or key)
         return key
 
-    def _hold_netfunnel_key(self, previous: str | None, key: str | None) -> str | None:
+    def _hold_netfunnel_key(self, previous: str | None, key: str) -> str:
         """Register ``key`` as the slot we hold, retiring ``previous``.
 
         Kept separate so that acquisition and release stay symmetric no matter
         which path leaves :meth:`_get_act10_key`: whatever this has recorded is
         exactly what :meth:`_release_netfunnel_slots` will send ``setComplete``
         for.
+
+        ``key`` is a ``str`` and never ``None``: every value passed in comes from
+        :attr:`~srt_mobile_api.models.NetFunnelToken.key`, which
+        :func:`~srt_mobile_api.netfunnel._parse_result_token` builds with
+        ``params.get("key", "")``. "No key" is therefore the EMPTY STRING -- what
+        a 300 bypass yields -- and the falsiness tests here and in
+        :meth:`_get_act10_key` are about that, not about ``None``. ``previous``
+        stays optional because the first acquisition has nothing to retire.
         """
         if previous == key:
             return key
@@ -1118,7 +1126,7 @@ class SrtClient:
     def _submit_reservation(
         self,
         route: str,
-        build_form: Callable[[str], dict[str, str]],
+        build_form: Callable[[str, SrtSession], dict[str, str]],
         *,
         consent: MutationConsent,
         netfunnel_key: str | None,
@@ -1132,7 +1140,13 @@ class SrtClient:
         body deserves a second builder, not a second copy of that list; the app
         itself keeps one ``#rsvForm`` for every reservation shape.
         ``build_form`` is called with the NetFunnel key exactly once, and only
-        after the key exists, so no form is ever built twice or sent twice.
+        after the key exists, so no form is ever built twice or sent twice. It
+        is HANDED the authenticated session rather than left to reach back for
+        ``self.session.current`` itself: the session requirement is checked
+        here, and a builder that re-read the attribute would be relying on a
+        guard in another function that stays true only because
+        :meth:`_session_guard` re-raises anything that clears it. Passing the
+        object makes the dependency the signature's business.
 
         ``route`` stays a parameter even though both callers now pass the same
         URL: it keeps each public method's target visible where that method is
@@ -1141,7 +1155,8 @@ class SrtClient:
         the send boundary.
         """
         require_mutation_consent(consent, "reserve")
-        if self.session.current is None:
+        session = self.session.current
+        if session is None:
             raise SrtAuthError("SRT reservation requires an authenticated session")
         if consent.dry_run:
             # Built inside the dry-run branch with the caller's key (or none):
@@ -1150,7 +1165,7 @@ class SrtClient:
                 category="reserve",
                 method="POST",
                 route=route,
-                payload=build_form(netfunnel_key or ""),
+                payload=build_form(netfunnel_key or "", session),
             )
         # The booking page is the referer search uses for its own act_10
         # acquisition (_prepare_search), and reserve gates on the same key, so
@@ -1173,7 +1188,7 @@ class SrtClient:
             # builds inside its guard, _search_public_discount_once builds
             # before acquiring.
             try:
-                form = build_form(key)
+                form = build_form(key, session)
                 response = self.http.post_mutation_form(
                     route,
                     form,
@@ -1371,11 +1386,11 @@ class SrtClient:
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
-            # membership_number is read here, not defaulted, because
-            # _submit_reservation only calls this closure after it has already
-            # confirmed self.session.current is not None (both the dry-run and
-            # the live branch build_form calls happen after that check).
-            lambda key: personal_reservation_payload(
+            # membership_number is read off the session _submit_reservation
+            # hands in, not defaulted and not re-read from self.session.current:
+            # that session is the one its own None-check already passed, so the
+            # read cannot be the None the check exists to refuse.
+            lambda key, session: personal_reservation_payload(
                 train,
                 passengers or PassengerCounts(),
                 seat_type=seat_type,
@@ -1385,7 +1400,7 @@ class SrtClient:
                 round_trip=round_trip,
                 designated_seats=designated_seats,
                 seat_attr_code=seat_attr_code,
-                membership_number=self.session.current.membership_number,
+                membership_number=session.membership_number,
             ),
             consent=consent,
             netfunnel_key=netfunnel_key,
@@ -1482,7 +1497,9 @@ class SrtClient:
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
-            lambda key: transfer_reservation_payload(
+            # The session is unused here: 환승 carries no mbCrdNo field (the
+            # 국회의원 후급 check is 왕복's, and 왕복 does not compose with 환승).
+            lambda key, _session: transfer_reservation_payload(
                 itinerary,
                 passengers or PassengerCounts(),
                 seat_type=seat_type,

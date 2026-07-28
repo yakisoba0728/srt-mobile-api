@@ -53,7 +53,7 @@ Check the install with the offline suite, which touches no network:
 python3 -m pytest -q -m "not live"
 ```
 
-At `HEAD` that reports `1750 passed, 1 deselected`. The single deselected case
+At `HEAD` that reports `1751 passed, 1 deselected`. The single deselected case
 is the live-service test, which additionally requires an explicit
 `SRT_MOBILE_API_LIVE=1`. `-m "not live"` is the same gate CI and
 [docs/RELEASE.md](docs/RELEASE.md) use.

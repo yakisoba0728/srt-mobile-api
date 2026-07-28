@@ -25,10 +25,17 @@ a ``.timeDiff`` rule for it, ``custom.css:4431``) and ``fn_postSearch`` has no
 transfer branch, so no test here asserts a response shape for a transfer search.
 
 No network: every send goes through ``httpx.MockTransport``.
+
+One test at the bottom reaches past 환승 deliberately: the session guard on
+``_submit_reservation`` is shared by ``reserve`` and ``reserve_transfer``, and
+proving it for only one of the two would prove it for neither. It lives here
+because this is the file that already builds both a ``TransferItinerary`` and a
+direct train.
 """
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import inspect
 
@@ -1332,3 +1339,61 @@ def test_search_transfer_trains_returns_paired_itineraries_end_to_end():
         (itinerary.first_leg.train_no, itinerary.second_leg.train_no)
         for itinerary in result.itineraries
     ] == [("382", "411"), ("14", "475"), ("316", "655")]
+
+
+# --- the session guard both reservation shapes share -------------------------
+
+
+def _reservation_entry_points() -> set[str]:
+    """Every ``SrtClient`` method that sends through ``_submit_reservation``.
+
+    Read off the source instead of listed here so a third reservation shape
+    cannot inherit the shared session guard without this file noticing that the
+    guard was never proved for it.
+    """
+    tree = ast.parse(inspect.getsource(SrtClient))
+    return {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and any(
+            isinstance(inner.func, ast.Attribute)
+            and inner.func.attr == "_submit_reservation"
+            for inner in ast.walk(node)
+            if isinstance(inner, ast.Call)
+        )
+    }
+
+
+def test_reserving_without_a_session_raises_srtautherror_not_attributeerror():
+    # personal_reservation_payload is handed membership_number off the session,
+    # and that read is only safe because _submit_reservation refuses a None
+    # session before any builder runs. Nothing exercised that refusal -- a type
+    # checker found the unguarded-looking read before any test did -- so both
+    # entry points prove it here, and in BOTH consent modes: a dry run builds a
+    # full form without I/O and would have reached the same read.
+    calls = {
+        "reserve": lambda client, consent: client.reserve(
+            _direct_train(), consent=consent, passengers=PassengerCounts(adult=1)
+        ),
+        "reserve_transfer": lambda client, consent: client.reserve_transfer(
+            _itinerary(), consent=consent, passengers=PassengerCounts(adult=1)
+        ),
+    }
+    assert set(calls) == _reservation_entry_points()
+
+    for name, call in calls.items():
+        for consent in (
+            MutationConsent(dry_run=True, allow_reserve=True),
+            _live(allow_reserve=True),
+        ):
+            client, recorder = _client({})
+            client.session.current = None
+            with pytest.raises(SrtAuthError) as excinfo:
+                call(client, consent)
+            assert "authenticated session" in str(excinfo.value), name
+            # And nothing went out: the refusal precedes the NetFunnel
+            # acquisition, so a caller who cannot book never takes a place in
+            # the queue it would then have to give back.
+            assert recorder.requests == [], name
+            assert client._netfunnel_slots == [], name
