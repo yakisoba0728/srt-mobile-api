@@ -98,9 +98,9 @@ Station codes come from `srt_mobile_api.stations`
 timeout, user agent and device key, and refuses to point at anything other than
 the two canonical SRT origins.
 
-**If you also use `korail-mobile-api` in the same project, two names collide.**
-This package and its KORAIL sibling each export a `TrainSearchQuery` and a
-`DiscountCoupon`, and the two are not interchangeable — they are different
+**If you also use `korail-mobile-api` in the same project, three names collide.**
+This package and its KORAIL sibling each export a `TrainSearchQuery`, a
+`DiscountCoupon` and a `MutationCategory`, and the three are not interchangeable — they are different
 types with different shapes, and importing the wrong one type-checks but
 builds the wrong request. Here, `TrainSearchQuery.passengers` is a
 `PassengerCounts` and `departure_time` defaults to `"060000"`; KORAIL's
@@ -109,7 +109,17 @@ departure time is `"000000"`. They keep these names because each reads
 naturally inside its own package; import both in one module and use the
 package-qualified form (`srt_mobile_api.TrainSearchQuery` vs.
 `korail_mobile_api.TrainSearchQuery`) rather than a bare `from ... import
-TrainSearchQuery` on both.
+TrainSearchQuery` on both. `MutationCategory` is the same story in the type
+system: this package's has five members and KORAIL's seven, and the four they
+share make the wrong import type-check.
+
+Three parameter types are `Literal` aliases rather than `str`, so an editor
+completes their values and a typo is an error rather than a request:
+`SrtSeatAttrCode` (`reserve`, `reserve_transfer`), `SrtTrainGroupCode`
+(`TrainSearchQuery.train_group_code`, `get_train_group_selector`) and
+`MutationCategory` (`require_mutation_consent`). All three are exported, so a
+caller can annotate their own wrappers with them. Nothing else is narrowed —
+codes read off a response stay `str`, because the server is free to invent one.
 
 ## What it can do
 
@@ -159,9 +169,12 @@ section.
   전동휠체어 and `"015"` an ordinary seat. Omit it and the reservation takes
   the code the row was FOUND with, so searching for wheelchair inventory and
   reserving a row out of those results agree by default. The search itself
-  validates nothing — `TrainSearchQuery.seat_attr_code` is forwarded as given
-  — but the reservation accepts only these three, which are the ones SRT
-  dispatches on.
+  validates nothing — `TrainSearchQuery.seat_attr_code` is a plain `str` and is
+  forwarded as given — but the reservation accepts only these three, which are
+  the ones SRT dispatches on, and its parameter is typed `SrtSeatAttrCode` so a
+  type checker completes them and rejects a fourth. That asymmetry is
+  deliberate: the query field is narrowed nowhere because nothing narrows it at
+  runtime either.
 - `reserve(train, designated_seats=..., consent=...)` — 좌석지정 (`jobId=1103`),
   taking a `SeatDesignation` built by `SeatGrid.choose("1B", "2C")`.
 - `reserve_transfer(itinerary, consent=...)` — 환승; one request, two journeys.
