@@ -1,3 +1,21 @@
+"""요청 입력과 응답 결과의 값 타입 전부.
+
+SRT 앱은 WebView 껍데기라 서버가 돌려주는 것이 대개 렌더링된 HTML 이다.
+:mod:`srt_mobile_api.parsers` 가 그 HTML 에서 뽑아낸 값이 여기 있는 frozen
+dataclass 로 들어온다. 원본 페이지가 필요할 때를 위해
+:class:`HtmlPage` 계열이 따로 있다.
+
+여기 있는 것은 값 객체일 뿐이라 아무것도 전송하지 않는다. 상태를 바꾸려면
+:class:`~srt_mobile_api.consent.MutationConsent` 로 범주를 열어야 한다.
+
+민감한 필드 — 카드번호, 카드 비밀번호, 생년월일, PNR, 쿠폰번호, NetFunnel
+키 — 는 ``repr`` 에서 빠지므로 객체를 그대로 찍어도 값이 새지 않는다.
+
+전선에 실릴 값은 만들 때 검사한다. 역코드·날짜·시각 같은 자리는 ASCII
+숫자열이어야 하고(:func:`_is_digits`), 코드값 셋(:data:`SrtTrainGroupCode`,
+:data:`SrtSeatAttrCode`)은 ``Literal`` 별칭이면서 런타임에서도 다시 좁혀진다.
+"""
+
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Literal

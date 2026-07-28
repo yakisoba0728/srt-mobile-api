@@ -1,3 +1,18 @@
+""":class:`SrtClient` — 이 패키지에 하나뿐인 진입점.
+
+여기에는 클래스가 하나뿐이다. 폼을 만드는 일은
+:mod:`srt_mobile_api.payloads`, 서버가 렌더링한 HTML 을 값으로 바꾸는 일은
+:mod:`srt_mobile_api.parsers` 에 있고 이 모듈은 그 둘을 라우트 하나에 엮는다.
+
+공개 메서드는 두 종류뿐이다. 로그인·읽기 메서드는 인자만 받고, 상태를 바꾸는
+여섯(``reserve``, ``reserve_transfer``, ``cancel``, ``pay_with_card``,
+``refund``, ``register_discount_coupon``)은 키워드 전용 ``consent`` 를 함께
+요구한다. 후자는 예외 없이
+:func:`~srt_mobile_api.consent.require_mutation_consent` 로 시작하므로 폼을
+만들기도 전에 거절되고, 전송 직전에 :mod:`srt_mobile_api.safety` 가 경로·범주·
+카드 비밀값을 다시 검사한다.
+"""
+
 from __future__ import annotations
 
 import dataclasses

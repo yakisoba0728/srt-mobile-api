@@ -1,3 +1,13 @@
+"""접속 설정 — :class:`SrtConfig` 하나와 그것이 고정하는 두 오리진.
+
+기본값은 앱 v2.0.41 이 보내는 값이라 그대로 쓰면 된다. 이 모듈이 하는 실제
+일은 값을 담는 것보다 오리진을 좁히는 쪽이다. ``base_url`` 과
+``netfunnel_url`` 은 :data:`APP_ORIGIN` 과 :data:`NETFUNNEL_ORIGIN` 이어야
+하고, 통과한 값은 표준형으로 다시 쓰인다. :mod:`srt_mobile_api.safety` 의
+경로 검사가 그 표준형을 전제로 하므로, 이 클라이언트를 임의의 호스트로 돌릴
+방법은 없다.
+"""
+
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 

@@ -1,3 +1,22 @@
+"""요청이 프로세스를 떠나기 전에 통과해야 하는 검사들.
+
+경로는 필터가 아니라 **허용목록**이다. :data:`READ_ONLY_ROUTES` 에 없는 읽기
+요청은 :func:`assert_read_only_request` 가 거절하고, 상태를 바꾸는 경로
+다섯은 일부러 그 바깥에 있어 구조적으로 읽기 경로를 탈 수 없다. 상태변경
+경로는 :data:`SRT_MUTATION_ROUTE_CATEGORIES` 로 각각 정확히 한 범주에 묶이므로
+한 범주의 consent 를 다른 범주의 엔드포인트에 겨눌 수 없다
+(:func:`assert_mutation_route`, :func:`assert_mutation_route_category`).
+
+경로만으로는 부족한 자리가 둘 있다. 폼 본문이 정해진 키 집합과 값 형태를
+그대로 지키는지 보는 경로별 정확계약(좌석 페이지, 좌석배치도, 공공할인 조회,
+NetFunnel 질의)과, 카드 비밀값이 ``payment`` 범주로만 움직이게 하는
+:func:`assert_no_card_secrets` 다. 뒤쪽은 경로가 아니라 본문을 보므로, 손으로
+조립한 카드 폼을 읽기 경로나 ``reserve`` consent 에 실어 빼돌릴 수 없다.
+
+:data:`SRT_LIVE_MUTATION_CATEGORIES` 는 이와 별개의 차단 스위치다. consent 가
+무엇을 허용하든, 이 집합 밖의 범주는 전송 경로에서 거절된다.
+"""
+
 import re
 from collections import Counter
 from dataclasses import dataclass
