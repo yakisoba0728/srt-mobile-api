@@ -8,4 +8,4 @@
 %}
 
 예외 클래스 하나하나의 설명과 코드 매핑은
-[reference/errors](reference/errors.md) 에 있다.
+[reference/errors](reference/errors.md) 에 있습니다.

@@ -16,5 +16,5 @@
   heading-offset=-1
 %}
 
-동의 객체와 범주 이름은 [API 레퍼런스](reference/index.md) 에 있다 —
+동의 객체와 범주 이름은 [API 레퍼런스](reference/index.md) 에 있습니다 —
 `MutationConsent`, `MutationCategory`, `require_mutation_consent`.
