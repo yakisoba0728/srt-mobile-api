@@ -1,20 +1,20 @@
 """요청이 프로세스를 떠나기 전에 통과해야 하는 검사들.
 
-경로는 필터가 아니라 **허용목록**이다. :data:`READ_ONLY_ROUTES` 에 없는 읽기
-요청은 :func:`assert_read_only_request` 가 거절하고, 상태를 바꾸는 경로
-다섯은 일부러 그 바깥에 있어 구조적으로 읽기 경로를 탈 수 없다. 상태변경
-경로는 :data:`SRT_MUTATION_ROUTE_CATEGORIES` 로 각각 정확히 한 범주에 묶이므로
-한 범주의 consent 를 다른 범주의 엔드포인트에 겨눌 수 없다
+경로는 필터가 아니라 **허용목록**입니다. :data:`READ_ONLY_ROUTES` 에 없는 읽기
+요청은 :func:`assert_read_only_request` 가 거절하고, 상태를 바꾸는 경로 다섯은
+일부러 그 바깥에 있어 구조적으로 읽기 경로를 탈 수 없습니다. 상태변경 경로는
+:data:`SRT_MUTATION_ROUTE_CATEGORIES` 로 각각 정확히 한 범주에 묶이므로 한 범주의
+consent 를 다른 범주의 엔드포인트에 겨눌 수 없습니다
 (:func:`assert_mutation_route`, :func:`assert_mutation_route_category`).
 
-경로만으로는 부족한 자리가 둘 있다. 폼 본문이 정해진 키 집합과 값 형태를
+경로만으로는 부족한 자리가 둘 있습니다. 폼 본문이 정해진 키 집합과 값 형태를
 그대로 지키는지 보는 경로별 정확계약(좌석 페이지, 좌석배치도, 공공할인 조회,
-NetFunnel 질의)과, 카드 비밀값이 ``payment`` 범주로만 움직이게 하는
-:func:`assert_no_card_secrets` 다. 뒤쪽은 경로가 아니라 본문을 보므로, 손으로
-조립한 카드 폼을 읽기 경로나 ``reserve`` consent 에 실어 빼돌릴 수 없다.
+NetFunnel 질의), 그리고 카드 비밀값이 ``payment`` 범주로만 움직이게 하는
+:func:`assert_no_card_secrets` 입니다. 뒤쪽은 경로가 아니라 본문을 보므로, 손으로
+조립한 카드 폼을 읽기 경로나 ``reserve`` consent 에 실어 빼돌릴 수 없습니다.
 
-:data:`SRT_LIVE_MUTATION_CATEGORIES` 는 이와 별개의 차단 스위치다. consent 가
-무엇을 허용하든, 이 집합 밖의 범주는 전송 경로에서 거절된다.
+:data:`SRT_LIVE_MUTATION_CATEGORIES` 는 이와 별개의 차단 스위치입니다. consent 가
+무엇을 허용하든, 이 집합 밖의 범주는 전송 경로에서 거절됩니다.
 """
 
 import re
@@ -553,15 +553,13 @@ SRT_MUTATION_ROUTE_CATEGORIES = {
 
 
 def assert_mutation_route(method: str, path: str) -> None:
-    """등록된 상태변경 경로가 아니면 전송을 막는다.
+    """등록된 상태변경 경로가 아니면 전송을 막습니다.
 
-    :func:`assert_read_only_request` 의 상태변경 쪽 짝이고, 전용 전송 경로만
-    호출한다. ``method``/``path`` 가 :data:`SRT_MUTATION_ROUTES` 의 항목과 정확히
-    같아야 하며(호스트는 앱, 메서드는 POST), 그 밖의 것은 **읽기 전용 경로라도**
-    거절한다. ``path`` 에 스킴·호스트·질의·프래그먼트가 붙어 있어도 거절이다.
-
-    이렇게 두 목록을 갈라 놓으면 상태변경 전송 경로를 임의의 엔드포인트나 읽기
-    엔드포인트로 돌려 쓸 수 없다. 어기면 :class:`SrtProtocolError` 다.
+    :func:`assert_read_only_request` 의 상태변경 쪽 짝입니다. ``method``/``path`` 가
+    :data:`SRT_MUTATION_ROUTES` 의 항목과 정확히 같아야 하며(호스트는 앱, 메서드는
+    POST), 그 밖의 것은 **읽기 전용 경로라도** 거절합니다. ``path`` 에 스킴·호스트·
+    질의·프래그먼트가 붙어 있어도 거절입니다. 어기면 :class:`SrtProtocolError`
+    입니다.
     """
     parsed = urlsplit(path)
     if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
@@ -577,15 +575,15 @@ def assert_mutation_route(method: str, path: str) -> None:
 
 
 def assert_mutation_route_category(path: str, category: str) -> None:
-    """상태변경 경로와 동의 범주가 짝이 맞는지 본다.
+    """상태변경 경로와 동의 범주가 짝이 맞는지 봅니다.
 
-    :data:`SRT_MUTATION_ROUTE_CATEGORIES` 는 경로 하나에 범주 하나를 못박은 표다.
+    :data:`SRT_MUTATION_ROUTE_CATEGORIES` 는 경로 하나에 범주 하나를 못박은 표입니다.
     ``path`` 가 그 표에 없거나 ``category`` 가 그 경로의 주인이 아니면
-    :class:`SrtProtocolError` 다.
+    :class:`SrtProtocolError` 입니다.
 
-    :func:`assert_mutation_route` 와 따로 있는 이유는 막는 것이 다르기 때문이다.
-    그쪽은 등록되지 않은 경로를 막고, 이쪽은 범주별 동의를 남의 경로에 돌려쓰는 것을
-    막는다 — 예약에만 동의한 consent 로 환불 경로를 두드릴 수 없다.
+    :func:`assert_mutation_route` 가 등록되지 않은 경로를 막는다면, 이쪽은 범주별
+    동의를 남의 경로에 돌려쓰는 것을 막습니다 — 예약에만 동의한 consent 로 환불
+    경로를 두드릴 수 없습니다.
     """
     parsed_path = urlsplit(path).path
     expected = SRT_MUTATION_ROUTE_CATEGORIES.get(parsed_path)
@@ -620,16 +618,16 @@ def _assert_exact_form_contract(
     fixed_values: dict[str, str],
     value_patterns: dict[str, str],
 ) -> None:
-    """POST 읽기의 본문이 등록된 폼 계약과 **정확히** 같은지 본다.
+    """POST 읽기의 본문이 등록된 폼 계약과 **정확히** 같은지 봅니다.
 
     필드 집합이 ``fields`` 와 한 글자도 다르지 않아야 하고 — 모자라도, 남아도, 같은
-    이름이 두 번 와도 거절이다 — ``fixed_values`` 의 필드는 정해진 값이어야 하며,
-    ``value_patterns`` 의 필드는 그 정규식에 처음부터 끝까지 맞아야 한다. 본문은 URL
-    인코딩 폼이어야 하고 URL 질의 문자열은 못 쓴다.
+    이름이 두 번 와도 거절입니다 — ``fixed_values`` 의 필드는 정해진 값이어야 하며,
+    ``value_patterns`` 의 필드는 그 정규식에 처음부터 끝까지 맞아야 합니다. 본문은
+    URL 인코딩 폼이어야 하고 URL 질의 문자열은 못 씁니다.
 
-    좌석 페이지와 좌석배치도가 같이 쓴다. 둘 다 본문이 여정 식별자 고정 집합인 POST
-    읽기라서, 같은 검사를 한 곳에 두어 나중에 등록되는 경로가 더 느슨한 검사를 갖는
-    일이 없게 한다. 어기면 :class:`SrtProtocolError` 다.
+    좌석 페이지와 좌석배치도가 같이 씁니다. 나중에 등록되는 경로가 더 느슨한 검사를
+    갖는 일이 없도록 한 곳에 모아 둔 것입니다. 어기면 :class:`SrtProtocolError`
+    입니다.
     """
     if b"?" in request.url.raw_path:
         raise SrtProtocolError(f"SRT {context} request must not use URL query parameters")
@@ -837,11 +835,11 @@ CARD_SECRET_FIELDS = frozenset(
 
 
 def _carried_card_secret_fields(request: httpx.Request) -> set[str]:
-    """요청의 본문이나 질의에 나타난 카드 비밀정보 필드명을 모은다.
+    """요청의 본문이나 질의에 나타난 카드 비밀정보 필드명을 모읍니다.
 
-    파싱하지 않고 **날바이트 부분문자열**로 찾는다. 이 라이브러리가 해독하지 않을
-    본문(다른 인코딩, 중첩된 페이로드)에 숨겨 지나가는 일을 막기 위해서다. 이름들이
-    충분히 특이해서 부분문자열 대조로 인한 오탐은 현실적으로 없다.
+    파싱하지 않고 **날바이트 부분문자열**로 찾습니다. 이 라이브러리가 해독하지 않을
+    본문(다른 인코딩, 중첩된 페이로드)에 숨겨 지나가는 일을 막기 위해서입니다.
+    이름들이 충분히 특이해서 부분문자열 대조로 인한 오탐은 현실적으로 없습니다.
     """
     haystack = request.url.raw_path + b"\n" + request.content
     return {
@@ -850,11 +848,11 @@ def _carried_card_secret_fields(request: httpx.Request) -> set[str]:
 
 
 def assert_no_card_secrets(request: httpx.Request) -> None:
-    """카드 비밀정보를 실은 요청을 거절한다 — 결제 경로만 예외다.
+    """카드 비밀정보를 실은 요청을 거절합니다 — 결제 경로만 예외입니다.
 
     :data:`CARD_SECRET_FIELDS`(카드번호·카드 비밀번호·유효기간·생년월일) 가운데
-    하나라도 실려 있으면 :class:`SrtProtocolError` 다. 결제가 아닌 요청에 카드가
-    실리는 경로 자체를 없애는 검사이므로, 결제 경로에서는 부르지 않는다.
+    하나라도 실려 있으면 :class:`SrtProtocolError` 입니다. 결제가 아닌 요청에 카드가
+    실리는 경로 자체를 없애는 검사이므로, 결제 경로에서는 부르지 않습니다.
     """
     carried = _carried_card_secret_fields(request)
     if carried:
@@ -868,17 +866,17 @@ def assert_no_card_secrets(request: httpx.Request) -> None:
 
 
 def _assert_empty_body_request(request: httpx.Request) -> None:
-    """본문이 없어야 하는 POST 읽기가 정말로 아무것도 싣지 않았는지 본다.
+    """본문이 없어야 하는 POST 읽기가 정말로 아무것도 싣지 않았는지 봅니다.
 
-    :data:`REFUND_TICKET_INFO_PATH`(환불 1단계)의 계약은 "본문 없는 POST" 다 — PNR 은
-    Referer 로 가고 본문은 비어 있다. 본문이 있거나 URL 질의가 붙으면
-    :class:`SrtProtocolError` 다.
+    :data:`REFUND_TICKET_INFO_PATH`(환불 1단계)의 계약은 "본문 없는 POST" 입니다 —
+    PNR 은 Referer 로 가고 본문은 비어 있습니다. 본문이 있거나 URL 질의가 붙으면
+    :class:`SrtProtocolError` 입니다.
 
-    읽기 전용 가드는 경로만 보고 본문은 보지 않는다. 본문이 평범한 조회 파라미터인
-    읽기라면 그것으로 충분하지만 이 경로는 다르다. 허용 목록에 든 읽기 경로이면서
-    환불 흐름 한가운데 있어서, 이 검사가 없으면 ``post_form`` 이 넘겨받은 매핑을
-    — 카드번호든 카드 비밀번호든 승차권 반환 비밀번호든 — 그대로 실어 보낸다.
-    상태변경 게이트는 읽기 경로에 걸리지 않으므로 아무 데서도 막히지 않는다.
+    읽기 전용 가드는 경로만 보고 본문은 보지 않습니다. 이 경로는 허용 목록에 든 읽기
+    경로이면서 환불 흐름 한가운데 있어서, 이 검사가 없으면 ``post_form`` 이 넘겨받은
+    매핑을 — 카드번호든 카드 비밀번호든 승차권 반환 비밀번호든 — 그대로 실어
+    보냅니다. 상태변경 게이트는 읽기 경로에 걸리지 않으므로 아무 데서도 막히지
+    않습니다.
     """
     if request.content:
         raise SrtProtocolError(

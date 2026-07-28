@@ -399,4 +399,4 @@ def test_the_docstring_does_not_promise_that_both_flags_must_be_inverted():
     assert "두 쪽을 다 적어야" not in doc
     assert "needs both halves stated" not in doc
     assert "정확히 하나" in doc
-    assert "아무것도 제한하지 않는다" in doc
+    assert "아무것도 제한하지 않습니다" in doc

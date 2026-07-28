@@ -1,14 +1,13 @@
 """역 코드 -> 역 이름 정적 표 (SRT·korail 공용).
 
 앱이 클라이언트에 들고 다니는 ``stationList``(오프라인 ``js/stationInfo.js``)를 그대로
-옮긴 것이다. 서버에 묻지 않고 코드만으로 이름을 푼다.
+옮긴 것입니다. 서버에 묻지 않고 코드만으로 이름을 풉니다.
 
-이 표가 필요한 이유는 시각표·운임 요청이 역 이름을 문자열로 요구하기 때문이다. 앱은
+시각표·운임 요청이 역 이름을 문자열로 요구하기 때문에 필요합니다. 앱은
 ``stnCourseNm`` 을 ``getStnNameByCd(dptRsStnCd) + "-" + getStnNameByCd(arvRsStnCd)``
-로 만든다(시각표 ``js/ara/ara1001l.js:1176-1185``, 운임 ``:1203-1218``). 즉 두 이름
-모두 코드에서만 나온다.
+로 만듭니다(시각표 ``js/ara/ara1001l.js:1176-1185``, 운임 ``:1203-1218``).
 
-**손으로 고치지 마라.** 위 원본에서 생성한 표다.
+**손으로 고치면 안 됩니다.** 위 원본에서 생성한 표입니다.
 """
 
 STATION_NAMES_BY_CODE: dict[str, str] = {
@@ -361,16 +360,17 @@ STATION_NAMES_BY_CODE: dict[str, str] = {
 
 #: ``stationList`` 에서 ``gubun == "SRT"`` 로 표시된 역 코드
 #: (``js/stationInfo.js:29-45``). :data:`STATION_NAMES_BY_CODE` 의 나머지 코드는 —
-#: SRT 열차가 실제로 지나가는 역이라 해도 — 거기서 ``gubun == "korail"`` 이다.
+#: SRT 열차가 실제로 지나가는 역이라 해도 — 거기서 ``gubun == "korail"`` 입니다.
 #:
-#: 앱의 ``lfn_isKorailStn``(오프라인 ``sub/main.html:568-578``)이 보는 집합과 같다.
+#: 앱의 ``lfn_isKorailStn``(오프라인 ``sub/main.html:568-578``)이 보는 집합과 같습니다.
 #: 그 함수는 ``stationList`` 를 훑어 코드가 맞는 ``gubun == "SRT"`` 항목을 찾으면
-#: ``False``("코레일 역이 아니다")를, 못 찾으면 ``True`` 를 준다. 그러므로 이 집합에
+#: ``False``("코레일 역이 아니다")를, 못 찾으면 ``True`` 를 줍니다. 그러므로 이 집합에
 #: 없는 코드는 :data:`STATION_NAMES_BY_CODE` 가 이름을 알든 모르든 코레일 역으로
-#: 취급된다.
+#: 취급됩니다.
 #:
-#: 이 구분이 실제로 쓰이는 곳은 왕복 체크박스다. ``ara0101v.js:337-341`` 은 출발역과
-#: 도착역 양쪽에 ``lfn_isKorailStn`` 을 걸어, 하나라도 ``True`` 면 왕복을 막는다.
+#: 이 구분이 실제로 쓰이는 곳은 왕복 체크박스입니다. ``ara0101v.js:337-341`` 은
+#: 출발역과 도착역 양쪽에 ``lfn_isKorailStn`` 을 걸어, 하나라도 ``True`` 면 왕복을
+#: 막습니다.
 SRT_STATION_CODES: frozenset[str] = frozenset(
     {
         "0036",  # 광주송정
@@ -395,12 +395,12 @@ SRT_STATION_CODES: frozenset[str] = frozenset(
 
 
 def station_name_by_code(code: str | None) -> str:
-    """역 코드를 이름으로 바꾼다. 모르는 코드는 빈 문자열이다.
+    """역 코드를 이름으로 바꿉니다. 모르는 코드는 빈 문자열입니다.
 
-    **모르는 코드에 예외를 올리지 않는다.** 앱의 ``getStnNameByCd``
+    **모르는 코드에 예외를 올리지 않습니다.** 앱의 ``getStnNameByCd``
     (오프라인 ``sub/main.html:613-621``)가 ``stationList`` 를 훑다가 못 찾으면 ``""``
-    를 주는 것과 같은 동작이다. ``code`` 는 앞뒤 공백이 있어도 되고, 문자열이 아니면
-    역시 ``""`` 다.
+    를 주는 것과 같습니다. ``code`` 는 앞뒤 공백이 있어도 되고, 문자열이 아니면 역시
+    ``""`` 입니다.
     """
     if not isinstance(code, str):
         return ""
