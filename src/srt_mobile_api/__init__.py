@@ -1,17 +1,17 @@
 """SRT 모바일 앱 API 파이썬 클라이언트의 공개면.
 
-여기서 import 할 수 있는 이름이 이 패키지가 지원하는 전부다. ``__all__`` 에
-없는 것은 하위 모듈에 있더라도 예고 없이 바뀐다.
+여기서 import 할 수 있는 이름이 이 패키지가 지원하는 전부입니다. ``__all__`` 에
+없는 것은 하위 모듈에 있더라도 예고 없이 바뀝니다.
 
-시작점은 셋이다 — :class:`~srt_mobile_api.client.SrtClient`(모든 호출),
+시작점은 셋입니다 — :class:`~srt_mobile_api.client.SrtClient`(모든 호출),
 :class:`~srt_mobile_api.config.SrtConfig`(타임아웃·User-Agent·기기키),
 :class:`~srt_mobile_api.consent.MutationConsent`(상태를 바꾸는 호출을 여는
 열쇠). SRT 앱은 WebView 껍데기라 응답 상당수가 서버가 렌더링한 HTML 이고,
-그것을 타입 붙은 값으로 바꾼 결과가 :mod:`srt_mobile_api.models` 다.
+그것을 타입 붙은 값으로 바꾼 결과가 :mod:`srt_mobile_api.models` 입니다.
 
 실패는 :class:`~srt_mobile_api.errors.SrtApiError` 아래로 모이며, 응답 본문의
 코드를 예외로 옮기는 규칙은
-:func:`~srt_mobile_api.errors.classify_app_error` 하나에 있다.
+:func:`~srt_mobile_api.errors.classify_app_error` 하나에 있습니다.
 """
 
 #: 배포된 버전. ``pyproject.toml`` 의 ``[project] version`` 과 같은지는

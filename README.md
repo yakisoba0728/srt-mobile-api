@@ -103,7 +103,7 @@ client.close()
 | `get_typed_notice_list` / `get_notice_list` / `get_main` / `get_station_selector` 외 | 공지(파싱본·원본)와 앱이 밟는 페이지·팝업 선택 화면들. |
 
 **상태변경 — `consent: MutationConsent` 가 키워드로 필요하고, 기본 `dry_run=True` 에서는
-`MutationPreview` 만 돌려줍니다.** [안전 모델](#안전-모델)을 먼저 읽어야 합니다.
+`MutationPreview` 만 돌려줍니다.** 아래 **안전 모델** 절을 먼저 읽어야 합니다.
 
 | 메서드 | 하는 일 |
 | --- | --- |
