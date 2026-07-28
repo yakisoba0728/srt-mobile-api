@@ -1,32 +1,29 @@
 """서버 응답을 읽어 모델로 바꾸는 곳 —— HTML 과 JSON 양쪽 다.
 
-:mod:`~srt_mobile_api.payloads` 가 내보내는 쪽이면 이쪽은 받는 쪽이다.
-:class:`~srt_mobile_api.client.SrtClient` 의 메서드는 대부분 payload 빌더 하나와
-여기의 파서 하나를 잇는다.
+:mod:`~srt_mobile_api.payloads` 가 내보내는 쪽이면 이쪽은 받는 쪽입니다.
 
-HTML 에서 요소를 찾는 일은 정규식이 아니라 표준 :mod:`html.parser` 로 한다.
-문서 구조를 보고 찾으므로 눈에 보이는 본문이나 주석에 같은 글자가 있다고 걸리지
-않는다. 정규식은 마크업이 아니라 **스크립트 안의 값**을 읽을 때만 쓴다 ——
-공공할인 승인 플래그(``var dataNCheck="…";``)와 시각표 행의 역 코드가 그렇다.
+HTML 에서 요소를 찾는 일은 정규식이 아니라 표준 :mod:`html.parser` 로 합니다.
+정규식은 마크업이 아니라 **스크립트 안의 값**을 읽을 때만 씁니다 —— 공공할인
+승인 플래그(``var dataNCheck="…";``)와 시각표 행의 역 코드가 그렇습니다.
 
 **이 모듈의 판단 기준 세 가지.**
 
-* *서버가 실패라고 말하면 실패다.* 응답이 HTTP 200 이고 겉모습이 정상 페이지여도
+* *서버가 실패라고 말하면 실패입니다.* HTTP 200 에 정상 페이지 모양이어도
   ``strResult``/``ErrorCode``/경고창 스크립트가 실패를 선언하면
-  :class:`~srt_mobile_api.errors.SrtAppError` 계열로 올린다.
-  :func:`~srt_mobile_api.errors.classify_app_error` 가 ``msgCd`` 를 보고 더
-  구체적인 하위 클래스를 고른다.
-* *모르는 것은 추측하지 않는다.* 알아볼 수 없는 봉투나 빠진 필수 필드는
-  :class:`~srt_mobile_api.errors.SrtProtocolError` 다. 원문은 예외의 ``raw`` 에
-  남는다.
-* *비어 있음은 실패가 아니다.* 다만 어느 응답이 "없음" 을 빈 배열로 말하고 어느
-  응답이 FAIL 로 말하는지는 경로마다 다르다 —— 검색은 FAIL, 예약 목록은 빈
-  배열이다. 각 파서 docstring 에 적어 두었다.
+  :class:`~srt_mobile_api.errors.SrtAppError` 계열로 올립니다.
+  :func:`~srt_mobile_api.errors.classify_app_error` 가 ``msgCd`` 로 하위 클래스를
+  고릅니다.
+* *모르는 것은 추측하지 않습니다.* 알아볼 수 없는 봉투나 빠진 필수 필드는
+  :class:`~srt_mobile_api.errors.SrtProtocolError` 이고, 원문은 예외의 ``raw``
+  에 남습니다.
+* *비어 있음은 실패가 아닙니다.* 다만 "없음" 을 빈 배열로 말하는지 FAIL 로
+  말하는지는 경로마다 다릅니다 —— 검색은 FAIL, 예약 목록은 빈 배열이며 각 파서
+  docstring 에 적어 두었습니다.
 
 세션이 끊긴 응답은 어느 파서에 들어가든
-:class:`~srt_mobile_api.errors.SrtSessionExpiredError` 로 바뀐다. 서버가 HTTP
-200 에 로그인 안내 페이지를 실어 보내기 때문에 :func:`is_unauthenticated_page`
-가 그 두 모양을 한곳에서 판별한다.
+:class:`~srt_mobile_api.errors.SrtSessionExpiredError` 로 바뀝니다. 서버가 HTTP
+200 에 로그인 안내 페이지를 실어 보내므로 :func:`is_unauthenticated_page` 가 그
+두 모양을 한곳에서 판별합니다.
 """
 
 from __future__ import annotations
@@ -207,8 +204,8 @@ def is_login_form(html: str, *, base_url: str = APP_ORIGIN) -> bool:
     """``html`` 에 진짜 로그인 폼이 들어 있는지.
 
     ``action`` 이 이 서버의 로그인 API(``/apb/selectListApb01080_n.do``)를
-    가리키는 ``<form>`` 안에 비밀번호 입력칸(``hmpgPwdCphd``)이 있어야 한다.
-    남의 출처를 가리키는 폼은 세지 않는다.
+    가리키는 ``<form>`` 안에 비밀번호 입력칸(``hmpgPwdCphd``)이 있어야 합니다.
+    남의 출처를 가리키는 폼은 세지 않습니다.
     """
     parser = _LoginFormParser(base_url=base_url)
     parser.feed(html)
@@ -242,10 +239,10 @@ _LOGIN_REDIRECT_CALL = "srtAlertBoxDivShow"
 
 
 class _LoginRedirectParser(HTMLParser):
-    """인증이 필요한 읽기에 서버가 "다시 로그인하라" 고 답한 페이지를 가려낸다.
+    """인증이 필요한 읽기에 서버가 "다시 로그인하라" 고 답한 페이지를 가려냅니다.
 
-    경고창 호출을 ``<script>`` 요소 **안에서만** 찾는다. 같은 글자가 본문이나
-    속성에 있다고 로그인 안내로 오해하지 않기 위해서다.
+    경고창 호출을 ``<script>`` 요소 **안에서만** 찾습니다. 같은 글자가 본문이나
+    속성에 있다고 로그인 안내로 오해하지 않기 위해서입니다.
     """
 
     def __init__(self) -> None:
@@ -273,8 +270,8 @@ class _LoginRedirectParser(HTMLParser):
 def is_login_redirect_page(html: str) -> bool:
     """서버가 "다시 로그인하라" 안내 페이지로 답했는지.
 
-    HTTP 200 에 평소와 같은 껍데기를 씌우고 스크립트로 경고창만 띄우는 응답이다.
-    로그인 **폼**은 들어 있지 않으므로 :func:`is_login_form` 으로는 보이지 않는다.
+    HTTP 200 에 평소와 같은 껍데기를 씌우고 스크립트로 경고창만 띄우는 응답입니다.
+    로그인 **폼**은 들어 있지 않으므로 :func:`is_login_form` 으로는 보이지 않습니다.
     """
     parser = _LoginRedirectParser()
     parser.feed(html)
@@ -284,20 +281,20 @@ def is_login_redirect_page(html: str) -> bool:
 def is_unauthenticated_page(html: str, *, base_url: str = APP_ORIGIN) -> bool:
     """``html`` 이 인증을 거절하는 응답인지 —— 세션 만료 판정의 유일한 관문.
 
-    서버가 실제로 쓰는 두 모양을 합집합으로 본다: 로그인 **폼**
+    서버가 실제로 쓰는 두 모양을 합집합으로 봅니다: 로그인 **폼**
     (:func:`is_login_form`)과 로그인 **안내** 페이지
-    (:func:`is_login_redirect_page`). 만료 검사는 전부 이 함수를 지난다 ——
-    폼만 보면 만료된 세션이 "빈 승차권 목록" 으로 읽힌다.
+    (:func:`is_login_redirect_page`). 만료 검사는 전부 이 함수를 지납니다 ——
+    폼만 보면 만료된 세션이 "빈 승차권 목록" 으로 읽힙니다.
     """
     return is_login_form(html, base_url=base_url) or is_login_redirect_page(html)
 
 
 def extract_text(html: str, *, limit: int | None = None) -> str:
-    """태그를 걷어 낸 텍스트. 공백은 한 칸으로 접는다.
+    """태그를 걷어 낸 텍스트. 공백은 한 칸으로 접습니다.
 
-    ``<script>``·``<style>`` 안의 내용도 **함께 섞여 나온다**. 사람이 읽는
-    본문만 남기는 함수가 아니라, 페이지에 어떤 문구가 있는지 확인하는 용도다.
-    ``limit`` 을 주면 그 길이로 자른다.
+    ``<script>``·``<style>`` 안의 내용도 **함께 섞여 나옵니다**. 사람이 읽는
+    본문만 남기는 함수가 아니라, 페이지에 어떤 문구가 있는지 확인하는 용도입니다.
+    ``limit`` 을 주면 그 길이로 자릅니다.
     """
     parser = _TextExtractor()
     parser.feed(html)
@@ -311,18 +308,18 @@ def parse_html_page(
     context: str,
     require_authenticated: bool = False,
 ) -> HtmlPage:
-    """HTML 응답을 :class:`~srt_mobile_api.models.HtmlPage` 로 감싼다.
+    """HTML 응답을 :class:`~srt_mobile_api.models.HtmlPage` 로 감쌉니다.
 
-    ``text`` 는 :func:`extract_text` 의 결과이고 ``raw`` 는 원문 그대로다. 이
-    페이지의 내용을 구조화하지는 않는다.
+    ``text`` 는 :func:`extract_text` 의 결과이고 ``raw`` 는 원문 그대로입니다. 이
+    페이지의 내용을 구조화하지는 않습니다.
 
-    빈 본문은 :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    빈 본문은 :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
     ``require_authenticated=True`` 면 로그인 요구 응답을
-    :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 로 올린다 —— 만료된
+    :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 로 올립니다 —— 만료된
     세션이 "내용 없는 페이지" 로 읽히지 않게 하는 검사이므로, 로그인이 필요한
-    읽기에는 켜야 한다.
+    읽기에는 켜야 합니다.
 
-    ``context`` 는 예외 메시지에 들어가는 짧은 이름이다("ticket list" 처럼).
+    ``context`` 는 예외 메시지에 들어가는 짧은 이름입니다("ticket list" 처럼).
     """
     if not html.strip():
         raise SrtProtocolError(f"SRT {context} returned an empty HTML body")
@@ -340,14 +337,14 @@ _SEAT_COUNT_RE = re.compile(r"\((?P<count>\d+)\s*석\)")
 
 
 class _SeatCarOptionParser(HTMLParser):
-    """호차 목록과 페이지 전체를 덮는 오류 경고를 한 번에 읽는다.
+    """호차 목록과 페이지 전체를 덮는 오류 경고를 한 번에 읽습니다.
 
-    둘을 같이 읽는 이유는 하나의 질문이기 때문이다 —— 이 페이지는 좌석을 가져
+    둘을 같이 읽는 이유는 하나의 질문이기 때문입니다 —— 이 페이지는 좌석을 가져
     왔는가, 거절을 가져왔는가.
 
-    경고는 스크립트 **전체**가 경고창 호출로 시작할 때만 오류로 본다. 정상
+    경고는 스크립트 **전체**가 경고창 호출로 시작할 때만 오류로 봅니다. 정상
     좌석 페이지도 같은 함수를 언급하지만 그것은 함수 본문 안이라 스크립트가
-    호출로 시작하지 않는다.
+    호출로 시작하지 않습니다.
     """
 
     def __init__(self) -> None:
@@ -421,29 +418,29 @@ class _SeatCarOptionParser(HTMLParser):
 
 
 def parse_seat_selection_page(html: str) -> SeatSelectionPage:
-    """좌석선택 페이지를 읽어 호차 목록을 뽑는다. 매진 페이지는 거절한다.
+    """좌석선택 페이지를 읽어 호차 목록을 뽑습니다. 매진 페이지는 거절합니다.
 
-    ``POST /arc/selectListArc02012_n.do`` 의 응답이다. 자리가 있는 열차면
-    ``<select id="selectScarNo">`` 에 호차별 잔여석이 실려 온다
+    ``POST /arc/selectListArc02012_n.do`` 의 응답입니다. 자리가 있는 열차면
+    ``<select id="selectScarNo">`` 에 호차별 잔여석이 실려 옵니다
     (``<option value='7'> 7호차 (2석) </option>``). 그 괄호 안 숫자가
     :attr:`~srt_mobile_api.models.SeatCarOption.available_seat_count` 이고,
-    없으면 ``None`` 이다.
+    없으면 ``None`` 입니다.
 
-    **매진 열차에는 서버가 껍데기를 준다.** 제목은 같고, 호차 select 도 폼도
-    없이 끝에 경고창 스크립트 하나만 붙는다::
+    **매진 열차에는 서버가 껍데기를 줍니다.** 제목은 같고, 호차 select 도 폼도
+    없이 끝에 경고창 스크립트 하나만 붙습니다::
 
         srtAlertBoxDivShow("알림", Sr.msgs.error001, null, "historyBack();");
 
-    이때는 :class:`~srt_mobile_api.errors.SrtSeatUnavailableError` 다. ``code``
-    는 그 경고 키(``error001``) —— 이 경로는 HTML 이라 ``msgCd`` 가 없다.
-    제목 문구는 두 경우 모두 있으므로 문구만으로는 구분되지 않는다.
+    이때는 :class:`~srt_mobile_api.errors.SrtSeatUnavailableError` 이고 ``code``
+    는 그 경고 키(``error001``)입니다 —— 이 경로는 HTML 이라 ``msgCd`` 가 없고,
+    제목 문구는 두 경우 모두 있어 문구만으로는 구분되지 않습니다.
 
-    **좌석배치도는 여기 없다.** 실제 페이지도 ``<div id="trnScarSeatInfo">`` 를
-    비워 두고, 호차를 고른 뒤 따로 불러온다 ——
-    :func:`parse_seat_grid_response` 다.
+    **좌석배치도는 여기 없습니다.** 실제 페이지도 ``<div id="trnScarSeatInfo">``
+    를 비워 두고 호차를 고른 뒤 따로 불러옵니다 ——
+    :func:`parse_seat_grid_response` 입니다.
 
     로그인이 필요하고, 페이지 표지가 없으면
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
     """
     page = parse_html_page(
         html,
@@ -496,11 +493,11 @@ _SEAT_GRID_REFUSAL_MARKER = "0"
 
 
 class _SeatGridParser(HTMLParser):
-    """좌석배치도의 ``choiceSeatNo`` 칸을 문서 순서대로 모은다.
+    """좌석배치도의 ``choiceSeatNo`` 칸을 문서 순서대로 모읍니다.
 
-    태그 이름이나 class 가 아니라 **onclick** 을 보고 좌석을 찾는다. 내부
+    태그 이름이나 class 가 아니라 **onclick** 을 보고 좌석을 찾습니다. 내부
     좌석번호와 표시용 좌석명이 함께 나오고 선택가능 Y/N 이 확정되는 곳이
-    거기뿐이기 때문이다. class 에서는 좌석속성코드만 읽으며, 없어도 된다
+    거기뿐이기 때문입니다. class 에서는 좌석속성코드만 읽으며, 없어도 됩니다
     (그때는 빈 문자열).
     """
 
@@ -532,29 +529,26 @@ class _SeatGridParser(HTMLParser):
 def parse_seat_grid_response(
     html: str, *, car_number: str = "", cabin_class: str = ""
 ) -> SeatGrid:
-    """호차 하나의 좌석배치도 조각(``/arc/selectListArc02011_n.do``)을 읽는다.
+    """호차 하나의 좌석배치도 조각(``/arc/selectListArc02011_n.do``)을 읽습니다.
 
-    응답은 페이지가 아니라 HTML **조각**이다 —— 좌석 페이지가 빈
-    ``<div id="trnScarSeatInfo">`` 에 끼워 넣는 것이라, 페이지 표지를 요구하지
-    않는다.
+    응답은 페이지가 아니라 HTML **조각**이라 페이지 표지를 요구하지 않습니다.
 
-    **``#`` 봉투는 파싱 실패가 아니라 서버의 거절이다.** 페이지 자신의 처리가
+    **``#`` 봉투는 파싱 실패가 아니라 서버의 거절입니다.** 페이지 자신의 처리가
     ``tmp = args.trim().split("#"); if (tmp[0] == "0") alert(tmp[1]);`` 이므로,
-    첫 조각이 정확히 ``"0"`` 인 본문은 배치도가 아니라 메시지다. 이때
+    첫 조각이 정확히 ``"0"`` 인 본문은 배치도가 아니라 메시지입니다. 이때
     :class:`~srt_mobile_api.errors.SrtSeatUnavailableError` 를 내고 ``code`` 는
-    봉투의 표시자 ``"0"`` 이다 —— 이 경로에는 ``msgCd`` 가 없다.
+    봉투의 표시자 ``"0"`` 입니다 —— 이 경로에는 ``msgCd`` 가 없습니다.
 
-    **그 메시지를 원인 진단으로 읽지 마라.** 확인된 거절 하나
+    **그 메시지를 원인 진단으로 읽지 않는 편이 좋습니다.** 확인된 거절 하나
     ("출발 20분 전부터 좌석이 자동배정됩니다…")는 시간 규칙이 아니라 이쪽이 보낸
-    ``trnNo`` 가 다섯 자리로 채워지지 않아 나온 것이었다. 같은 요청을 0으로 채워
-    보내니 배치도가 왔다
+    ``trnNo`` 가 다섯 자리로 채워지지 않아 나온 것이었습니다
     (:data:`~srt_mobile_api.payloads.SEAT_TRAIN_NUMBER_LENGTH`).
 
-    ``car_number`` 와 ``cabin_class`` 는 호출자가 요청한 값을 결과에 그대로
-    새긴다. 조각 자체는 자기가 몇 호차인지 말하지 않는다.
+    ``car_number`` 와 ``cabin_class`` 는 호출자가 요청한 값을 그대로 새깁니다.
+    조각 자체는 자기가 몇 호차인지 말하지 않습니다.
 
-    좌석 칸이 하나도 없으면 :class:`~srt_mobile_api.errors.SrtProtocolError` 다
-    —— 거절이었다면 서버가 ``"0#…"`` 이라고 말했을 것이기 때문이다.
+    좌석 칸이 하나도 없으면 :class:`~srt_mobile_api.errors.SrtProtocolError`
+    입니다 —— 거절이었다면 서버가 ``"0#…"`` 이라고 말했을 것이기 때문입니다.
     """
     if not html.strip():
         raise SrtProtocolError("SRT seat grid returned an empty body")
@@ -608,14 +602,14 @@ COUPON_EMPTY_MARKER = "보유한 쿠폰이 없습니다"
 
 
 class _DiscountCouponParser(HTMLParser):
-    """할인쿠폰 페이지의 ``coup-box`` 를 모으고, 목록 자체가 있는지도 기록한다.
+    """할인쿠폰 페이지의 ``coup-box`` 를 모으고, 목록 자체가 있는지도 기록합니다.
 
-    **주석 안의 마크업은 마크업으로 읽히지 않는다.** 이 페이지에서는 그것이
-    안전장치다 —— 실제 페이지의 ``ul.coupList`` 안에는 그럴듯한 쿠폰번호와
-    할인율이 박힌 디자인 템플릿 두 개가 주석으로 들어 있다.
+    **주석 안의 마크업은 마크업으로 읽히지 않습니다.** 이 페이지에서는 그것이
+    안전장치입니다 —— 실제 페이지의 ``ul.coupList`` 안에는 그럴듯한 쿠폰번호와
+    할인율이 박힌 디자인 템플릿 두 개가 주석으로 들어 있습니다.
     :class:`~html.parser.HTMLParser` 는 주석을 통째로 한 덩어리로 넘기고 그
-    안에서는 시작 태그를 만들지 않으므로 템플릿이 쿠폰이 되지 않는다. 같은
-    페이지를 정규식으로 긁으면 없는 쿠폰 두 장이 생긴다.
+    안에서는 시작 태그를 만들지 않으므로 템플릿이 쿠폰이 되지 않습니다. 같은
+    페이지를 정규식으로 긁으면 없는 쿠폰 두 장이 생깁니다.
     """
 
     def __init__(self) -> None:
@@ -673,27 +667,25 @@ class _DiscountCouponParser(HTMLParser):
 
 
 def parse_discount_coupon_page(html: str) -> DiscountCouponList:
-    """할인쿠폰 조회/등록 페이지(``/apa/selectListApa03020_n.do``)를 읽는다.
+    """할인쿠폰 조회/등록 페이지(``/apa/selectListApa03020_n.do``)를 읽습니다.
 
     쿠폰이 없는 계정은 ``ul.coupList`` 가 비어 있고 ``보유한 쿠폰이 없습니다.``
-    안내가 따로 붙는다. 그 상태가 확인된 유일한 상태이고, 쿠폰을 가진 계정의
-    응답은 미검증이다 —— 필드명 근거는
+    안내가 붙습니다. 그 상태가 확인된 유일한 상태이고, 쿠폰을 가진 계정의 응답은
+    미검증입니다 —— 필드명 근거는
     :class:`~srt_mobile_api.models.DiscountCoupon` 참고.
 
-    **"없다" 와 "이 페이지를 못 읽었다" 를 섞지 않는다.** 침묵을 빈 목록으로
-    해석하지 않고, 페이지가 둘 중 하나를 말하도록 요구한다. 다음 세 경우는 모두
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    **"없다" 와 "이 페이지를 못 읽었다" 를 섞지 않습니다.** 페이지가 둘 중 하나를
+    말하도록 요구하며, 다음 세 경우는 모두
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
 
-    * ``ul.coupList`` 가 아예 없다 —— 이 페이지가 쿠폰 페이지가 아니다.
-    * 쿠폰도 없고 "없습니다" 문구도 없다.
-    * 쿠폰이 있는데 "없습니다" 문구도 있다 —— 어느 쪽을 믿을지 고르는 것은
-      추측이다.
+    * ``ul.coupList`` 가 아예 없는 경우 —— 쿠폰 페이지가 아닙니다.
+    * 쿠폰도 없고 "없습니다" 문구도 없는 경우.
+    * 쿠폰이 있는데 "없습니다" 문구도 있는 경우.
 
-    **등록 폼은 건드리지 않는다.** 같은 페이지에 ``dscp_no``/``dscp_pwd`` 입력이
-    있지만 그 전송은 다른 경로(``/arb/selectListArb02A01_n.do``)이고
-    :meth:`~srt_mobile_api.client.SrtClient.register_discount_coupon` 의 일이다.
-    두 값 모두 자격증명인데 이 파서의 결과는 가려지지 않으므로, 읽지 않는 것이
-    중요하다.
+    **등록 폼은 건드리지 않습니다.** 같은 페이지의 ``dscp_no``/``dscp_pwd`` 는
+    자격증명이고 이 파서의 결과는 가려지지 않으므로 읽지 않습니다. 등록은 다른
+    경로(``/arb/selectListArb02A01_n.do``)이고
+    :meth:`~srt_mobile_api.client.SrtClient.register_discount_coupon` 의 일입니다.
     """
     page = parse_html_page(
         html,
@@ -750,7 +742,7 @@ PUBLIC_DISCOUNT_FIELD = "PBL_DISC_CD"
 
 
 class _PublicDiscountMarkerParser(HTMLParser):
-    """페이지 고유의 ``PBL_DISC_CD`` 입력을 보면 참이 된다 —— 페이지 신원 확인."""
+    """페이지 고유의 ``PBL_DISC_CD`` 입력을 보면 참이 됩니다 —— 페이지 신원 확인."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -768,29 +760,25 @@ class _PublicDiscountMarkerParser(HTMLParser):
 
 
 def parse_public_discount_page(html: str) -> PublicDiscountPage:
-    """할인 승차권 페이지(``/common/ARA/ARA0301V/view.do``)의 공공할인 자격을 읽는다.
+    """할인 승차권 페이지(``/common/ARA/ARA0301V/view.do``)의 공공할인 자격을 읽습니다.
 
     자격은 서버가 렌더링하는 여덟 개의 ``var dataNCheck="…";`` 선언에 들어
-    있고, 슬롯 1~8 이 곧 공공할인코드 ``01``~``08`` 이다. 값이 ``"Y"`` 면 승인,
-    아니면 미승인이다.
+    있고, 슬롯 1~8 이 곧 공공할인코드 ``01``~``08`` 입니다. 값이 ``"Y"`` 면 승인,
+    아니면 미승인입니다.
 
-    **아무 자격도 없는 계정도 정상 반환이다.** 예외로 올리지 않는다. 페이지
-    자신은 그 상태에서 알림을 띄우고 메인으로 튕기지만, 여기서는 "가진 것이
-    없다" 가 질문에 대한 답이다. 매진 좌석 페이지의 거절과는 성격이 다르다 ——
-    그쪽은 요청한 좌석표가 존재하지 않는다는 뜻이다. 확인된 것은 여덟 플래그가
-    전부 빈 계정 하나뿐이다.
+    **아무 자격도 없는 계정도 정상 반환입니다** —— "가진 것이 없다" 가 질문에
+    대한 답입니다. 확인된 것은 여덟 플래그가 전부 빈 계정 하나뿐입니다.
 
     거절하는 경우는 둘이고, 모양이 달라진 페이지가 "자격 없음" 으로 둔갑하지
-    않게 하기 위한 것이다. 둘 다
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    않게 하기 위한 것입니다. 둘 다
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
 
-    * ``PBL_DISC_CD`` 입력이 없다 —— 이 페이지가 아니다.
-    * 플래그 선언이 여덟이 아니거나 같은 슬롯이 중복된다 —— 코드와 슬롯의
-      대응이 여덟 칸 배치에만 기대고 있으므로, 여덟이 아닌 페이지는 해석하지
-      않는다.
+    * ``PBL_DISC_CD`` 입력이 없는 경우 —— 이 페이지가 아닙니다.
+    * 플래그 선언이 여덟이 아니거나 같은 슬롯이 중복되는 경우 —— 코드와 슬롯의
+      대응이 여덟 칸 배치에 기대고 있기 때문입니다.
 
-    ``""``·``"Y"`` 가 아닌 값은 거절하지 않고 미승인으로 본다. 페이지 자신도
-    ``== "Y"`` 와 ``!= "Y"`` 로만 검사하고 다른 값을 열거하지 않는다.
+    ``""``·``"Y"`` 가 아닌 값은 거절하지 않고 미승인으로 봅니다. 페이지 자신도
+    ``== "Y"`` 와 ``!= "Y"`` 로만 검사합니다.
     """
     page = parse_html_page(
         html,
@@ -830,16 +818,16 @@ def parse_public_discount_page(html: str) -> PublicDiscountPage:
 
 
 def parse_notice_list_response(data: dict[str, Any]) -> NoticeListResult:
-    """공지 목록 JSON 을 :class:`~srt_mobile_api.models.NoticeListResult` 로 만든다.
+    """공지 목록 JSON 을 :class:`~srt_mobile_api.models.NoticeListResult` 로 만듭니다.
 
-    봉투는 ``ErrorCode``/``ErrorMsg`` 다 —— ``""`` 나 ``"0"`` 이 아니면
-    :class:`~srt_mobile_api.errors.SrtAppError` 다. 공지가 없는 것은 빈
-    ``noticeList`` 이고 정상이다.
+    봉투는 ``ErrorCode``/``ErrorMsg`` 입니다 —— ``""`` 나 ``"0"`` 이 아니면
+    :class:`~srt_mobile_api.errors.SrtAppError` 입니다. 공지가 없는 것은 빈
+    ``noticeList`` 이고 정상입니다.
 
-    행 검사는 엄격하다. 여섯 문자열 필드(``IS_MAIN``·``PAGE_ID``·``BODY``·
+    행 검사는 엄격합니다. 여섯 문자열 필드(``IS_MAIN``·``PAGE_ID``·``BODY``·
     ``CREATE_DATE``·``IS_NOTICE``·``SUBJ``)와 정수 ``POST_NO`` 중 하나라도
-    타입이 어긋나면 :class:`~srt_mobile_api.errors.SrtProtocolError` 다
-    —— ``POST_NO`` 는 ``bool`` 도 거절한다.
+    타입이 어긋나면 :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다
+    —— ``POST_NO`` 는 ``bool`` 도 거절합니다.
     """
     if not isinstance(data, dict):
         raise SrtProtocolError("SRT notice response must be a JSON object", raw=data)
@@ -984,12 +972,12 @@ _TIMETABLE_PLACEHOLDER_CELLS = frozenset({"-", "–", "—", ""})
 
 
 class _TimetableTableParser(_TableParser):
-    """표 파서에 더해, 각 행의 인라인 스크립트가 실은 역 코드를 함께 모은다.
+    """표 파서에 더해, 각 행의 인라인 스크립트가 실은 역 코드를 함께 모읍니다.
 
-    역 이름은 마크업에 없다. ``<tr>`` **안**의 ``<script>`` 가 코드로부터
-    이름을 채운다. 그래서 코드는 행에 붙여서 모은다 —— 문서 순서로 코드만
+    역 이름은 마크업에 없습니다. ``<tr>`` **안**의 ``<script>`` 가 코드로부터
+    이름을 채웁니다. 그래서 코드는 행에 붙여서 모읍니다 —— 문서 순서로 코드만
     늘어놓고 나중에 행과 짝지으면, 스크립트 없는 행이 하나만 나와도 전체가
-    밀린다.
+    밀립니다.
     """
 
     def __init__(self) -> None:
@@ -1027,10 +1015,10 @@ class _TimetableTableParser(_TableParser):
 
 
 def parse_timetable_page(html: str) -> TimetablePage:
-    """열차 시간표 페이지를 읽는다. 정차역 이름은 코드에서 되살린다.
+    """열차 시간표 페이지를 읽습니다. 정차역 이름은 코드에서 되살립니다.
 
-    **역 이름은 HTML 에 없다.** 이 앱은 WebView 껍데기이고, 이름 칸은 비워진
-    채로 오며 행 안의 스크립트가 코드로 채운다::
+    **역 이름은 HTML 에 없습니다.** 이름 칸은 비워진 채로 오고 행 안의 스크립트가
+    코드로 채웁니다::
 
         <tr class="ac">
             <td id="stationNm_1">
@@ -1041,17 +1029,16 @@ def parse_timetable_page(html: str) -> TimetablePage:
         </tr>
 
     그래서 코드를 읽어 :func:`~srt_mobile_api.stations.station_name_by_code` 로
-    이름을 만든다. 앱이 쓰는 것과 같은 표다. 코드 자체도
-    :attr:`~srt_mobile_api.models.TimetableRow.station_code` 에 남는다.
+    이름을 만듭니다(앱이 쓰는 것과 같은 표). 코드 자체도
+    :attr:`~srt_mobile_api.models.TimetableRow.station_code` 에 남습니다.
 
-    스크립트가 없는 행에서는 셀에서 이름을 찾는 옛 방식으로 물러선다. 시각도
-    자리채움 대시(``-``)도 아닌 첫 셀이다 —— 대시를 역 이름으로 삼지 않는 것이
-    중요하다. 출발역에는 도착시각이, 종착역에는 출발시각이 없어서 그 자리에
-    대시가 오기 때문이다.
+    스크립트가 없는 행에서는 셀에서 이름을 찾는 옛 방식으로 물러섭니다. 시각도
+    자리채움 대시(``-``)도 아닌 첫 셀입니다 —— 출발역에는 도착시각이, 종착역에는
+    출발시각이 없어 그 자리에 대시가 오기 때문입니다.
 
-    시각이 하나도 없는 행은 버린다. 표에서 아무 행도 못 얻으면 페이지 전체
+    시각이 하나도 없는 행은 버립니다. 표에서 아무 행도 못 얻으면 페이지 전체
     텍스트에서 시각을 긁어 한 행으로 만들고, 그마저 없으면
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
     """
     page = parse_html_page(html, context="timetable")
     table = _TimetableTableParser()
@@ -1096,32 +1083,30 @@ def parse_timetable_page(html: str) -> TimetablePage:
 
 
 def parse_fare_page(html: str) -> FarePage:
-    """운임·요금 페이지에서 **우리가 물어본 한 구간**의 운임만 읽는다.
+    """운임·요금 페이지에서 **우리가 물어본 한 구간**의 운임만 읽습니다.
 
-    페이지 자체는 환승 여정용이라 구간마다 운임표를 하나씩 렌더링한다
-    (``trainPayInfo1``, ``trainPayInfo22``). 그런데 이쪽 요청은 한 구간만
-    말할 수 있다 —— :func:`~srt_mobile_api.payloads.fare_payload` 가 둘째 구간
-    필드를 빈 값으로 고정한다. 그래서 둘째 표는 채워지지 않은 자리채움으로 오고,
-    페이지는 그것을 감춘 채 띄운다.
+    페이지 자체는 환승 여정용이라 구간마다 운임표를 하나씩 렌더링하지만
+    (``trainPayInfo1``, ``trainPayInfo22``), 이쪽 요청은 한 구간만 말할 수
+    있습니다 —— :func:`~srt_mobile_api.payloads.fare_payload` 가 둘째 구간 필드를
+    빈 값으로 고정합니다.
 
-    **감춰진 표도 비어 있지는 않다.** 같은 이름표에 금액만 ``0원`` 인 행이
-    들어 있다::
+    **감춰진 둘째 표도 비어 있지는 않습니다.** 같은 이름표에 금액만 ``0원`` 인
+    행이 들어 있습니다::
 
         어른 특실 -        어른 일반실 0원
 
-    표를 전부 읽으면 진짜와 **글자가 같은** ``0원`` 항목이 섞여, ``{이름표:
-    금액}`` 을 만든 호출자가 ``어른 일반실`` 을 0원으로 읽게 된다. 그래서 데이터
-    행이 있는 **첫 표**만 읽는다. 페이지의 ``hide()`` 호출을 신호로 쓰지 않는
-    이유는, 같은 스크립트 안에 진짜 표를 감추는 ``hide()`` 도 다른 분기에 들어
-    있기 때문이다.
+    표를 전부 읽으면 ``{이름표: 금액}`` 을 만든 호출자가 ``어른 일반실`` 을
+    0원으로 읽게 되므로, 데이터 행이 있는 **첫 표**만 읽습니다. 페이지의
+    ``hide()`` 호출은 신호로 쓰지 않습니다 —— 진짜 표를 감추는 ``hide()`` 도 다른
+    분기에 있기 때문입니다.
 
     :attr:`~srt_mobile_api.models.FarePage.items` 는 금액이 읽힌 항목만이고,
     ``-`` 처럼 금액이 없는 칸까지 포함한 전체는
-    :attr:`~srt_mobile_api.models.FarePage.semantic_items` 에 있다(그쪽은
-    ``amount`` 가 ``None`` 이고 원문이 ``status`` 에 남는다).
+    :attr:`~srt_mobile_api.models.FarePage.semantic_items` 에 있습니다(그쪽은
+    ``amount`` 가 ``None`` 이고 원문이 ``status`` 에 남습니다).
 
     의미 있는 행이 하나도 없으면 :class:`~srt_mobile_api.errors.SrtProtocolError`
-    다.
+    입니다.
     """
     page = parse_html_page(html, context="fare")
     table = _TableParser()
@@ -1174,19 +1159,19 @@ def _declares_status(row: dict[str, Any]) -> bool:
 
 
 def normalize_result_row(data: dict[str, Any]) -> dict[str, Any]:
-    """두 봉투 중 실제로 결과 행이 든 쪽을 고른다.
+    """두 봉투 중 실제로 결과 행이 든 쪽을 고릅니다.
 
-    이 백엔드는 결과를 ``outDataSets.dsOutput0`` 에도, ``resultMap`` 에도 담는다.
-    앞쪽을 우선하되 **쓸 만한 행이 있을 때만**이다. 비었거나 ``null`` 이면
-    ``resultMap`` 으로 물러선다.
+    이 백엔드는 결과를 ``outDataSets.dsOutput0`` 에도, ``resultMap`` 에도 담습니다.
+    앞쪽을 우선하되 **쓸 만한 행이 있을 때만**입니다. 비었거나 ``null`` 이면
+    ``resultMap`` 으로 물러섭니다.
 
-    **양쪽이 다 상태를 말하고 서로 어긋나면 실패 쪽을 믿는다.** 관찰된 규칙이
-    아니라 안전한 쪽으로 닫는 선택이다 —— 곁다리 ``dsOutput0`` 의 ``SUCC`` 가
-    ``resultMap`` 의 FAIL 을 덮으면, 일어나지 않은 환불이 일어난 것처럼 읽힌다.
-    이 서버가 한 응답 안에 모순된 봉투를 싣는다는 것 자체는 확인돼 있다(예약
-    목록 응답은 ``SUCC`` 인 ``resultMap`` 옆에 FAIL 인 ``rsMap`` 을 함께 보낸다).
+    **양쪽이 다 상태를 말하고 서로 어긋나면 실패 쪽을 믿습니다.** 관찰된 규칙이
+    아니라 안전한 쪽으로 닫는 선택입니다 —— 곁다리 ``dsOutput0`` 의 ``SUCC`` 가
+    ``resultMap`` 의 FAIL 을 덮으면, 일어나지 않은 환불이 일어난 것처럼 읽힙니다.
+    이 서버가 한 응답 안에 모순된 봉투를 싣는다는 것 자체는 확인돼 있습니다(예약
+    목록 응답은 ``SUCC`` 인 ``resultMap`` 옆에 FAIL 인 ``rsMap`` 을 함께 보냅니다).
 
-    상태 선언이 없는 행은 그대로 돌려주며, 봉투가 둘 다 없으면 빈 딕셔너리다.
+    상태 선언이 없는 행은 그대로 돌려주며, 봉투가 둘 다 없으면 빈 딕셔너리입니다.
     """
     out = data.get("outDataSets") or {}
     primary: dict[str, Any] = {}
@@ -1206,20 +1191,20 @@ def normalize_result_row(data: dict[str, Any]) -> dict[str, Any]:
 def parse_mutual_verification_response(
     data: dict[str, Any],
 ) -> MutualVerificationResult:
-    """상호확인코드(``mutMrkVrfCd``) 발급 응답을 읽는다.
+    """상호확인코드(``mutMrkVrfCd``) 발급 응답을 읽습니다.
 
     ``ErrorCode`` 봉투를 먼저 보고, 안쪽 ``dsOutput0`` 행에서 ``strResult`` 와
-    ``mutMrkVrfCd`` 를 읽는다. ``FAIL`` 이면
+    ``mutMrkVrfCd`` 를 읽습니다. ``FAIL`` 이면
     :func:`~srt_mobile_api.errors.classify_app_error` 로 분류해 올리고, 성공인데
-    코드가 비어 있으면 :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    코드가 비어 있으면 :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
 
-    ``msgCd`` 는 있어도 되고 없어도 된다 —— 앱도 이 경로에서는 ``strResult`` 만
-    보고 ``mutMrkVrfCd`` 를 읽는다(``ara1001l.js:234-241``). 모델에 없는
+    ``msgCd`` 는 있어도 되고 없어도 됩니다 —— 앱도 이 경로에서는 ``strResult`` 만
+    보고 ``mutMrkVrfCd`` 를 읽습니다(``ara1001l.js:234-241``). 모델에 없는
     ``wctNo``·``uuid``·``cgPsId`` 는
-    :attr:`~srt_mobile_api.models.MutualVerificationResult.raw` 로 볼 수 있다.
+    :attr:`~srt_mobile_api.models.MutualVerificationResult.raw` 로 볼 수 있습니다.
 
-    이 경로는 로그인 없이도 코드를 내준다 —— 이 라이브러리의 다른 읽기와 다른
-    점이다.
+    이 경로는 로그인 없이도 코드를 내줍니다 —— 이 라이브러리의 다른 읽기와 다른
+    점입니다.
     """
     if not isinstance(data, dict):
         raise SrtProtocolError(
@@ -1378,36 +1363,34 @@ def _validate_error_code_wrapper(
 def parse_reservation_attempt_response(
     data: dict[str, Any],
 ) -> ReservationAttemptResult:
-    """이미 받아 둔 예약 시도 응답을 요청 없이 해석한다.
+    """이미 받아 둔 예약 시도 응답을 요청 없이 해석합니다.
 
     ``resultMap``·``reservListMap``·``trainListMap``·``commandMap`` 네 봉투를
-    읽어 :class:`~srt_mobile_api.models.ReservationAttemptResult` 로 만든다.
+    읽어 :class:`~srt_mobile_api.models.ReservationAttemptResult` 로 만듭니다.
 
-    **``strResult`` 가 정확히 ``"FAIL"`` 일 때만 실패다.** 앱도 그렇게 판정하고
-    (``ara1001l.js:1562``), 다른 값은 그대로 통과시켜 PNR 을 읽는다. 제3의 값을
-    실패로 뒤집으면 서버에 실제로 잡혀 있는 예약이 예외로 사라진다.
+    **``strResult`` 가 정확히 ``"FAIL"`` 일 때만 실패입니다.** 앱도 그렇게
+    판정하고(``ara1001l.js:1562``), 다른 값은 통과시켜 PNR 을 읽습니다. 제3의
+    값을 실패로 뒤집으면 서버에 실제로 잡혀 있는 예약이 예외로 사라집니다.
 
-    실패의 갈래는 셋이다.
+    실패의 갈래는 셋입니다.
 
     * ``msgCd`` 가 ``S111`` 이면
       :class:`~srt_mobile_api.errors.SrtSessionExpiredError` —— 앱이 이것을
-      재로그인 신호로 다룬다.
-    * ``msgCd`` 가 ``WRP011002``(인원 오류)이면 ``strResult`` 와 무관하게 실패로
-      본다.
+      재로그인 신호로 다룹니다.
+    * ``msgCd`` 가 ``WRP011002``(인원 오류)이면 ``strResult`` 와 무관하게
+      실패입니다.
     * 그 밖의 FAIL 은 :func:`~srt_mobile_api.errors.classify_app_error` 가
-      코드에 맞는 예외를 고른다.
+      코드에 맞는 예외를 고릅니다.
 
-    **선언된 실패를 먼저 판정하고, 엄격한 필드 검사는 성공일 때만 한다.** 서버가
-    실패라고 말한 이상 ``msgCd``/``msgTxt`` 의 모양이 이상해도 결론은 실패다.
+    **선언된 실패를 먼저 판정하고, 엄격한 필드 검사는 성공일 때만 합니다.**
     순서를 뒤집으면 "실패했는데 응답도 조금 어긋난" 경우가
     :class:`~srt_mobile_api.errors.SrtProtocolError` 로 나가고, 그것을
     :func:`parse_reservation_hold_response` 의 구제 분기가 받아 존재하지 않는
-    예약을 만들어 낸다.
+    예약을 만들어 냅니다.
 
     성공 경로에서는 PNR·좌석 등 필드가 전부 문자열이어야 하며, 하나라도
-    어긋나면 :class:`~srt_mobile_api.errors.SrtProtocolError` 다. ``ERROR_CODE``
-    /``ERROR_MSG`` 바깥 봉투는 둘 다 있거나 둘 다 없어야 하고, 한쪽만 있으면
-    프로토콜 오류다.
+    어긋나면 :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
+    ``ERROR_CODE``/``ERROR_MSG`` 바깥 봉투는 둘 다 있거나 둘 다 없어야 합니다.
     """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -1570,13 +1553,13 @@ def parse_reservation_attempt_response(
 
 
 def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
-    """엄격한 파싱이 거절한 응답에서 **취소에 필요한 신원만** 건져 낸다.
+    """엄격한 파싱이 거절한 응답에서 **취소에 필요한 신원만** 건져 냅니다.
 
-    쓸 만한 ``reservListMap[0].pnrNo`` 가 없으면 ``None`` 이다 —— 잃을 예약이
-    없다는 뜻이다. 나머지 필드는 이미 문자열일 때만 가져온다. 부수적인 필드
-    하나가 망가졌다고 PNR 을 통째로 잃지 않기 위해서다.
+    쓸 만한 ``reservListMap[0].pnrNo`` 가 없으면 ``None`` 입니다 —— 잃을 예약이
+    없다는 뜻입니다. 나머지 필드는 이미 문자열일 때만 가져옵니다. 부수적인 필드
+    하나가 망가졌다고 PNR 을 통째로 잃지 않기 위해서입니다.
 
-    PNR 은 앞뒤 공백을 떼어 담는다. 취소 폼이 전송하는 모양과 같다.
+    PNR 은 앞뒤 공백을 떼어 담습니다. 취소 폼이 전송하는 모양과 같습니다.
     """
     if not isinstance(data, dict):
         return None
@@ -1601,14 +1584,14 @@ def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
 def _declares_a_declared_failure(data: Any) -> bool:
     """응답 자신이 ``strResult == "FAIL"`` 이라고 선언했는지.
 
-    원본에서 직접 읽는다. :func:`parse_reservation_attempt_response` 가 이미
-    하는 검사를 일부러 한 번 더 하는 것이다 —— 선언된 실패가 구제 경로를 타고
-    "예약이 있다" 로 둔갑하는 일을 막는 두 번째 층이다.
+    원본에서 직접 읽습니다. :func:`parse_reservation_attempt_response` 가 이미
+    하는 검사를 일부러 한 번 더 하는 것입니다 —— 선언된 실패가 구제 경로를 타고
+    "예약이 있다" 로 둔갑하는 일을 막는 두 번째 층입니다.
 
-    ``!= "SUCC"`` 가 아니라 ``== "FAIL"`` 인 것이 중요하다. 제3의 상태값은 앱
+    ``!= "SUCC"`` 가 아니라 ``== "FAIL"`` 인 것이 중요합니다. 제3의 상태값은 앱
     기준으로 예약이 **생긴** 쪽이므로(``ara1001l.js:1562``, :1577/:1609), 그때
-    구제를 막으면 진짜 예약을 잃는다. 상태가 아예 없는 것도 "선언된 실패" 가
-    아니라 어긋난 응답이고, 구제 경로는 바로 그것을 위한 것이다.
+    구제를 막으면 진짜 예약을 잃습니다. 상태가 아예 없는 것도 "선언된 실패" 가
+    아니라 어긋난 응답이고, 구제 경로는 바로 그것을 위한 것입니다.
     """
     if not isinstance(data, dict):
         return False
@@ -1617,25 +1600,22 @@ def _declares_a_declared_failure(data: Any) -> bool:
 
 
 def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
-    """예약 응답에서 **취소할 수 있는 최소 신원**만 남긴다.
+    """예약 응답에서 **취소할 수 있는 최소 신원**만 남깁니다.
 
     성공 판정과 봉투 검사는 :func:`parse_reservation_attempt_response` 를 그대로
     쓰고, 거기서 PNR·여정키·좌석수만 뽑아
-    :class:`~srt_mobile_api.models.SrtReservationHold` 로 만든다.
+    :class:`~srt_mobile_api.models.SrtReservationHold` 로 만듭니다.
 
-    **파싱이 실패해도 PNR 은 버리지 않는다.** 응답을 읽는 시점에 서버에는 이미
-    진짜 예약이 잡혀 있을 수 있다. 엄격한 검사는 쓰지도 않는 필드 하나(예를 들어
-    좌석번호)가 어긋나도 :class:`~srt_mobile_api.errors.SrtProtocolError` 를
-    내는데, 그대로 두면 취소할 방법이 사라진 예약이 남는다. 그래서 프로토콜
-    오류가 났고 응답에 PNR 이 남아 있으면 그 PNR 만으로 최소 예약을 만들어
-    돌려준다. PNR 조차 없으면 잃을 것이 없으므로 원래 예외를 그대로 올린다.
+    **파싱이 실패해도 PNR 은 버리지 않습니다.** 쓰지도 않는 필드 하나가 어긋나
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 가 나면 취소할 방법이 사라진
+    예약이 남기 때문입니다. 그래서 프로토콜 오류가 났고 응답에 PNR 이 남아
+    있으면 그 PNR 만으로 최소 예약을 만들어 돌려주고, PNR 조차 없으면 원래 예외를
+    그대로 올립니다.
 
-    **업무 실패와 세션 만료는 구제하지 않는다.** 그 둘은 예약이 거절됐다는
-    뜻이지 파싱이 막혔다는 뜻이 아니다. 없는 예약을 있다고 말하는 것은 있는
-    예약을 잃는 것만큼 나쁘다 —— 호출자가 복구를 그만두기 때문이다. 그래서 이
-    배제는 두 겹이다:
-    :func:`parse_reservation_attempt_response` 의 상태 분류와, 여기서 원본을
-    다시 보는 :func:`_declares_a_declared_failure`.
+    **업무 실패와 세션 만료는 구제하지 않습니다.** 그 둘은 예약이 거절됐다는
+    뜻입니다. 없는 예약을 있다고 말하면 호출자가 복구를 그만두므로, 이 배제는 두
+    겹입니다: :func:`parse_reservation_attempt_response` 의 상태 분류와, 여기서
+    원본을 다시 보는 :func:`_declares_a_declared_failure`.
     """
     try:
         result = parse_reservation_attempt_response(data)
@@ -1660,20 +1640,20 @@ def _parse_result_envelope(
     context: str,
     container_description: str = "resultMap",
 ) -> tuple[str, str, str]:
-    """공통 SUCC/FAIL 봉투를 ``(strResult, msgCd, msgTxt)`` 로 읽는다.
+    """공통 SUCC/FAIL 봉투를 ``(strResult, msgCd, msgTxt)`` 로 읽습니다.
 
-    취소·카드결제·환불 세 응답이 같은 봉투를 쓰므로 구현도 하나다.
+    취소·카드결제·환불 세 응답이 같은 봉투를 쓰므로 구현도 하나입니다.
     :func:`normalize_result_row` 를 지나므로 두 가지 담는 방식
-    (``outDataSets.dsOutput0`` 우선, ``resultMap`` 차선)을 모두 받아들인다 ——
-    결제만 유독 ``dsOutput0`` 에 답하지만, 어느 쪽이 오든 읽힌다.
+    (``outDataSets.dsOutput0`` 우선, ``resultMap`` 차선)을 모두 받아들입니다 ——
+    결제만 유독 ``dsOutput0`` 에 답하지만, 어느 쪽이 오든 읽힙니다.
 
-    ``msgCd`` 와 ``msgTxt`` 는 없어도 되고 빈 문자열이 된다. 앱도 ``strResult``
-    만 보고 판정한다. **성패 판정은 여기서 하지 않는다** —— 알 수 없는 상태값을
-    성공으로 볼지는 취소와 결제가 서로 다르게 답해야 하므로 호출자 몫이다.
+    ``msgCd`` 와 ``msgTxt`` 는 없어도 되고 빈 문자열이 됩니다. 앱도 ``strResult``
+    만 보고 판정합니다. **성패 판정은 여기서 하지 않습니다** —— 알 수 없는 상태값을
+    성공으로 볼지는 취소와 결제가 서로 다르게 답해야 하므로 호출자 몫입니다.
 
     ``strResult`` 가 비었거나 봉투 자체가 없으면
     :class:`~srt_mobile_api.errors.SrtProtocolError`, ``ERROR_CODE`` 가 오류를
-    선언하면 :class:`~srt_mobile_api.errors.SrtAppError` 다.
+    선언하면 :class:`~srt_mobile_api.errors.SrtAppError` 입니다.
     """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -1705,20 +1685,20 @@ def _parse_result_envelope(
 
 
 def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
-    """미결제 예약취소(``/ard/selectListArd02045_n.do``) 응답을 읽는다.
+    """미결제 예약취소(``/ard/selectListArd02045_n.do``) 응답을 읽습니다.
 
-    표준 ``resultMap`` 봉투이고 ``strResult == "SUCC"`` 가 성공이다. 확인된
-    응답은 단일 여정 미결제 예약 하나뿐이다(``SUCC`` / ``IRG000000`` /
+    표준 ``resultMap`` 봉투이고 ``strResult == "SUCC"`` 가 성공입니다. 확인된
+    응답은 단일 여정 미결제 예약 하나뿐입니다(``SUCC`` / ``IRG000000`` /
     ``정상처리되었습니다``). 하나의 응답은 스키마가 아니므로 컨테이너 배치를
-    못박지 않고 공통 봉투 처리(:func:`_parse_result_envelope`)를 그대로 쓴다.
+    못박지 않고 공통 봉투 처리(:func:`_parse_result_envelope`)를 그대로 씁니다.
 
-    **업무 실패는 던지지 않고 돌려준다.**
+    **업무 실패는 던지지 않고 돌려줍니다.**
     :attr:`~srt_mobile_api.models.SrtCancelResult.succeeded` 가 ``False`` 이고
-    서버의 ``msgCd``/``msgTxt`` 가 그대로 남는다. "내 예약이 풀렸나" 라는 질문의
-    답을 예외 경로로 밀어 넣으면 취소하지 못한 예약이 방치된다.
+    서버의 ``msgCd``/``msgTxt`` 가 그대로 남습니다. "내 예약이 풀렸나" 라는 질문의
+    답을 예외 경로로 밀어 넣으면 취소하지 못한 예약이 방치됩니다.
 
     예외가 되는 것은 어긋난 봉투(:class:`~srt_mobile_api.errors.SrtProtocolError`)
-    와 ``ERROR_CODE`` 거절(:class:`~srt_mobile_api.errors.SrtAppError`) 뿐이다.
+    와 ``ERROR_CODE`` 거절(:class:`~srt_mobile_api.errors.SrtAppError`) 뿐입니다.
     """
     status, code, message = _parse_result_envelope(data, context="cancel")
     return SrtCancelResult(
@@ -1732,29 +1712,27 @@ def parse_unpaid_cancel_response(data: dict[str, Any]) -> SrtCancelResult:
 def parse_coupon_registration_response(
     data: dict[str, Any],
 ) -> SrtCouponRegistrationResult:
-    """할인쿠폰 등록(``/arb/selectListArb02A01_n.do``) 응답을 읽는다.
+    """할인쿠폰 등록(``/arb/selectListArb02A01_n.do``) 응답을 읽습니다.
 
-    **이 응답은 한 번도 본 적이 없다.** 근거는 쿠폰 페이지 자신의 성공 처리
-    코드뿐이다::
+    **이 응답은 한 번도 본 적이 없습니다.** 근거는 쿠폰 페이지 자신의 성공 처리
+    코드뿐입니다::
 
         var msg   = args.resultMap[0].MSG;
         var rtncd = args.resultMap[0].RTNCD;
         if(rtncd == "N"){ srtAlertBoxDivShow("알림", msg, null); }
         else            { srtAlertBoxDivShow("알림", Sr.msgs.mysrt008, ...); }
 
-    그래서 **공통 봉투 처리를 쓰지 않는다.** 취소·결제·환불이 공유하는
-    :func:`_parse_result_envelope` 는 ``strResult``/``msgCd``/``msgTxt`` 를
-    읽는데, 이 경로는 대문자 ``RTNCD``/``MSG`` 로 답하고 ``strResult`` 가 아예
-    없다. 공통 헬퍼에 두 번째 어휘를 밀어 넣으면 봉투가 확실한 세 경로의 검사가
-    함께 헐거워진다.
+    그래서 **공통 봉투 처리를 쓰지 않습니다.** 취소·결제·환불이 공유하는
+    :func:`_parse_result_envelope` 는 ``strResult``/``msgCd``/``msgTxt`` 를 읽는데,
+    이 경로는 대문자 ``RTNCD``/``MSG`` 로 답하고 ``strResult`` 가 아예 없습니다.
 
-    **``RTNCD`` 는 비어 있으면 안 된다** —— 페이지보다 엄격한 유일한 지점이다.
+    **``RTNCD`` 는 비어 있으면 안 됩니다** —— 페이지보다 엄격한 유일한 지점입니다.
     페이지는 ``"N"`` 만 실패로 보므로 코드가 없으면 성공으로 읽히는데, "내 쿠폰이
-    쓰였나" 라는 질문에서 그것은 틀리면 안 되는 방향이다. 말하지 않는 응답은
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    쓰였나" 는 틀리면 안 되는 방향입니다. 말하지 않는 응답은
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
 
-    선언된 실패는 던지지 않고 돌려준다. ``RTNCD="N"`` 과 서버의 ``MSG`` 는
-    비밀번호가 틀렸는지 이미 쓴 쿠폰인지를 말해 주는 답이다.
+    선언된 실패는 던지지 않고 돌려줍니다. ``RTNCD="N"`` 과 서버의 ``MSG`` 는
+    비밀번호가 틀렸는지 이미 쓴 쿠폰인지를 말해 주는 답입니다.
     """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -1783,30 +1761,25 @@ def parse_coupon_registration_response(
 
 
 def parse_card_payment_response(data: dict[str, Any]) -> SrtPaymentResult:
-    """카드결제 응답을 읽는다. **결제만 봉투가 다르다.**
+    """카드결제 응답을 읽습니다. **결제만 봉투가 다릅니다.**
 
-    이 라이브러리가 다루는 다른 상태 변경은 모두 ``resultMap`` 에 답하는데,
-    결제는 ``outDataSets.dsOutput0[0]`` 에 답하고 거기서 ``strResult`` 와
-    ``msgTxt`` 를 읽는다. :func:`normalize_result_row` 가 두 담는 방식을 모두
-    받으므로 별도 경로 없이 처리되고, 결제가 ``resultMap`` 으로 답하더라도
-    읽힌다.
+    이 라이브러리가 다루는 다른 상태 변경은 모두 ``resultMap`` 에 답하는데, 결제는
+    ``outDataSets.dsOutput0[0]`` 에 답하고 거기서 ``strResult`` 와 ``msgTxt`` 를
+    읽습니다. :func:`normalize_result_row` 가 두 방식을 모두 받으므로 결제가
+    ``resultMap`` 으로 답하더라도 읽힙니다.
 
     확인된 응답은 성공 ``SUCC``/``IRT000000``(실제 청구 1건)과 실패
-    ``FAIL``/``WRT100170``(가짜 카드·없는 PNR) 두 갈래다.
+    ``FAIL``/``WRT100170``(가짜 카드·없는 PNR) 두 갈래입니다.
 
-    **알 수 없는 상태값을 성공으로 넘겨짚지 않는다.** 참고 구현들은 명시적
-    ``"FAIL"`` 만 실패로 보고 나머지를 성공으로 취급하지만,
-    :class:`~srt_mobile_api.models.SrtPaymentResult` 의 ``succeeded`` 와
-    ``failed`` 는 서로의 부정이 아니다 —— 둘 다 ``False`` 일 수 있다.
+    **알 수 없는 상태값을 성공으로 넘겨짚지 않습니다.**
+    :class:`~srt_mobile_api.models.SrtPaymentResult` 의 ``succeeded`` 와 ``failed``
+    는 서로의 부정이 아니라 둘 다 ``False`` 일 수 있습니다.
 
-    **업무 실패는 던지지 않고 돌려준다.** "내 카드가 청구됐나" 는 예외 처리
-    없이 읽을 수 있어야 한다. 성공한 청구를 예외로 감추면 같은 카드가 두 번
-    긁힌다. 예외가 되는 것은 어긋난 봉투
+    **업무 실패는 던지지 않고 돌려줍니다.** "내 카드가 청구됐나" 는 예외 처리 없이
+    읽을 수 있어야 합니다. 예외가 되는 것은 어긋난 봉투
     (:class:`~srt_mobile_api.errors.SrtProtocolError`)와 ``ERROR_CODE`` 거절
-    (:class:`~srt_mobile_api.errors.SrtAppError`) 뿐이다.
-
-    ``msgCd`` 는 없어도 된다. 이 봉투가 이름을 대는 것은 ``strResult`` 와
-    ``msgTxt`` 뿐이다.
+    (:class:`~srt_mobile_api.errors.SrtAppError`) 뿐입니다. ``msgCd`` 는 없어도
+    됩니다.
     """
     status, code, message = _parse_result_envelope(
         data,
@@ -1824,31 +1797,27 @@ def parse_card_payment_response(data: dict[str, Any]) -> SrtPaymentResult:
 def parse_refund_ticket_info_response(
     data: dict[str, Any],
 ) -> SrtRefundTicketInfo:
-    """환불 1단계 —— 발권된 승차권의 신원을 읽는다.
+    """환불 1단계 —— 발권된 승차권의 신원을 읽습니다.
 
-    ``/atc/getListAtc14087.do`` 의 응답이다. 여기서 얻은
-    :class:`~srt_mobile_api.models.SrtRefundTicketInfo` 가 2단계 환불 폼의
-    재료가 된다(:func:`~srt_mobile_api.payloads.refund_payload`).
+    ``/atc/getListAtc14087.do`` 의 응답입니다. 여기서 얻은
+    :class:`~srt_mobile_api.models.SrtRefundTicketInfo` 가 2단계 환불 폼의 재료가
+    됩니다(:func:`~srt_mobile_api.payloads.refund_payload`).
 
-    **모양이 두 군데 특이하다.**
+    **모양이 두 군데 특이합니다.**
 
-    * 알맹이가 ``outDataSets.dsOutput1[0]`` 에 있다 —— 이 라이브러리의 다른
-      ``outDataSets`` 읽기가 쓰는 ``dsOutput0`` 이 아니다.
+    * 알맹이가 ``outDataSets.dsOutput1[0]`` 에 있습니다 —— 다른 ``outDataSets``
+      읽기가 쓰는 ``dsOutput0`` 이 아닙니다.
     * 성공 조건이 ``resultMap`` 이 아니라 ``ErrorCode``/``ErrorMsg`` 봉투이고,
-      이 라이브러리의 평소 기준보다 엄격하다: ``ErrorCode == "0"`` **이면서**
-      ``ErrorMsg == ""``. 다른 곳은 ``ErrorCode`` 가 ``""`` 여도 받고 메시지는
-      보지 않는다.
+      평소 기준보다 엄격합니다: ``ErrorCode == "0"`` **이면서** ``ErrorMsg == ""``.
 
-    엄격한 조건을 느슨하게 고치지 않았다. 증언하는 출처가 하나뿐인 경로에서는
-    반쯤만 알아본 응답에 크게 실패하는 편이 싸다 —— 환불 폼이 안 만들어지는 것은
-    아무 대가가 없지만, 잘못 읽은 신원으로 나아가면 엉뚱한 승차권이 환불된다.
-    어긋나면 서버의 코드와 메시지를 실은
-    :class:`~srt_mobile_api.errors.SrtAppError` 다. 없는 PNR 로 물으면
-    ``WRT300005`` / "조회자료가 없습니다." 가 온다.
+    엄격한 조건을 느슨하게 고치지 않았습니다. 환불 폼이 안 만들어지는 것은 대가가
+    없지만, 잘못 읽은 신원으로 나아가면 엉뚱한 승차권이 환불됩니다. 어긋나면 서버의
+    코드와 메시지를 실은 :class:`~srt_mobile_api.errors.SrtAppError` 입니다. 없는
+    PNR 로 물으면 ``WRT300005`` / "조회자료가 없습니다." 가 옵니다.
 
-    **이 파서의 예외만 ``raw`` 가 가려져 있다.** 응답에 환불을 승인하는
-    반환비밀번호와 구매자 이름이 실려 오는데, 예외는 호출자가 가장 먼저 로그에
-    남기는 물건이기 때문이다. 구조는 남으므로 모양 문제를 보는 데는 지장이 없다.
+    **이 파서의 예외만 ``raw`` 가 가려져 있습니다.** 응답에 환불을 승인하는
+    반환비밀번호와 구매자 이름이 실려 오기 때문입니다. 구조는 남으므로 모양 문제를
+    보는 데는 지장이 없습니다.
     """
     # THE ONE PARSER WHOSE ERRORS CARRY A REDACTED `raw`, and the exception is
     # deliberate. Every other parser attaches the response verbatim so a caller
@@ -1941,16 +1910,16 @@ def parse_refund_ticket_info_response(
 
 
 def parse_refund_response(data: dict[str, Any]) -> SrtRefundResult:
-    """환불 2단계 —— 평범한 ``resultMap`` SUCC/FAIL 봉투를 읽는다.
+    """환불 2단계 —— 평범한 ``resultMap`` SUCC/FAIL 봉투를 읽습니다.
 
-    ``/atc/selectListAtc02063_n.do`` 의 응답이다. 봉투는 취소와 같다. 바로 앞
-    단계인 카드결제가 ``outDataSets.dsOutput0`` 에 답하는 것과 대비된다 ——
-    두 파서 모두 :func:`_parse_result_envelope` 를 지나 어느 쪽 봉투든 받는다.
+    ``/atc/selectListAtc02063_n.do`` 의 응답입니다. 봉투는 취소와 같습니다. 바로 앞
+    단계인 카드결제가 ``outDataSets.dsOutput0`` 에 답하는 것과 대비됩니다 ——
+    두 파서 모두 :func:`_parse_result_envelope` 를 지나 어느 쪽 봉투든 받습니다.
 
-    확인된 성공 응답은 ``SUCC``/``IRT200277`` 이다.
+    확인된 성공 응답은 ``SUCC``/``IRT200277`` 입니다.
 
-    **업무 실패는 던지지 않고 돌려준다.** "내 승차권이 환불됐나" 는 예외 처리
-    없이 읽을 수 있어야 한다. 어긋난 봉투와 ``ERROR_CODE`` 거절만 예외다.
+    **업무 실패는 던지지 않고 돌려줍니다.** "내 승차권이 환불됐나" 는 예외 처리
+    없이 읽을 수 있어야 합니다. 어긋난 봉투와 ``ERROR_CODE`` 거절만 예외입니다.
     """
     status, code, message = _parse_result_envelope(data, context="refund")
     return SrtRefundResult(
@@ -1965,12 +1934,12 @@ def _reservation_list_container(
     data: dict[str, Any],
     name: str,
 ) -> list[dict[str, Any]]:
-    """나란히 오는 두 행 컨테이너 중 하나를 객체 목록으로 다듬는다.
+    """나란히 오는 두 행 컨테이너 중 하나를 객체 목록으로 다듬습니다.
 
-    ``null`` 도 "비었음" 으로 받는다. 이 응답 자신이 한 본문 안에서 없음을 두
-    가지로 쓰기 때문이다 —— ``"rsListMap": null`` 옆에 ``"trainListMap": []``.
+    ``null`` 도 "비었음" 으로 받습니다. 이 응답 자신이 한 본문 안에서 없음을 두
+    가지로 쓰기 때문입니다 —— ``"rsListMap": null`` 옆에 ``"trainListMap": []``.
     그 밖에 리스트가 아닌 값이나 객체가 아닌 행은
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다.
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
     """
     value = data.get(name)
     if value is None:
@@ -2030,20 +1999,20 @@ def _reservation_list_optional_string(
     row: dict[str, Any],
     key: str,
 ) -> str | None:
-    """행의 필드를 문자열로 읽는다. 없으면 ``None`` 이고, 예외는 내지 않는다.
+    """행의 필드를 문자열로 읽습니다. 없으면 ``None`` 이고, 예외는 내지 않습니다.
 
-    이 응답의 여러 필드가 JSON **숫자**로 온다(``"rcvdAmt": 7500``,
-    ``"jrnyCnt": 1``). 그래서 숫자도 문자열로 바꿔 준다 —— 숫자를 버리면
-    금액이 실려 있는 예약을 두고 카드결제 폼이 "금액이 없다" 며 거절한다.
+    이 응답의 여러 필드가 JSON **숫자**로 옵니다(``"rcvdAmt": 7500``,
+    ``"jrnyCnt": 1``). 그래서 숫자도 문자열로 바꿔 줍니다 —— 숫자를 버리면
+    금액이 실려 있는 예약을 두고 카드결제 폼이 "금액이 없다" 며 거절합니다.
 
-    :data:`_ZERO_PADDED_RESERVATION_COLUMNS` 에 있는 열은 앞의 0 을 되살린다.
-    JSON 숫자는 선행 0 을 잃어버려서(06:30 출발이 ``63000`` 으로 온다) 그대로
-    문자열로 만들면 여섯 자리를 요구하는 결제 폼이 오전 열차를 전부 거절한다.
+    :data:`_ZERO_PADDED_RESERVATION_COLUMNS` 에 있는 열은 앞의 0 을 되살립니다.
+    JSON 숫자는 선행 0 을 잃어버려서(06:30 출발이 ``63000`` 으로 옵니다) 그대로
+    문자열로 만들면 여섯 자리를 요구하는 결제 폼이 오전 열차를 전부 거절합니다.
 
-    :func:`_optional_row_string` 보다 일부러 너그럽다 —— 그쪽은 값이 문자열이
-    아니면 예외다. 이 목록에서는 이상한 필드 하나 때문에 예외를 내면 모든
-    예약의 PNR 을 함께 잃는다. 진짜 못 쓰는 타입(컨테이너, 숫자인 척하는
-    ``bool``)은 버리며, 원본은 ``raw_train``/``raw_pay`` 로 여전히 볼 수 있다.
+    :func:`_optional_row_string` 보다 일부러 너그럽습니다 —— 그쪽은 값이 문자열이
+    아니면 예외입니다. 이 목록에서는 이상한 필드 하나 때문에 예외를 내면 모든
+    예약의 PNR 을 함께 잃습니다. 진짜 못 쓰는 타입(컨테이너, 숫자인 척하는
+    ``bool``)은 버리며, 원본은 ``raw_train``/``raw_pay`` 로 여전히 볼 수 있습니다.
     """
     value = row.get(key)
     if isinstance(value, str):
@@ -2064,13 +2033,13 @@ def _reservation_list_count(
     *,
     raw: Any,
 ) -> int | None:
-    """``rowCnt``·``totPageCnt`` 처럼 JSON 정수로 오는 개수를 읽는다.
+    """``rowCnt``·``totPageCnt`` 처럼 JSON 정수로 오는 개수를 읽습니다.
 
-    숫자로 된 문자열도 받는다 —— 이웃한 읽기들이 두 표기를 섞어 쓰고, 개수
-    하나 때문에 목록 전체를 실패시킬 이유가 없다. 키가 없거나 ``null`` 이면
-    ``None`` 이다.
+    숫자로 된 문자열도 받습니다 —— 이웃한 읽기들이 두 표기를 섞어 쓰고, 개수
+    하나 때문에 목록 전체를 실패시킬 이유가 없습니다. 키가 없거나 ``null`` 이면
+    ``None`` 입니다.
 
-    ``bool`` 은 거절한다. 파이썬에서 ``True`` 는 ``int`` 라 그냥 두면 1 이 된다.
+    ``bool`` 은 거절합니다. 파이썬에서 ``True`` 는 ``int`` 라 그냥 두면 1 이 됩니다.
     """
     if key not in row or row[key] is None:
         return None
@@ -2088,33 +2057,29 @@ def _reservation_list_count(
 def parse_reservation_list_response(
     data: dict[str, Any],
 ) -> SrtReservationListResult:
-    """예약/발권 목록(``/atc/selectListAtc14016_n.do``) 응답을 읽는다.
+    """예약/발권 목록(``/atc/selectListAtc14016_n.do``) 응답을 읽습니다.
 
-    **여기서 "없음" 은 FAIL 이 아니라 빈 배열이다.** 열차 검색은 결과 없음을
-    ``strResult=FAIL`` 로 선언하지만 이 경로는 그러지 않는다. ``SUCC`` 와 함께
-    빈 목록이 온다. 예약이 없다고 예외를 내면, 잡아 둔 예약이 살아 있는지
-    확인하려는 바로 그 순간에 복구 경로가 무용지물이 된다.
+    **여기서 "없음" 은 FAIL 이 아니라 빈 배열입니다.** 열차 검색과 달리 이 경로는
+    ``SUCC`` 와 함께 빈 목록을 보냅니다. 예약이 없다고 예외를 내면 잡아 둔 예약이
+    살아 있는지 확인하려는 순간에 복구 경로가 무용지물이 됩니다.
 
-    **성공한 응답 안에 FAIL 이라고 말하는 봉투가 같이 온다.** 목록이 비었을 때
-    ``rsMap`` 에 ``WRT300005`` "조회자료가 없습니다." 가 실린다. 그래서 이
-    파서는 ``resultMap`` 만 읽는다 —— "어디든 FAIL 이 있으면 실패" 로 판정하면
-    확인된 정상 응답이 오류가 된다. ``rsMap`` 은
-    :attr:`~srt_mobile_api.models.SrtReservationListResult.raw` 로 볼 수 있다.
-    ``resultMap`` 자신이 FAIL 이면 그때는
-    :func:`~srt_mobile_api.errors.classify_app_error` 로 올린다.
+    **성공한 응답 안에 FAIL 이라고 말하는 봉투가 같이 옵니다.** 목록이 비었을 때
+    ``rsMap`` 에 ``WRT300005`` "조회자료가 없습니다." 가 실립니다. 그래서 이 파서는
+    ``resultMap`` 만 읽습니다. ``rsMap`` 은
+    :attr:`~srt_mobile_api.models.SrtReservationListResult.raw` 로 볼 수 있고,
+    ``resultMap`` 자신이 FAIL 이면 :func:`~srt_mobile_api.errors.classify_app_error`
+    로 올립니다.
 
-    행은 나란한 두 컨테이너를 인덱스로 짝지어 만든다 —— ``trainListMap`` 에
-    좌석·금액이, ``payListMap`` 에 열차·시각·결제기한이 있다. 짝이 없으면 빈
-    행으로 두고, ``trainListMap`` 은 끝까지 훑으므로 길이가 다른 응답에서도
-    PNR 이 잘려 나가지 않는다.
+    행은 나란한 두 컨테이너를 인덱스로 짝지어 만듭니다 —— ``trainListMap`` 에
+    좌석·금액이, ``payListMap`` 에 열차·시각·결제기한이 있습니다. 짝이 없으면 빈
+    행으로 두고, ``trainListMap`` 은 끝까지 훑습니다.
 
-    ``pnrNo`` 없는 행은 버린다. 두 컨테이너 어느 쪽에 있어도 찾는다. 다만 행이
+    ``pnrNo`` 없는 행은 버립니다(두 컨테이너 어느 쪽에 있어도 찾습니다). 다만 행이
     있는데 **하나도** PNR 을 못 읽으면 빈 목록 대신
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 를 응답 전체와 함께 올린다
-    —— "예약이 없습니다" 는 실수로 말하기에 위험한 문장이다.
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 를 응답 전체와 함께 올립니다.
 
-    확인된 것은 예약이 없는 계정의 응답 하나뿐이다. 채워진 목록의 행 필드명은
-    미검증이며, 그래서 행을 만드는 규칙이 관대하다.
+    확인된 것은 예약이 없는 계정의 응답 하나뿐입니다. 채워진 목록의 행 필드명은
+    미검증이라 행을 만드는 규칙이 관대합니다.
     """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -2298,22 +2263,18 @@ _ZERO_PADDED_SEARCH_ROW_COLUMNS = {
 
 
 def _row_scalar(value: Any, key: str) -> str | None:
-    """검색 행의 값 하나 —— 문자열, 또는 **폭이 등록된 키**에 한해 숫자도 받는다.
+    """검색 행의 값 하나 —— 문자열, 또는 **폭이 등록된 키**에 한해 숫자도 받습니다.
 
-    ``None`` 을 넣으면 ``None`` 이 나온다. 받아들일 수 없는 값도 ``None`` 이라,
-    실패 메시지는 호출자가 자기 문맥으로 낸다.
+    ``None`` 을 넣으면 ``None`` 이 나옵니다. 받아들일 수 없는 값도 ``None`` 이라,
+    실패 메시지는 호출자가 자기 문맥으로 냅니다.
 
-    숫자를 받는 키는 :data:`_ZERO_PADDED_SEARCH_ROW_COLUMNS` 에 있는 것뿐이고,
-    받을 때는 그 폭으로 0 을 채운다. 타입을 넓히는 일과 자릿수를 되살리는 일을
-    한 결정으로 묶어 둔 것이다 —— 폭 없이 숫자만 받으면 06:30 출발이
-    ``"63000"`` 이 된다.
+    숫자를 받는 키는 :data:`_ZERO_PADDED_SEARCH_ROW_COLUMNS` 에 있는 것뿐이고, 받을
+    때는 그 폭으로 0 을 채웁니다 —— 폭 없이 숫자만 받으면 06:30 출발이 ``"63000"``
+    이 됩니다.
 
-    이 라이브러리의 다른 행 읽기보다 좁다. 이 행의 선택 필드 대부분은 한국어
-    텍스트(``gnrmRsvPsbStr`` 는 ``"예약가능"``)라, 거기 숫자가 온다면 자릿수
-    사고가 아니라 다른 응답이라는 뜻이다.
-
-    ``bool`` 은 제외한다 —— 파이썬에서 ``int`` 의 하위 타입이지만 서버가 이
-    필드들에 참/거짓을 보내지 않는다.
+    이 행의 선택 필드 대부분은 한국어 텍스트(``gnrmRsvPsbStr`` 는 ``"예약가능"``)라
+    다른 행 읽기보다 좁습니다. ``bool`` 은 제외합니다 —— 서버가 이 필드들에 참/거짓을
+    보내지 않습니다.
     """
     if value is None or isinstance(value, str):
         return value
@@ -2336,20 +2297,20 @@ def _required_row_string(
 
 
 def _row_field_is_absent(row: dict[str, Any], key: str) -> bool:
-    """선택 필드가 없는지. **JSON ``null`` 도 없는 것으로 센다.**
+    """선택 필드가 없는지. **JSON ``null`` 도 없는 것으로 셉니다.**
 
-    이 서버는 실제로 ``null`` 을 보낸다 —— 검색 행의 ``fresRsvPsbCdNm``, 메타
-    컨테이너의 ``fllwPgExt2`` 가 그렇게 온다. 이 API 에서 ``null`` 은 "이 행에는
-    그 값이 없다" 의 평범한 표기다. 앱도 구분하지 못한다.
+    이 서버는 실제로 ``null`` 을 보냅니다 —— 검색 행의 ``fresRsvPsbCdNm``, 메타
+    컨테이너의 ``fllwPgExt2`` 가 그렇게 옵니다. 이 API 에서 ``null`` 은 "이 행에는
+    그 값이 없다" 의 평범한 표기입니다. 앱도 구분하지 못합니다.
 
     구분이 중요한 이유는 선택 필드 읽기가 문자열이 아닌 값에
     :class:`~srt_mobile_api.errors.SrtProtocolError` 를 내고, 그 예외가 필드
-    하나가 아니라 **검색 전체**를 무너뜨리기 때문이다. ``null`` 을 없음으로
+    하나가 아니라 **검색 전체**를 무너뜨리기 때문입니다. ``null`` 을 없음으로
     보지 않으면, 예약대기가 없는 열차 하나 때문에 그 노선의 검색이 통째로
-    열차를 못 돌려주게 된다.
+    열차를 못 돌려주게 됩니다.
 
-    ``null`` 이 아닌 이상한 타입은 여전히 예외다. 문자열 자리의 숫자나 객체는
-    진짜 낯선 응답이다.
+    ``null`` 이 아닌 이상한 타입은 여전히 예외입니다. 문자열 자리의 숫자나 객체는
+    진짜 낯선 응답입니다.
     """
     return key not in row or row[key] is None
 
@@ -2452,11 +2413,11 @@ def _station_name(
 
 
 def _optional_message(result: dict[str, Any]) -> str:
-    """``msgTxt`` 를 문자열로 읽는다. ``null`` 은 없는 것과 같이 ``""`` 다.
+    """``msgTxt`` 를 문자열로 읽습니다. ``null`` 은 없는 것과 같이 ``""`` 입니다.
 
-    :func:`_row_field_is_absent` 와 같은 이유다. 이 메타 컨테이너에는 실제로
-    ``null`` 이 실려 온다. 사람이 읽는 메시지 하나 때문에 예외를 내면 열차 한
-    페이지가 통째로 버려진다. 문자열도 ``null`` 도 아닌 값은 여전히 예외다.
+    :func:`_row_field_is_absent` 와 같은 이유입니다. 이 메타 컨테이너에는 실제로
+    ``null`` 이 실려 옵니다. 사람이 읽는 메시지 하나 때문에 예외를 내면 열차 한
+    페이지가 통째로 버려집니다. 문자열도 ``null`` 도 아닌 값은 여전히 예외입니다.
     """
     message = result.get("msgTxt")
     if message is None:
@@ -2498,26 +2459,26 @@ def parse_train_search_response(
     data: dict[str, Any],
     request_context: Mapping[str, str] | None = None,
 ) -> TrainSearchResult:
-    """열차 검색 응답을 :class:`~srt_mobile_api.models.TrainSearchResult` 로 만든다.
+    """열차 검색 응답을 :class:`~srt_mobile_api.models.TrainSearchResult` 로 만듭니다.
 
-    메타데이터는 ``outDataSets.dsOutput0``, 열차 행은 ``dsOutput1`` 에 있다.
-    개인·단체·환승 검색이 모두 이 모양이다.
+    메타데이터는 ``outDataSets.dsOutput0``, 열차 행은 ``dsOutput1`` 에 있습니다.
+    개인·단체·환승 검색이 모두 이 모양입니다.
 
-    **결과 없음은 빈 목록이 아니라 실패다.** 이 서버는 조회 결과가 없으면
+    **결과 없음은 빈 목록이 아니라 실패입니다.** 이 서버는 결과가 없으면
     ``strResult=FAIL`` 과 ``WRG000000`` "조회 결과가 없습니다." 로 답하고,
     :func:`~srt_mobile_api.errors.classify_app_error` 가 그것을
-    :class:`~srt_mobile_api.errors.SrtNoResultsError` 로 만든다. 직통이 없지만
-    환승은 가능한 구간이면 그 하위 클래스가 온다.
+    :class:`~srt_mobile_api.errors.SrtNoResultsError` 로 만듭니다. 직통이 없지만
+    환승은 가능한 구간이면 그 하위 클래스가 옵니다.
 
     ``msgCd`` 가 ``NET000001`` 이면
-    :class:`~srt_mobile_api.errors.SrtNetFunnelKeyError` 다 —— 대기열 키가 상해서
-    다시 받아야 한다는 뜻이고, 클라이언트가 한 번만 재시도한다.
+    :class:`~srt_mobile_api.errors.SrtNetFunnelKeyError` 입니다 —— 대기열 키가 상해
+    다시 받아야 한다는 뜻이고, 클라이언트가 한 번만 재시도합니다.
 
-    성패는 ``strResult`` 로만 가른다. ``msgCd`` 는 참고값이며 특정 값이기를
-    요구하지 않는다(앱도 ``ara1001l.js:206`` 에서 같은 판정을 한다).
+    성패는 ``strResult`` 로만 가릅니다. ``msgCd`` 는 참고값입니다(앱도
+    ``ara1001l.js:206`` 에서 같은 판정을 합니다).
 
-    ``request_context`` 는 요청에 실었던 역 코드·이름이다. 응답 행에 역 이름이
-    없을 때, 코드가 일치하는 경우에 한해 그 이름을 채워 넣는 데만 쓴다.
+    ``request_context`` 는 요청에 실었던 역 코드·이름입니다. 응답 행에 역 이름이
+    없을 때, 코드가 일치하는 경우에 한해 채워 넣는 데만 씁니다.
     """
     if not isinstance(data, dict):
         raise SrtProtocolError(
@@ -2566,18 +2527,18 @@ def _parse_search_train_rows(
     rows: list[Any],
     request_context: Mapping[str, str] | None = None,
 ) -> list[TrainSummary]:
-    """검색 행 목록을 :class:`~srt_mobile_api.models.TrainSummary` 로 바꾼다.
+    """검색 행 목록을 :class:`~srt_mobile_api.models.TrainSummary` 로 바꿉니다.
 
-    같은 행 모양을 돌려주는 두 검색이 갈라지지 않도록 떼어 둔 함수다. 일반
+    같은 행 모양을 돌려주는 두 검색이 갈라지지 않도록 떼어 둔 함수입니다. 일반
     검색은 이 행들을 ``dsOutput1`` 에, 할인 승차권 검색은 ``trainListMap`` 에
-    담아 보내지만 열은 같다 —— 할인 승차권 결과 페이지도 일반 페이지와 같은
-    변수 이름으로 그것을 받는다.
+    담아 보내지만 열은 같습니다 —— 할인 승차권 결과 페이지도 일반 페이지와 같은
+    변수 이름으로 그것을 받습니다.
 
-    **컨테이너를 여는 일은 호출자 몫이다.** 두 경로가 실제로 다른 지점이 거기다.
+    **컨테이너를 여는 일은 호출자 몫입니다.** 두 경로가 실제로 다른 지점이 거기입니다.
 
     ``trnNo`` 는 필수이고, 없으면
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다. 나머지 열은 없으면
-    ``None`` 이다.
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다. 나머지 열은 없으면
+    ``None`` 입니다.
     """
     trains: list[TrainSummary] = []
     for row in rows:
@@ -2719,11 +2680,11 @@ def parse_public_discount_search_response(
     data: dict[str, Any],
     request_context: Mapping[str, str] | None = None,
 ) -> TrainSearchResult:
-    """할인 승차권 검색(``/ara/selectListAra10131_n.do``) 응답을 읽는다.
+    """할인 승차권 검색(``/ara/selectListAra10131_n.do``) 응답을 읽습니다.
 
-    **이 응답은 한 번도 본 적이 없다.** 이 검색을 보내려면 승인된 공공할인
-    자격이 필요하다. 아래 내용은 전부 서버가 렌더링해 주는 조회결과 페이지의
-    처리 코드에서 읽은 것이다::
+    **이 응답은 한 번도 본 적이 없습니다.** 이 검색을 보내려면 승인된 공공할인
+    자격이 필요합니다. 아래 내용은 전부 서버가 렌더링해 주는 조회결과 페이지의 처리
+    코드에서 읽은 것입니다::
 
         var resultMap = data.resultMap[0];
         if(resultMap.strResult == "FAIL"){ ...stop paging... }
@@ -2733,29 +2694,28 @@ def parse_public_discount_search_response(
             $("#gdNo").val(data.dsCmdMap.gdNo);
         }
 
-    **담는 그릇은 일반 검색과 다르고 행은 같다.** 일반 검색은
-    ``ErrorCode`` 봉투 안의 ``outDataSets.dsOutput0``/``dsOutput1`` 로 답하는데
-    이쪽은 ``resultMap`` 과 ``trainListMap`` 이다. 행의 열 이름은 같아서
-    :func:`_parse_search_train_rows` 를 그대로 쓴다.
+    **담는 그릇은 일반 검색과 다르고 행은 같습니다.** 일반 검색은 ``ErrorCode``
+    봉투 안의 ``outDataSets.dsOutput0``/``dsOutput1`` 로 답하는데 이쪽은
+    ``resultMap`` 과 ``trainListMap`` 입니다. 행의 열 이름은 같아서
+    :func:`_parse_search_train_rows` 를 그대로 씁니다.
 
-    **열 두 개가 새로 붙는다.** ``gnrmBkclDcntRt``·``sprmBkclDcntRt`` —— 일반실과
-    특실의 공공할인율(정수 퍼센트)이고, 이 검색의 목적 자체다. 페이지는 1 미만을
-    "이 열차에는 할인 없음" 으로 다룬다. 결과에서는
+    **열 두 개가 새로 붙습니다.** ``gnrmBkclDcntRt``·``sprmBkclDcntRt`` —— 일반실과
+    특실의 공공할인율(정수 퍼센트)이고 이 검색의 목적입니다. 페이지는 1 미만을 "이
+    열차에는 할인 없음" 으로 다룹니다. 결과에서는
     :attr:`~srt_mobile_api.models.TrainSummary.general_class_discount_rate` 과
-    ``special_class_discount_rate`` 로 나온다.
+    ``special_class_discount_rate`` 로 나옵니다.
 
-    **페이지 넘김은 시각이 아니라 커서다.** 다음 요청에 실을 값은
-    ``dsCmdMap.gdNo`` 이고, 다음 페이지 유무는 ``trainListMap[0].fllwPgExt``
-    —— 메타 행이 아니라 **첫 행**에 실린다. 둘 다
-    :class:`~srt_mobile_api.models.TrainSearchMetadata` 로 옮기지 않았다.
-    ``dsOutput0`` 의 같은 이름 필드와 뜻이 같다고 단정하게 되기 때문이다. 원문은
-    :attr:`~srt_mobile_api.models.TrainSearchResult.raw` 에 있고, 이 함수의
-    반환은 ``metadata`` 가 ``None`` 이다.
+    **페이지 넘김은 시각이 아니라 커서입니다.** 다음 요청에 실을 값은
+    ``dsCmdMap.gdNo`` 이고, 다음 페이지 유무는 ``trainListMap[0].fllwPgExt`` ——
+    메타 행이 아니라 **첫 행**에 실립니다. 둘 다
+    :class:`~srt_mobile_api.models.TrainSearchMetadata` 로 옮기지 않았고 원문은
+    :attr:`~srt_mobile_api.models.TrainSearchResult.raw` 에 있습니다. 이 함수의
+    반환은 ``metadata`` 가 ``None`` 입니다.
 
-    ``strResult == "FAIL"`` 은 일반 검색과 같이 올라간다 —— 빈 결과는
-    :class:`~srt_mobile_api.errors.SrtNoResultsError` 다. 자격 없는 계정에
-    서버가 무엇을 답하는지는 알 수 없다. 여기서는 거절과 빈 결과가 구분되지
-    않는다. ``msgCd`` 는 일반 검색과 달리 없어도 된다 —— 페이지도 읽지 않는다.
+    ``strResult == "FAIL"`` 은 일반 검색과 같이 올라가고 빈 결과는
+    :class:`~srt_mobile_api.errors.SrtNoResultsError` 입니다. 자격 없는 계정에
+    서버가 무엇을 답하는지는 알 수 없어 거절과 빈 결과가 구분되지 않습니다.
+    ``msgCd`` 는 없어도 됩니다 —— 페이지도 읽지 않습니다.
     """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -2842,12 +2802,12 @@ TRANSFER_LEGS_PER_ITINERARY = 2
 
 
 def _itinerary_key(train: TrainSummary) -> str:
-    """이 구간이 속한 여정 번호. 알 수 없으면 ``""`` 다.
+    """이 구간이 속한 여정 번호. 알 수 없으면 ``""`` 입니다.
 
     ``trnOrdrNo`` 를 **원본 행에서 먼저** 읽고, 없을 때만 타입이 붙은
-    :attr:`~srt_mobile_api.models.TrainSummary.train_run_order` 를 본다. 순서가
-    중요하다 —— 그 속성은 ``trnRunOrdr`` 를 ``trnOrdrNo`` 보다 먼저 받으므로,
-    둘 다 실린 행을 그쪽부터 보면 엉뚱한 기준으로 묶인다.
+    :attr:`~srt_mobile_api.models.TrainSummary.train_run_order` 를 봅니다. 순서가
+    중요합니다 —— 그 속성은 ``trnRunOrdr`` 를 ``trnOrdrNo`` 보다 먼저 받으므로,
+    둘 다 실린 행을 그쪽부터 보면 엉뚱한 기준으로 묶입니다.
     """
     raw = train.raw
     if isinstance(raw, dict):
@@ -2864,20 +2824,20 @@ def _itinerary_key(train: TrainSummary) -> str:
 def _order_transfer_legs(
     rows: tuple[TrainSummary, ...],
 ) -> tuple[TransferItinerary | None, str]:
-    """두 구간의 선행/후행을 **역으로** 가린다. 응답의 순서는 근거로 쓰지 않는다.
+    """두 구간의 선행/후행을 **역으로** 가립니다. 응답의 순서는 근거로 쓰지 않습니다.
 
-    성공하면 ``(여정, "")``, 거절하면 ``(None, 이유)`` 다.
+    성공하면 ``(여정, "")``, 거절하면 ``(None, 이유)`` 입니다.
 
     행이 순서대로 온 응답을 본 적은 있지만 그것은 한 응답의 관찰일 뿐 보장이
-    아니다. 틀렸을 때의 대가가 크다 —— 두 여정 슬롯이 거꾸로 들어간 예약은
-    멀쩡히 만들어지고 진짜 승차권이 된다. 역은 그것을 분명히 말한다: 선행은
-    상대가 출발하는 역에 **도착하는** 쪽이다.
+    아닙니다. 틀렸을 때의 대가가 큽니다 —— 두 여정 슬롯이 거꾸로 들어간 예약은
+    멀쩡히 만들어지고 진짜 승차권이 됩니다. 역은 그것을 분명히 말합니다: 선행은
+    상대가 출발하는 역에 **도착하는** 쪽입니다.
 
     두 방향을 모두 :class:`~srt_mobile_api.models.TransferItinerary` 에 넣어 보고
-    그쪽이 판정하게 한다. 연결·시간 순서·서로 다른 열차 같은 "이것이 여정인가"
-    의 판단이 한 곳에만 있게 하기 위해서다. 성립하는 방향이 정확히 하나여야
-    한다. 0이면 여정이 아니고, 2면 진짜로 모호한 것이므로(시간 순서가 어느
-    쪽으로도 맞는 왕복 고리) 없는 규칙을 만들어 고르지 않고 거절한다.
+    그쪽이 판정하게 합니다. 연결·시간 순서·서로 다른 열차 같은 "이것이 여정인가"
+    의 판단이 한 곳에만 있게 하기 위해서입니다. 성립하는 방향이 정확히 하나여야
+    합니다. 0이면 여정이 아니고, 2면 진짜로 모호한 것이므로(시간 순서가 어느
+    쪽으로도 맞는 왕복 고리) 없는 규칙을 만들어 고르지 않고 거절합니다.
     """
     first, second = rows
     candidates: list[TransferItinerary] = []
@@ -2901,32 +2861,30 @@ def _order_transfer_legs(
 
 
 def pair_transfer_itineraries(result: TrainSearchResult) -> TransferSearchResult:
-    """환승 검색의 낱개 행을 ``trnOrdrNo`` 기준으로 두 구간짜리 여정으로 묶는다.
+    """환승 검색의 낱개 행을 ``trnOrdrNo`` 기준으로 두 구간짜리 여정으로 묶습니다.
 
-    **이것은 추론 계층이다.** 서버는 한 구간짜리 행을 평평하게 보내고, 묶는
-    일은 이쪽이 한다. 그래서 원본 검색 결과는
-    :attr:`~srt_mobile_api.models.TransferSearchResult.search` 에 손대지 않고
-    그대로 남고, 행을 고쳐 쓰는 곳도 없다.
+    **이것은 추론 계층입니다.** 서버는 한 구간짜리 행을 평평하게 보내고 묶는 일은
+    이쪽이 합니다. 그래서 원본 검색 결과는
+    :attr:`~srt_mobile_api.models.TransferSearchResult.search` 에 손대지 않고 그대로
+    남습니다.
 
-    규칙은 하나다: ``trnOrdrNo`` 가 같은 행은 한 여정이고, 여정은 정확히
-    :data:`TRANSFER_LEGS_PER_ITINERARY` 행이다. 묶음은 첫 행이 나온 순서대로
-    나가므로 서버의 정렬이 유지된다.
+    규칙은 하나입니다: ``trnOrdrNo`` 가 같은 행은 한 여정이고, 여정은 정확히
+    :data:`TRANSFER_LEGS_PER_ITINERARY` 행입니다. 묶음은 첫 행이 나온 순서대로
+    나가므로 서버의 정렬이 유지됩니다.
 
-    **맞지 않는 묶음은 버리지도, 억지로 맞추지도 않고 따로 둔다.** 행 수가 다른
-    경우, 두 구간이 이어지지 않거나 시간이 거꾸로인 경우, 선행이 모호한 경우 —
-    셋 다 이유와 함께
-    :attr:`~srt_mobile_api.models.TransferSearchResult.unpaired` 로 간다.
-    조용히 빠뜨리면 탈 수 있었던 여정이 사라지고, 잘못 묶어 주면 두 슬롯이 한
-    여정이 아닌 예약이 만들어지는데 서버는 그것을 받아 준다.
+    **맞지 않는 묶음은 버리지도, 억지로 맞추지도 않고 따로 둡니다.** 행 수가 다른
+    경우, 두 구간이 이어지지 않거나 시간이 거꾸로인 경우, 선행이 모호한 경우 —— 셋
+    다 이유와 함께 :attr:`~srt_mobile_api.models.TransferSearchResult.unpaired` 로
+    갑니다. 잘못 묶어 주면 두 슬롯이 한 여정이 아닌 예약이 만들어지는데 서버는
+    그것을 받아 줍니다.
 
-    **단, 하나도 묶이지 않으면 예외다.** 행이 왔는데 여정이 하나도 안 나왔다면
-    이 묶는 규칙이 그 응답에 맞지 않는다는 뜻이지 서버가 깨진 여정 열 개를
-    보냈다는 뜻이 아니다. 그때 빈 목록을 돌려주는 것이야말로 유일하게 조용한
-    실패다. 응답 전체를 ``raw`` 에 실은
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 가 오른다.
+    **단, 하나도 묶이지 않으면 예외입니다.** 행이 왔는데 여정이 하나도 안 나왔다면
+    이 규칙이 그 응답에 맞지 않는다는 뜻이고, 그때 빈 목록을 돌려주는 것이야말로
+    조용한 실패입니다. 응답 전체를 ``raw`` 에 실은
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 가 오릅니다.
 
-    행이 아예 없는 응답은 그 경우가 아니다 —— 여정 없음으로 조용히 끝난다.
-    실제로 결과가 없는 검색은 그 전에 ``strResult=FAIL`` 로 걸린다.
+    행이 아예 없는 응답은 그 경우가 아니라 여정 없음으로 조용히 끝납니다. 실제로
+    결과가 없는 검색은 그 전에 ``strResult=FAIL`` 로 걸립니다.
     """
     groups: dict[str, list[TrainSummary]] = {}
     for row in result.trains:

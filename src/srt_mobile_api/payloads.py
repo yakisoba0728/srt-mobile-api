@@ -1,22 +1,23 @@
 """요청 폼을 만드는 곳 —— 나가는 바이트가 결정되는 자리.
 
-:mod:`~srt_mobile_api.parsers` 가 받는 쪽이면 이쪽은 보내는 쪽이다. 각 빌더는
-``dict[str, str]`` 하나를 돌려주고, 그것이 그대로 폼 본문이 된다. 아무것도
-전송하지 않는다 —— 전송은 :class:`~srt_mobile_api.http.SrtHttpClient` 의 일이다.
+:mod:`~srt_mobile_api.parsers` 가 받는 쪽이면 이쪽은 보내는 쪽입니다. 각 빌더는
+``dict[str, str]`` 하나를 돌려주고 그것이 그대로 폼 본문이 됩니다. 아무것도
+전송하지 않습니다 —— 전송은 :class:`~srt_mobile_api.http.SrtHttpClient` 의
+일입니다.
 
-**필드 이름과 순서는 앱이 만드는 그대로다.** 이 서버는 값뿐 아니라 어떤 필드가
-있고 없느냐에도 반응하므로, 앱이 빈 문자열로 보내는 필드는 여기서도 빈
-문자열로 보내고 앱이 아예 싣지 않는 필드는 여기서도 만들지 않는다. 근거는
-앱 번들의 파일·행 번호로 각 함수에 적어 두었다.
+**필드 이름과 순서는 앱이 만드는 그대로입니다.** 이 서버는 값뿐 아니라 어떤
+필드가 있고 없느냐에도 반응하므로, 앱이 빈 문자열로 보내는 필드는 여기서도 빈
+문자열로 보내고 앱이 싣지 않는 필드는 만들지 않습니다. 근거는 앱 번들의 파일·행
+번호로 각 함수에 적어 두었습니다.
 
-**모르는 값은 채우지 않는다.** 검색 행에 필요한 필드가 없으면 그럴듯한 기본값을
-넣는 대신 :class:`ValueError` 나
-:class:`~srt_mobile_api.errors.SrtProtocolError` 를 낸다. 특히 좌석 등급처럼
-잘못 고르면 다른 운임이 결제되는 값은 절대 추측하지 않는다.
+**모르는 값은 채우지 않습니다.** 검색 행에 필요한 필드가 없으면 그럴듯한
+기본값을 넣는 대신 :class:`ValueError` 나
+:class:`~srt_mobile_api.errors.SrtProtocolError` 를 냅니다. 특히 좌석 등급처럼
+잘못 고르면 다른 운임이 결제되는 값은 추측하지 않습니다.
 
 읽기 폼은 :func:`~srt_mobile_api.safety.assert_read_only_request` 의 필드 계약과
-짝을 이룬다. 상태를 바꾸는 폼(예약·취소·결제·환불)은 만들어지기만 하고, 실제
-전송에는 :class:`~srt_mobile_api.consent.MutationConsent` 가 따로 필요하다.
+짝을 이룹니다. 상태를 바꾸는 폼(예약·취소·결제·환불)은 만들어지기만 하고, 실제
+전송에는 :class:`~srt_mobile_api.consent.MutationConsent` 가 따로 필요합니다.
 """
 
 import re
@@ -377,15 +378,15 @@ def date_selector_payload(date: str) -> dict[str, str]:
 
 
 def reservation_list_payload(page_no: int = 0) -> dict[str, str]:
-    """예약/발권 목록 조회(``/atc/selectListAtc14016_n.do``)의 본문을 만든다.
+    """예약/발권 목록 조회(``/atc/selectListAtc14016_n.do``)의 본문을 만듭니다.
 
-    필드는 ``pageNo`` 하나이고 그것이 폼의 전부다. 앱이 이 경로를 WebView 로
+    필드는 ``pageNo`` 하나이고 그것이 폼의 전부입니다. 앱이 이 경로를 WebView 로
     열 때 쿼리에 붙이는 파라미터와 같고(``SRForegroundDialogActivity.java:31``),
-    서버는 응답의 ``commandMap`` 에 받은 값을 그대로 되비춘다.
+    서버는 응답의 ``commandMap`` 에 받은 값을 그대로 되비춥니다.
 
-    상한 검사는 하지 않는다. 페이지가 몇 개인지는 응답의 ``totPageCnt`` 가
-    말해 주고, 이쪽에서 범위를 정할 근거가 없다. 음수나 정수가 아닌 값
-    (``bool`` 포함)은 :class:`ValueError` 다.
+    상한 검사는 하지 않습니다. 페이지가 몇 개인지는 응답의 ``totPageCnt`` 가
+    말해 주고, 이쪽에서 범위를 정할 근거가 없습니다. 음수나 정수가 아닌 값
+    (``bool`` 포함)은 :class:`ValueError` 입니다.
     """
     if type(page_no) is not int or page_no < 0:
         raise ValueError("page_no must be a non-negative non-boolean integer")
@@ -464,12 +465,12 @@ def train_group_selector_payload(
 
 
 def _passenger_slot_counts(passengers: PassengerCounts) -> list[tuple[str, int]]:
-    """여섯 개의 ``(psgTpCd, 인원)`` 을 정해진 순서로 준다. 유아는 이미 접혀 있다.
+    """여섯 개의 ``(psgTpCd, 인원)`` 을 정해진 순서로 줍니다. 유아는 이미 접혀 있습니다.
 
-    유아를 어린이 칸에 합치는 일이 일어나는 유일한 곳이다. 5번 칸의 값은
+    유아를 어린이 칸에 합치는 일이 일어나는 유일한 곳입니다. 5번 칸의 값은
     :attr:`~srt_mobile_api.models.PassengerCounts.child_slot_count`(어린이 +
-    유아)이지 ``child`` 가 아니다. 그래서 아래쪽 어느 빌더도 접히지 않은 숫자를
-    실수로 내보낼 수 없다.
+    유아)이지 ``child`` 가 아닙니다. 그래서 아래쪽 어느 빌더도 접히지 않은 숫자를
+    실수로 내보낼 수 없습니다.
     """
     return [
         (type_code, getattr(passengers, attribute))
@@ -564,17 +565,17 @@ def search_page_payload(
     *,
     transfer: bool = False,
 ) -> dict[str, str]:
-    """예매 폼을 채우는 준비 요청(Ara10007)의 필드를 만든다.
+    """예매 폼을 채우는 준비 요청(Ara10007)의 필드를 만듭니다.
 
     검색 자체가 아니라, 검색 ajax 가 물려받을 숨은 필드를 서버에서 받아 오는
-    앞 단계다. 여기서 받은 값이 :func:`search_ajax_payload` 의
-    ``hydrated_fields`` 로 들어간다.
+    앞 단계입니다. 여기서 받은 값이 :func:`search_ajax_payload` 의
+    ``hydrated_fields`` 로 들어갑니다.
 
-    ``transfer=True`` 는 앱의 환승 토글이 바꾸는 딱 두 필드만 바꾼다 ——
+    ``transfer=True`` 는 앱의 환승 토글이 바꾸는 딱 두 필드만 바꿉니다 ——
     ``jrnyTpCd`` 가 ``"11"`` 에서 ``"14"``(환승편도)로, ``jrnyCnt`` 가 ``"1"``
     에서 ``"2"`` 로. 토글의 전부가 그 한 줄이고(``ara0101v.js:302-303``),
     ``jrnySqno2`` 를 비롯한 둘째 슬롯 키는 건드리지 않으므로 여기서도 그대로
-    빈 값이다.
+    빈 값입니다.
     """
     group_name, service_class = TRAIN_GROUP_OPTIONS[query.train_group_code]
     payload = {
@@ -634,19 +635,19 @@ def search_ajax_payload(
     hydrated_fields: dict[str, str],
     transfer: bool = False,
 ) -> dict[str, str]:
-    """열차 검색 POST(Ara10007)의 본문을 만든다.
+    """열차 검색 POST(Ara10007)의 본문을 만듭니다.
 
     ``hydrated_fields`` 는 :func:`search_page_payload` 로 받아 둔 서버의 숨은
-    필드다. 그 위에 이 질의의 역·날짜·시각·인원을 덮어쓴다.
+    필드입니다. 그 위에 이 질의의 역·날짜·시각·인원을 덮어씁니다.
 
     ``transfer=True`` 는 ``chtnDvCd`` 를 ``"1"``(직통) 대신 ``"2"``(환승)로
-    둔다. 그것이 요청의 **전부**다 —— 경로는 바뀌지 않는다. 앱도 같은 방식으로
-    이 값을 만들고 같은 주소로 보낸다(``ara1001l.js:98``, :159). 경로를 가르는
-    것은 단체 여부(``grpDv``)뿐이다. ``chtnDvCd`` 는 돌아오는 행에도 실려 있어서
-    무엇을 받았는지 확인할 수 있다.
+    둡니다. 그것이 요청의 **전부**다 —— 경로는 바뀌지 않습니다. 앱도 같은 방식으로
+    이 값을 만들고 같은 주소로 보냅니다(``ara1001l.js:98``, :159). 경로를 가르는
+    것은 단체 여부(``grpDv``)뿐입니다. ``chtnDvCd`` 는 돌아오는 행에도 실려 있어서
+    무엇을 받았는지 확인할 수 있습니다.
 
-    ``fllwPgExt`` 는 본문에서 지운다 —— 다음 페이지 여부는 응답이 말하는 것이지
-    요청이 말하는 것이 아니다.
+    ``fllwPgExt`` 는 본문에서 지웁니다 —— 다음 페이지 여부는 응답이 말하는 것이지
+    요청이 말하는 것이 아닙니다.
     """
     group_name, service_class = TRAIN_GROUP_OPTIONS[query.train_group_code]
     payload = dict(hydrated_fields)
@@ -831,22 +832,21 @@ def seat_grid_payload(
     *,
     seat_attr_code: str = "015",
 ) -> dict[str, str]:
-    """호차 하나의 좌석배치도 요청(``/arc/selectListArc02011_n.do``)을 만든다.
+    """호차 하나의 좌석배치도 요청(``/arc/selectListArc02011_n.do``)을 만듭니다.
 
-    좌석 페이지가 호차를 고를 때 직렬화해 보내는 ``trnScarSeatFrm`` 과 같은
-    열한 필드다. 좌석 **페이지**의 필드에서 ``reqCode``·``dptDt``·``dptTm`` 을
-    빼고 ``scarNo``(열려는 호차)를 더한 것이다. 경로도 폼도 앱 번들에는 없고
-    서버가 렌더링해 주는 페이지에만 있다.
+    좌석 페이지가 호차를 고를 때 직렬화해 보내는 ``trnScarSeatFrm`` 과 같은 열한
+    필드입니다. 좌석 **페이지**의 필드에서 ``reqCode``·``dptDt``·``dptTm`` 을 빼고
+    ``scarNo``(열려는 호차)를 더한 것으로, 경로도 폼도 앱 번들에는 없고 서버가
+    렌더링해 주는 페이지에만 있습니다.
 
-    ``trnNo`` 는 다섯 자리로 0 을 채운다 —— 채우지 않으면 서버가 배치도 대신
-    안내 문구를 준다(:data:`SEAT_TRAIN_NUMBER_LENGTH`).
-
-    ``dptStnRunOrdr``/``arvStnRunOrdr`` 는 검색 행에서 온다. 다른 데서 만들어
-    넣으면 요청이 거절된다.
+    ``trnNo`` 는 다섯 자리로 0 을 채웁니다 —— 채우지 않으면 서버가 배치도 대신 안내
+    문구를 줍니다(:data:`SEAT_TRAIN_NUMBER_LENGTH`).
+    ``dptStnRunOrdr``/``arvStnRunOrdr`` 는 검색 행에서 와야 하고, 다른 데서 만들어
+    넣으면 요청이 거절됩니다.
 
     ``train_group_code`` 가 ``"300"``(SRT)이 아니거나, ``cabin_class`` 가
-    ``"1"``(일반실)/``"2"``(특실)이 아니거나, ``seat_count`` 가 양의 정수
-    문자열이 아니면 :class:`ValueError` 다.
+    ``"1"``(일반실)/``"2"``(특실)이 아니거나, ``seat_count`` 가 양의 정수 문자열이
+    아니면 :class:`ValueError` 입니다.
     """
     if train.train_group_code != "300":
         raise ValueError("train_group_code must be 300 for an SRT seat grid")
@@ -913,10 +913,10 @@ STLB_TRAIN_CLASS_NAMES = {
 
 
 def stlb_train_class_name(code: str | None) -> str:
-    """역무차종별코드(``stlbTrnClsfCd``)를 화면에 쓰는 이름으로 바꾼다.
+    """역무차종별코드(``stlbTrnClsfCd``)를 화면에 쓰는 이름으로 바꿉니다.
 
-    SRT 는 ``"17"`` 이다. 모르는 코드는 ``""`` —— 서버 페이지의 같은 함수
-    (``getStlbTrnClsfCdNm``)도 그렇게 끝난다.
+    SRT 는 ``"17"`` 입니다. 모르는 코드는 ``""`` —— 서버 페이지의 같은 함수
+    (``getStlbTrnClsfCdNm``)도 그렇게 끝납니다.
     """
     return STLB_TRAIN_CLASS_NAMES.get(code or "", "")
 
@@ -924,14 +924,14 @@ def stlb_train_class_name(code: str | None) -> str:
 def _train_sort(train: TrainSummary) -> str:
     """시각표·운임 폼이 싣는 ``trnSort``.
 
-    **코드가 아니라 이름이다.** 서버가 렌더링하는 검색 페이지는 두 호출 지점
-    모두에서 ``trnSort: getStlbTrnClsfCdNm(...stlbTrnClsfCd)`` 를 보낸다 ——
-    SRT 열차면 문자열 ``"SRT"`` 다.
+    **코드가 아니라 이름입니다.** 서버가 렌더링하는 검색 페이지는 두 호출 지점
+    모두에서 ``trnSort: getStlbTrnClsfCdNm(...stlbTrnClsfCd)`` 를 보냅니다 ——
+    SRT 열차면 문자열 ``"SRT"`` 입니다.
 
     검색 행에는 열차종별코드(``trnClsfCd``)가 아예 실려 오지 않으므로, 그것으로
-    이 필드를 만들면 언제나 빈 값이 된다. 그래서 역무차종별코드에서 이름을
+    이 필드를 만들면 언제나 빈 값이 됩니다. 그래서 역무차종별코드에서 이름을
     만들고, 호출자가 직접 채워 넣은 ``train_class_code`` 는 그 이름이 없을 때만
-    쓴다.
+    씁니다.
     """
     name = stlb_train_class_name(train.service_class_code)
     return name or str(train.train_class_code or "")
@@ -955,27 +955,27 @@ def _station_course(train: TrainSummary) -> str:
 
 
 def _query_date(train: TrainSummary) -> str:
-    """시각표·운임 폼이 ``runDt`` 로 싣는 날짜 —— **출발일**이지 운행일이 아니다.
+    """시각표·운임 폼이 ``runDt`` 로 싣는 날짜 —— **출발일**이지 운행일이 아닙니다.
 
-    서버가 렌더링하는 검색 페이지가 두 폼 모두에 행의 ``dptDt`` 를 싣는다.
+    서버가 렌더링하는 검색 페이지가 두 폼 모두에 행의 ``dptDt`` 를 싣습니다.
     같은 날 출발하는 열차에서는 운행일과 출발일이 같지만, 자정을 넘겨 출발하는
-    열차에서는 운행일이 전날이다 —— 운임·시각표 조회가 어긋나는 것은 바로 그
-    경우다.
+    열차에서는 운행일이 전날입니다 —— 운임·시각표 조회가 어긋나는 것은 바로 그
+    경우입니다.
 
-    **예약 폼에는 이 규칙을 옮기면 안 된다.** 그쪽은 ``runDt1`` 에 운행일을,
-    ``dptDt1`` 에 출발일을 따로 싣는다
+    **예약 폼에는 이 규칙을 옮기면 안 됩니다.** 그쪽은 ``runDt1`` 에 운행일을,
+    ``dptDt1`` 에 출발일을 따로 싣습니다
     (:func:`personal_reservation_payload`).
     """
     return train.departure_date or train.run_date or ""
 
 
 def timetable_payload(train: TrainSummary) -> dict[str, str]:
-    """열차 시각표 조회 폼 —— 네 필드가 전부다.
+    """열차 시각표 조회 폼 —— 네 필드가 전부입니다.
 
     구간명(``stnCourseNm``)은 두 역 **이름**을 ``-`` 로 이은 문자열이고,
     ``trnSort`` 는 차종 이름(SRT 열차면 ``"SRT"``), ``runDt`` 는 출발일
-    (:func:`_query_date`), ``trnNo`` 는 다섯 자리로 채운 열차번호다. 인원은
-    싣지 않는다 —— 시각표는 승객과 무관하다.
+    (:func:`_query_date`), ``trnNo`` 는 다섯 자리로 채운 열차번호입니다. 인원은
+    싣지 않습니다 —— 시각표는 승객과 무관합니다.
     """
     return {
         "stnCourseNm": _station_course(train),
@@ -995,22 +995,22 @@ _FARE_TRAILING_SLOT = 6
 
 
 def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, str]:
-    """운임·요금 조회(Ara13010) 폼을 만든다.
+    """운임·요금 조회(Ara13010) 폼을 만듭니다.
 
-    승객은 ``psgTpCd1``~``psgTpCd6`` 과 ``psgInfoPerPrnb1``~``6`` 으로 싣는다 ——
-    선택기 팝업이 쓰는 ``passenger1`` 계열이 아니다. 값은 검색·예약과 같은 방식
-    으로 압축한 슬롯이다(유아는 어린이에 접히고 청소년이 마지막).
+    승객은 ``psgTpCd1``~``psgTpCd6`` 과 ``psgInfoPerPrnb1``~``6`` 으로 싣습니다 ——
+    선택기 팝업이 쓰는 ``passenger1`` 계열이 아닙니다. 값은 검색·예약과 같은
+    방식으로 압축한 슬롯입니다(유아는 어린이에 접히고 청소년이 마지막).
 
-    **인원은 조회 결과를 바꾼다.** 운임 **표**(어른·어린이·경로 × 특실·일반실)는
-    인원과 무관하지만, 같은 페이지가 렌더링하는 예상 **합계**는 인원을 보고
-    계산된다. 슬롯이 비면 서버는 아무도 타지 않는 것으로 보고 0원이라고 답한다.
+    **인원은 조회 결과를 바꿉니다.** 운임 **표**는 인원과 무관하지만 같은 페이지가
+    렌더링하는 예상 **합계**는 인원을 보고 계산되어, 슬롯이 비면 서버는 0원이라고
+    답합니다.
 
-    슬롯 6 은 보통 비운다 —— ``psgTpCd6``/``psgInfoPerPrnb6`` 모두 ``""`` 이며,
-    검색 폼의 빈 슬롯이 ``"0"`` 을 쓰는 것과 다르다. 청소년이 있으면 그 자리가
-    실제 슬롯이므로 비우지 않는다.
+    슬롯 6 은 보통 비웁니다 —— ``psgTpCd6``/``psgInfoPerPrnb6`` 모두 ``""`` 이며,
+    검색 폼의 빈 슬롯이 ``"0"`` 을 쓰는 것과 다릅니다. 청소년이 있으면 그 자리가
+    실제 슬롯이라 비우지 않습니다.
 
-    둘째 구간 필드(``dptRsStnCd2`` 등)는 언제나 빈 값이다. 이 폼으로는 한 구간만
-    물을 수 있다 —— 응답에서 그것이 왜 중요한지는
+    둘째 구간 필드(``dptRsStnCd2`` 등)는 언제나 빈 값입니다. 이 폼으로는 한 구간만
+    물을 수 있습니다 —— 응답에서 그것이 왜 중요한지는
     :func:`~srt_mobile_api.parsers.parse_fare_page` 참고.
     """
     run_date = _query_date(train)
@@ -1053,20 +1053,20 @@ def _special_seat_available(train: TrainSummary) -> bool:
 
 
 def _require_availability(value: str | None, *, seat_type: SeatType, field: str) -> str:
-    """잔여석 정보가 없는 행에서 좌석 등급을 넘겨짚지 않는다.
+    """잔여석 정보가 없는 행에서 좌석 등급을 넘겨짚지 않습니다.
 
-    ``None`` 은 "그 등급이 매진" 이 아니라 "행에 그 필드가 없었다" 는 뜻이다.
+    ``None`` 은 "그 등급이 매진" 이 아니라 "행에 그 필드가 없었다" 는 뜻입니다.
     둘을 같이 취급하면 ``GENERAL_FIRST`` 가 필드 없음을 "일반실 매진" 으로 읽고
-    특실을 예약한다 —— 검색에서 예약으로 이어지는 평범한 경로에서 일어나고,
-    운임 차액은 호출자가 문다. 환승 예약에서는 둘째 구간이 첫 구간의 판단을
-    따르므로 두 구간 모두 그렇게 된다.
+    특실을 예약합니다 —— 검색에서 예약으로 이어지는 평범한 경로에서 일어나고,
+    운임 차액은 호출자가 뭅니다. 환승 예약에서는 둘째 구간이 첫 구간의 판단을
+    따르므로 두 구간 모두 그렇게 됩니다.
 
     ``*_FIRST`` 는 "잔여석을 보고 정하라" 는 뜻이므로, 볼 것이 없으면 정할 것도
-    없다. 그래서 :class:`~srt_mobile_api.errors.SrtProtocolError` 를 낸다.
-    등급을 못박은 ``GENERAL_ONLY``·``SPECIAL_ONLY`` 는 이 검사와 무관하다.
+    없습니다. 그래서 :class:`~srt_mobile_api.errors.SrtProtocolError` 를 냅니다.
+    등급을 못박은 ``GENERAL_ONLY``·``SPECIAL_ONLY`` 는 이 검사와 무관합니다.
 
-    앱도 같은 실수를 하지 않는다 —— 이미지가 말해 줄 때만 등급을 정하고,
-    아니면 값을 비워 둔다(``ara1001l.js:1430-1432``).
+    앱도 같은 실수를 하지 않습니다 —— 이미지가 말해 줄 때만 등급을 정하고,
+    아니면 값을 비워 둡니다(``ara1001l.js:1430-1432``).
     """
     if value is None:
         raise SrtProtocolError(
@@ -1085,20 +1085,20 @@ def _require_availability(value: str | None, *, seat_type: SeatType, field: str)
 #: they are values a real user reaches, not dead constants. commCode.js lists
 #: more, but the rest are the shared KORAIL set with no SRT call site.
 SRT_REQUEST_SEAT_ATTR_CODES = frozenset({"015", "021", "028"})
-#: 같은 셋의 정적 타입은 :data:`~srt_mobile_api.models.SrtSeatAttrCode` 다. 두
-#: 형태가 어긋나지 않는지는 ``tests/test_literal_aliases.py`` 가 검사한다.
+#: 같은 셋의 정적 타입은 :data:`~srt_mobile_api.models.SrtSeatAttrCode` 입니다.
+#: 두 형태가 어긋나지 않는지는 ``tests/test_literal_aliases.py`` 가 검사합니다.
 
 
 def _inherited_seat_attr_code(train: TrainSummary, explicit: str | None) -> str:
     """예약에 쓸 요구좌석속성 —— 호출자의 값, 없으면 행의 값, 그것도 없으면 015.
 
     ``021``(휠체어)로 검색해 놓고 예약할 때 조용히 ``015`` 로 바뀌는 일을 막는
-    자리다. 검색 행은 자기가 어떤 속성으로 찾아졌는지
+    자리입니다. 검색 행은 자기가 어떤 속성으로 찾아졌는지
     :attr:`~srt_mobile_api.models.TrainSummary.seat_attr_code` 에 기억하고
-    있으므로, 인자를 주지 않으면 그것을 물려받는다.
+    있으므로, 인자를 주지 않으면 그것을 물려받습니다.
 
-    ``explicit`` 을 주면 무조건 그 값이 이긴다. 값 자체가 유효한지는
-    :func:`_validated_seat_attr_code` 가 본다.
+    ``explicit`` 을 주면 무조건 그 값이 이깁니다. 값 자체가 유효한지는
+    :func:`_validated_seat_attr_code` 가 봅니다.
     """
     if explicit is not None:
         return explicit
@@ -1106,14 +1106,14 @@ def _inherited_seat_attr_code(train: TrainSummary, explicit: str | None) -> str:
 
 
 def _validated_seat_attr_code(value: str) -> str:
-    """예약 본문에 들어가기 전에 요구좌석속성 코드를 검사한다.
+    """예약 본문에 들어가기 전에 요구좌석속성 코드를 검사합니다.
 
     :data:`SRT_REQUEST_SEAT_ATTR_CODES` —— ``015`` 일반, ``021`` 휠체어,
     ``028`` 전동휠체어 —— 밖의 값은
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다. SRT 가 실제로 분기하는
-    코드가 이 셋뿐이다.
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다. SRT 가 실제로 분기하는
+    코드가 이 셋뿐입니다.
 
-    어떤 코드를 물려받을지는 :func:`_inherited_seat_attr_code` 가 정한다.
+    어떤 코드를 물려받을지는 :func:`_inherited_seat_attr_code` 가 정합니다.
     """
     if value not in SRT_REQUEST_SEAT_ATTR_CODES:
         raise SrtProtocolError(
@@ -1188,18 +1188,18 @@ def _standby_row_image(train: TrainSummary) -> str:
 
 
 def _refuse_ineligible_standby(train: TrainSummary) -> None:
-    """앱이 예약대기를 내주지 않을 행에 ``standby=True`` 를 쓰면 막는다.
+    """앱이 예약대기를 내주지 않을 행에 ``standby=True`` 를 쓰면 막습니다.
 
-    앱에는 "예약대기 거절" 대화상자가 없다. 선택이 사용자 몫이 아니기 때문이다
-    —— 고른 행의 일반실 이미지가 예약대기 이미지일 때만 ``jobId=1102`` 가 나간다
+    앱에는 "예약대기 거절" 대화상자가 없습니다. 선택이 사용자 몫이 아니기 때문입니다
+    —— 고른 행의 일반실 이미지가 예약대기 이미지일 때만 ``jobId=1102`` 가 나갑니다
     (``ara1001l.js:1447``). 다른 행에 1102 를 보내는 것은 앱이 만들 수 없는
-    본문을 보내는 것이다.
+    본문을 보내는 것입니다.
 
-    **필드가 없는 것은 부적격이 아니다.** ``gnrmRsvPsbImg`` 를 아예 싣지 않은
-    행은 통과시킨다. 손으로 만든
+    **필드가 없는 것은 부적격이 아닙니다.** ``gnrmRsvPsbImg`` 를 아예 싣지 않은
+    행은 통과시킵니다. 손으로 만든
     :class:`~srt_mobile_api.models.TrainSummary` 나 그 열이 빠진 응답 때문에
-    예약대기가 불가능해지는 것은 열차와 무관한 이유다. 필드가 **있는데**
-    예약대기 이미지가 아닐 때만 :class:`ValueError` 다.
+    예약대기가 불가능해지는 것은 열차와 무관한 이유입니다. 필드가 **있는데**
+    예약대기 이미지가 아닐 때만 :class:`ValueError` 입니다.
     """
     image = _standby_row_image(train)
     if image and image not in _STANDBY_ROW_IMAGES:
@@ -1214,28 +1214,27 @@ def _seat_designation_fields(
     *,
     passenger_total: int,
 ) -> dict[str, str]:
-    """좌석지정 필드 묶음을 만든다(근거: ``ara0101v.js:866-882``).
+    """좌석지정 필드 묶음을 만듭니다(근거: ``ara0101v.js:866-882``).
 
     앱의 좌석 선택 팝업은 내부 좌석번호와 표시용 좌석명을 **둘 다** 돌려주는데,
-    편도 분기는 그중 좌석명만 쓴다::
+    편도 분기는 그중 좌석명만 씁니다::
 
         var scarSeatArr = obj.scarSeatNm.split(",");          // :870
         for (...) oSeatData1["seatNo1_" + (i+1)] = scarSeatArr[i];  // :872-874
         oSeatData1["scarGridcnt1"] = scarSeatArr.length;      // :876
         oSeatData1["scarNo1"] = obj.scarNo;                   // :878
 
-    **``seatNo`` 라는 이름의 필드에 들어가는 것은 좌석 "이름" 이다.** 내부
-    좌석번호는 받아만 놓고 쓰지 않는다. 이름과 번호의 역할이 이 라이브러리의
-    KORAIL 쪽과 반대라 특히 헷갈리기 쉽다.
+    **``seatNo`` 라는 이름의 필드에 들어가는 것은 좌석 "이름" 입니다.** 내부
+    좌석번호는 받아만 놓고 쓰지 않습니다. 이 라이브러리의 KORAIL 쪽과 역할이 반대라
+    헷갈리기 쉽습니다.
 
-    **둘째 슬롯은 생략이 아니라 빈 값으로 명시한다** —— ``scarGridcnt2="0"``,
+    **둘째 슬롯은 생략이 아니라 빈 값으로 명시합니다** —— ``scarGridcnt2="0"``,
     ``scarNo2=""``. 여정 슬롯 2 는 환승의 둘째 구간 자리이고
-    (:func:`transfer_reservation_payload`), 좌석을 지정한 편도에는 그런 것이
-    없으므로 앱은 남아 있을지 모르는 값을 지운다.
+    (:func:`transfer_reservation_payload`), 좌석을 지정한 편도에는 그것이 없습니다.
 
-    **좌석 수는 승객 수와 같아야 한다.** 앱도 좌석표에 승객 수만큼의 좌석을
-    요청한다(``ara1001l.js:1511``). 다르면 :class:`ValueError` 다 —— 그대로
-    보내면 엉뚱한 좌석이 잡힌 진짜 예약이 생긴다.
+    **좌석 수는 승객 수와 같아야 합니다**(``ara1001l.js:1511``). 다르면
+    :class:`ValueError` 입니다 —— 그대로 보내면 엉뚱한 좌석이 잡힌 진짜 예약이
+    생깁니다.
     """
     if type(designation) is not SeatDesignation:
         raise ValueError("designated_seats must be a SeatDesignation")
@@ -1270,81 +1269,46 @@ def personal_reservation_payload(
     seat_attr_code: str | None = None,
     membership_number: str = "",
 ) -> dict[str, str]:
-    """개인예약·예약대기·좌석지정 예약 폼(``/arc/selectListArc05013_n.do``)을 만든다.
+    """개인예약·예약대기·좌석지정 예약 폼(``/arc/selectListArc05013_n.do``)을 만듭니다.
 
     열차·역·시각·순서 필드는 ``train`` 에서, 승객 슬롯은 ``passengers`` 에서
-    온다(검색 폼과 같은 압축 규칙). ``netfunnel_key`` 는 손대지 않고
-    ``netfunnelKey`` 에 그대로 들어간다. ``mblPhone`` 은 싣지 않는다 —— 앱
-    번들에 그 이름이 한 번도 나오지 않아 무엇을 넣을지 근거가 없다.
-
-    ``standby`` 와 ``round_trip``, ``designated_seats`` 는 모두 기본이 꺼짐이고,
-    아무것도 지정하지 않으면 실서버에서 확인된 개인예약 폼 그대로다.
+    옵니다(검색 폼과 같은 압축 규칙). ``netfunnel_key`` 는 ``netfunnelKey`` 에
+    그대로 들어가고, ``mblPhone`` 은 앱 번들에 이름이 없어 싣지 않습니다. 아래 셋을
+    지정하지 않으면 실서버에서 확인된 개인예약 폼 그대로입니다.
 
     **``standby=True``(예약대기)** 는 ``jobId`` 를 ``"1102"`` 로 바꾸고, 함께
-    두 가지가 따라 움직인다.
+    ``psrmClCd1`` 이 ``"1"``(일반실)로 **고정**되며(``ara1001l.js:1431``; 특실
+    예약대기는 앱에 표현이 없습니다) ``reserveType`` 이 빠집니다. 등급을 정하기
+    **전에** 고정하므로 ``SeatType.GENERAL_FIRST`` 가 특실로 풀리지 않습니다. 걸 수
+    있는 행인지는 :func:`_refuse_ineligible_standby` 가 보고, ``stndFlg`` 는 입석
+    여부라 ``"N"`` 그대로입니다.
 
-    * ``psrmClCd1`` 이 ``"1"``(일반실)로 **고정**된다. 앱에서 예약대기 행에
-      객실 등급을 붙이는 줄은 하나뿐이고 거기서 1 을 준다
-      (``ara1001l.js:1431``) —— 특실 예약대기는 앱에 표현 자체가 없다. 고정이
-      중요한 이유는 기본값 ``SeatType.GENERAL_FIRST`` 가 "일반실이 예약가능이
-      아니면 특실" 로 풀리는데, 예약대기 행이 바로 그렇게 보이기 때문이다.
-      등급을 정하기 **전에** 고정하므로 잔여석 문자열을 아예 읽지 않는다.
-    * ``reserveType`` 이 빠진다. 이 필드를 아는 유일한 출처가 개인예약에만
-      그것을 붙인다.
+    **``round_trip=True``(왕복)** 는 ``rtnDv`` 를 ``"1"`` 로 두는 것이 전부입니다.
+    앱도 오는 열차를 **같은 경로에 두 번째 POST** 로 예약하므로
+    (``ara1001l.js:1580-1596``) 구간마다 한 번씩 부르면 됩니다. ``jrnyCnt`` 는 두
+    구간 모두 ``"1"`` 이고, 이 폼의 ``jrnyCnt="2"`` 는 **환승**
+    입니다. 필드 이름 끝의 ``2`` 도 돌아오는 편이 아니라 **여정 슬롯**입니다(앱
+    주석 ``여정일련번호1(001:선행, 002:후행)``).
 
-    어떤 행에 예약대기를 걸 수 있는지는 :func:`_refuse_ineligible_standby` 가
-    본다. ``stndFlg`` 는 ``"N"`` 그대로다 —— 그것은 입석 여부이고 예약대기와
-    다른 것이며, 앱도 바꾸지 않는다.
-
-    **``round_trip=True``(왕복)** 는 ``rtnDv`` 를 ``"1"`` 로 두는 것이 전부다.
-    SRT 는 왕복을 한 예약으로 만들지 않기 때문이다 —— 앱도 가는 열차를 먼저
-    예약하고, 역을 뒤집어 다시 검색한 뒤, 오는 열차를 **같은 경로에 두 번째
-    POST** 로 예약한다(``ara1001l.js:1580-1596``). 여기서도 구간마다 한 번씩
-    호출한다.
-
-    그래서 ``jrnyCnt`` 는 두 구간 모두 ``"1"`` 이다. 이 폼에서 ``jrnyCnt="2"``
-    는 **환승**을 뜻하지 왕복을 뜻하지 않는다. 마찬가지로 필드 이름 끝의 ``2``
-    는 승객도 돌아오는 편도 아니고 **여정 슬롯**을 가리킨다 —— 앱 자신의 주석이
-    ``여정일련번호1(001:선행, 002:후행)`` 이다. 돌아오는 열차는 두 번째 POST 의
-    슬롯 1 에 들어간다.
-
-    왕복은 두 경우에 폼을 만들기 전에 :class:`ValueError` 로 거절한다. 앱의
-    왕복 체크박스 처리(``ara0101v.js:317-341``)가 체크를 풀고 알림을 띄운 뒤
-    ``rtnDv`` 를 세우는 곳까지 가지 않는 두 조건이다.
-
-    * **코레일 전용역** —— 출발·도착 중 하나라도 SRT 역이 아니면 앱은 "코레일
-      열차는 왕복 열차 예약을 이용하실 수 없습니다." 라고 말한다. 여기서 쓰는
-      역 목록은 :data:`~srt_mobile_api.stations.SRT_STATION_CODES` 다.
-    * **국회의원 후급 회원** —— 회원번호가 ``11`` 로 시작하면 거절한다.
-      ``membership_number`` 를 주지 않으면(기본값 ``""``) 이 검사는 건너뛴다.
-      앱이 보는 값은 서버가 페이지에 심어 주는 ``mbCrdNo`` 이고, 그것이
-      :attr:`~srt_mobile_api.models.SrtSession.membership_number` 와 같다는 것은
-      이름과 개념이 같다는 데서 온 추론이다.
+    왕복은 앱의 체크박스 처리(``ara0101v.js:317-341``)가 ``rtnDv`` 를 세우지 않는 두
+    경우에 폼을 만들기 전 :class:`ValueError` 로 거절합니다: 출발·도착 중 하나라도
+    :data:`~srt_mobile_api.stations.SRT_STATION_CODES` 밖인 **코레일 전용역**, 회원
+    번호가 ``11`` 로 시작하는 **국회의원 후급 회원**(``membership_number`` 를 주지
+    않으면 건너뜁니다).
 
     **``designated_seats``(좌석지정)** 는 ``jobId`` 를 ``"1103"``(시트맵예약)로
-    바꾸고 좌석 필드 묶음(:func:`_seat_designation_fields`)을 덧붙인다. 보내기
-    전에 알아 둘 것이 셋이다.
+    바꾸고 좌석 필드 묶음(:func:`_seat_designation_fields`)을 덧붙입니다. 필드와
+    값은 ``ara0101v.js:866-882`` 에서 왔지만 **이 본문이 어느 경로로 가는지 말해
+    주는 코드는 번들에 없습니다**(:data:`RESERVE_SEATMAP_JOBID`). ``standby`` 와는
+    ``jobId`` 가 겹쳐서, ``round_trip`` 과는 앱의 왕복 좌석지정 콜백이 좌석 필드를
+    쓰지 않아서(``ara0101v.js:884-892``) 함께 쓸 수 없습니다. ``reserveType`` 은
+    ``"11"`` 그대로입니다.
 
-    * **본문에는 근거가 있고 목적지에는 없다**(:data:`RESERVE_SEATMAP_JOBID`).
-      필드와 값은 모두 ``ara0101v.js:866-882`` 에서 왔지만, 이 본문이 실제로
-      어느 경로로 가는지를 말해 주는 코드는 번들에 없다.
-    * **``standby`` 와 함께 쓸 수 없다.** ``jobId`` 가 1102 이면서 1103 일 수
-      없고, 앱에서도 두 값은 서로 다른 화면 분기에서 나온다.
-    * **``round_trip`` 과도 함께 쓸 수 없다.** 앱에 좌석지정 왕복 자체는 있지만
-      그 콜백은 좌석 필드를 하나도 쓰지 않는다(``ara0101v.js:884-892``). 편도
-      분기만 이 필드 묶음을 만들므로, 왕복 좌석지정 본문은 근거가 없다.
-
-    ``reserveType`` 은 좌석지정에서도 ``"11"`` 그대로다. 이 필드를 아는 출처에
-    좌석지정 예약이 아예 없고, 그 값이 ``jobId`` 를 따라 움직인다는 근거도
-    없다.
-
-    다음의 경우 :class:`ValueError` 다: ``train`` 이 정확히
+    :class:`ValueError` 인 경우: ``train`` 이
     :class:`~srt_mobile_api.models.TrainSummary` 가 아닐 때, SRT 열차가 아닐 때
-    (``service_class_code`` 가 ``"17"`` 이 아니다), 위의 조합 규칙을 어겼을 때,
-    그리고 열차번호·날짜·시각 같은 필수 숫자 필드가 없거나 자릿수가 맞지 않을
-    때. 좌석 등급을 정할 잔여석 정보가 없으면
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 다
-    (:func:`_require_availability`).
+    (``service_class_code`` != ``"17"``), 위의 조합 규칙을 어겼을 때, 필수 숫자
+    필드가 없거나 자릿수가 맞지 않을 때. 잔여석 정보가 없으면
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다(:func:`_require_availability`).
     """
     if type(train) is not TrainSummary:
         raise ValueError("reservation requires an exact TrainSummary")
@@ -1624,22 +1588,20 @@ def _second_journey_slot_fields(
     window_seat: bool | None,
     seat_attr_code: str = "015",
 ) -> dict[str, str]:
-    """환승 예약 폼의 둘째 여정 슬롯 필드를 만든다.
+    """환승 예약 폼의 둘째 여정 슬롯 필드를 만듭니다.
 
-    키는 :func:`personal_reservation_payload` 의 슬롯 1 키에서 접미사만 ``2``
-    로 바꾼 것이고, 값도 슬롯 1 이 선택된 행에서 값을 뽑는 방식 그대로 ``leg``
-    에서 뽑는다 —— 같은 검사, 같은 0 채우기, ``arvDt`` 가 없으면 빈 값으로 두는
-    규칙까지 같다. 어느 키의 ``...2`` 철자에 근거가 있고 어느 것이 슬롯 1 에서
-    유추한 이름인지는 :data:`TRANSFER_SLOT2_FIELD_EVIDENCE` 에 키별로 적어
-    두었다.
+    키는 :func:`personal_reservation_payload` 의 슬롯 1 키에서 접미사만 ``2`` 로
+    바꾼 것이고, 값도 슬롯 1 과 같은 방식으로 ``leg`` 에서 뽑습니다 —— 같은 검사,
+    같은 0 채우기, ``arvDt`` 가 없으면 빈 값으로 두는 규칙까지 같습니다. 어느 키의
+    ``...2`` 철자에 근거가 있고 어느 것이 유추한 이름인지는
+    :data:`TRANSFER_SLOT2_FIELD_EVIDENCE` 에 키별로 적어 두었습니다.
 
-    좌석 속성 키는 앱이 직접 슬롯 2 를 쓰는 유일한 부분이고, 앱은 그것을 슬롯
-    1 과 **같은 값**으로 쓴다(``ara0101v.js:769-778``). 그래서 좌석 선호는
-    구간마다 따로 정할 수 없고, ``special_seat``/``window_seat`` 를 그대로
-    옮긴다.
+    좌석 속성 키는 앱이 직접 슬롯 2 를 쓰는 유일한 부분이고, 앱은 그것을 슬롯 1 과
+    **같은 값**으로 씁니다(``ara0101v.js:769-778``). 그래서 좌석 선호는 구간마다
+    따로 정할 수 없고 ``special_seat``/``window_seat`` 를 그대로 옮깁니다.
 
-    ``seatAttNm2``(좌석속성명2)는 일부러 싣지 않는다 —— 슬롯 1 도
-    ``seatAttNm1`` 을 싣지 않으므로 슬롯 2 를 슬롯 1 의 정확한 거울로 둔다.
+    ``seatAttNm2``(좌석속성명2)는 일부러 싣지 않습니다 —— 슬롯 1 도 ``seatAttNm1``
+    을 싣지 않으므로 슬롯 2 를 슬롯 1 의 정확한 거울로 둡니다.
     """
     train_no = _required_digits(leg.train_no, "second leg train_no", max_length=5).zfill(5)
     departure_date = _required_digits(
@@ -1711,44 +1673,42 @@ def transfer_reservation_payload(
     window_seat: bool | None = None,
     seat_attr_code: str | None = None,
 ) -> dict[str, str]:
-    """환승 예약 폼을 만든다 —— 본문 **하나**에 여정 **둘**이 들어간다.
+    """환승 예약 폼을 만듭니다 —— 본문 **하나**에 여정 **둘**이 들어갑니다.
 
     왕복은 한 여정짜리 예약 두 건이지만(:func:`personal_reservation_payload`),
-    환승은 두 여정을 실은 예약 한 건이다. 앱의 환승 토글이 그 둘을 함께 말한다
+    환승은 두 여정을 실은 예약 한 건입니다. 앱의 환승 토글이 그 둘을 함께 말합니다
     (``ara0101v.js:302-303``)::
 
         sJrnyTp = "14"; // 환승
         nJrnyCnt = "2"; // 2건
 
     그래서 이 폼은 **첫 구간의 개인예약 폼**에 값 셋을 바꾸고 슬롯 하나를 더한
-    것이다: ``jrnyTpCd`` 를 ``"14"``(환승편도)로, ``jrnyCnt`` 를 ``"2"`` 로,
-    ``rtnDv`` 를 ``"0"`` 으로 두고, 그 뒤에
-    :func:`_second_journey_slot_fields` 의 키를 덧붙인다 —— 슬롯 1 의 키 순서는
-    그대로 남는다. ``jrnySqno1`` 은 ``"001"``(선행), ``jrnySqno2`` 는
-    ``"002"``(후행)다.
+    것입니다: ``jrnyTpCd`` 를 ``"14"``(환승편도)로, ``jrnyCnt`` 를 ``"2"`` 로,
+    ``rtnDv`` 를 ``"0"`` 으로 두고 그 뒤에 :func:`_second_journey_slot_fields` 의
+    키를 덧붙입니다. ``jrnySqno1`` 은 ``"001"``(선행), ``jrnySqno2`` 는
+    ``"002"``(후행)입니다.
 
-    **환승과 왕복은 함께 쓸 수 없다.** 앱이 양방향으로 막는다("환승은 왕복예약이
-    불가능 합니다."). 그래서 이 함수에는 ``round_trip`` 인자가 아예 없고
-    ``rtnDv`` 는 ``"0"`` 으로 고정된다.
+    **환승과 왕복은 함께 쓸 수 없습니다.** 앱이 양방향으로 막습니다("환승은
+    왕복예약이 불가능 합니다."). 그래서 ``round_trip`` 인자가 아예 없고 ``rtnDv``
+    는 ``"0"`` 고정입니다.
 
-    **예약대기도 없다.** ``jobId=1102`` 는 선택된 **한 행**의 이미지에서
-    정해지는데 환승 여정에는 행이 둘이다. 둘 중 하나만 예약대기인 상태가 무엇을
-    뜻하는지 앱에 규칙이 없으므로 지어내지 않는다.
+    **예약대기도 없습니다.** ``jobId=1102`` 는 선택된 **한 행**에서 정해지는데
+    환승 여정에는 행이 둘이고, 둘 중 하나만 예약대기인 상태의 규칙이 앱에
+    없습니다.
 
-    **좌석지정도 없다.** 편도 좌석지정은 슬롯 2 의 좌석 필드를 오히려 비운다
-    (``ara0101v.js:875-879``). 환승 둘째 구간에 좌석을 지정하는 경로는 번들
-    어디에도 없다.
+    **좌석지정도 없습니다.** 편도 좌석지정은 슬롯 2 의 좌석 필드를 오히려 비우고
+    (``ara0101v.js:875-879``), 환승 둘째 구간에 좌석을 지정하는 경로는 번들에
+    없습니다.
 
-    **승객은 구간별이 아니다.** ``psgTpCd``/``psgInfoPerPrnb`` 묶음은 승객
-    **유형**으로 번호가 매겨지므로 한 번만 나가고, 같은 일행이 두 구간을 탄다.
-    같은 폼 안에서 끝의 숫자가 한쪽은 여정 슬롯, 다른 쪽은 승객 유형을 뜻한다.
+    **승객은 구간별이 아닙니다.** ``psgTpCd``/``psgInfoPerPrnb`` 묶음은 승객
+    **유형**으로 번호가 매겨지므로 한 번만 나가고, 같은 일행이 두 구간을 탑니다.
 
-    두 구간 모두 SRT 여야 한다(``stlbTrnClsfCd == "17"``). 즉 SRT→SRT 환승만
-    만들 수 있고, 아니면 :class:`ValueError` 다.
+    두 구간 모두 SRT 여야 합니다(``stlbTrnClsfCd == "17"``). 아니면
+    :class:`ValueError` 입니다.
 
-    **실서버로 보내 본 적이 없다.** 이 폼이 본뜬 ``#rsvForm`` 은 서버가
-    렌더링하는 것이라 번들에 없다. 슬롯 2 키 이름 다섯 개는 슬롯 1 에서 유추한
-    것이고, 어느 것이 그런지는 :data:`TRANSFER_SLOT2_FIELD_EVIDENCE` 에 있다.
+    **실서버로 보내 본 적이 없습니다.** 이 폼이 본뜬 ``#rsvForm`` 은 서버가
+    렌더링하는 것이라 번들에 없고, 슬롯 2 키 이름 다섯 개는 슬롯 1 에서 유추한
+    것입니다(:data:`TRANSFER_SLOT2_FIELD_EVIDENCE`).
     """
     if type(itinerary) is not TransferItinerary:
         raise ValueError(
@@ -1815,15 +1775,15 @@ _SINGLE_JOURNEY_COUNT = JOURNEY_COUNT_ONE_WAY
 
 
 def _cancel_journey_count(journey_count: str | None) -> str:
-    """취소 폼에 실을 여정건수를 다듬는다. **절대 예외를 내지 않는다.**
+    """취소 폼에 실을 여정건수를 다듬습니다. **절대 예외를 내지 않습니다.**
 
-    앞뒤 공백과 앞의 0 을 떼고 숫자로 읽는다 —— ``"0001"`` 도 ``"1"`` 이다.
-    쓸 수 없는 값은 단일 여정 기본값으로 물러선다. 취소 폼을 못 만드는 것은
+    앞뒤 공백과 앞의 0 을 떼고 숫자로 읽습니다 —— ``"0001"`` 도 ``"1"`` 입니다.
+    쓸 수 없는 값은 단일 여정 기본값으로 물러섭니다. 취소 폼을 못 만드는 것은
     풀지 못하는 예약이 남는다는 뜻이고, 그것이 값 하나가 어긋나는 것보다 훨씬
-    나쁘다. 환승 예약이면 여기에 ``"2"`` 가 온다.
+    나쁩니다. 환승 예약이면 여기에 ``"2"`` 가 옵니다.
 
     0 을 문자로 먼저 떼기 때문에, 자릿수가 터무니없이 긴 값도 파이썬의 정수
-    변환 한계에 걸리기 전에 정리된다. 그래도 변환되지 않으면 기본값이다.
+    변환 한계에 걸리기 전에 정리됩니다. 그래도 변환되지 않으면 기본값입니다.
     """
     if type(journey_count) is not str:
         return _SINGLE_JOURNEY_COUNT
@@ -1850,12 +1810,12 @@ def _cancel_journey_count(journey_count: str | None) -> str:
 
 
 def _foreign_reservation_message(value: object) -> str:
-    """예약도 PNR 문자열도 아닌 값을 거절할 때 쓸 메시지를 고른다.
+    """예약도 PNR 문자열도 아닌 값을 거절할 때 쓸 메시지를 고릅니다.
 
-    정수에는 따로 문구를 준다. 까다롭게 구는 것처럼 보이기 쉬운 거절이기
-    때문이다 —— PNR 을 정수로 만들면 앞의 0 이 사라져 엉뚱한 예약이 취소되거나
-    아무것도 취소되지 않는다. 검사를 푸는 것이 아니라 문자열로 넘기는 것이
-    답이다.
+    정수에는 따로 문구를 줍니다. 까다롭게 구는 것처럼 보이기 쉬운 거절이기
+    때문입니다 —— PNR 을 정수로 만들면 앞의 0 이 사라져 엉뚱한 예약이 취소되거나
+    아무것도 취소되지 않습니다. 검사를 푸는 것이 아니라 문자열로 넘기는 것이
+    답입니다.
     """
     if isinstance(value, int) and not isinstance(value, bool):
         return (
@@ -1871,27 +1831,27 @@ def unpaid_reservation_cancel_payload(
     *,
     journey_count: str | None = None,
 ) -> dict[str, str]:
-    """결제 전 예약을 취소하는 폼을 만든다 —— 필드는 셋이다.
+    """결제 전 예약을 취소하는 폼을 만듭니다 —— 필드는 셋입니다.
 
     ``pnrNo``·``jrnyCnt``·``rsvChgTno`` 가 전부이고, 목적지는
-    ``POST /ard/selectListArd02045_n.do`` 다. 서버가 렌더링하는 승차권 페이지의
-    ``cncConfirm()`` 이 같은 경로에 같은 세 필드를 보낸다 —— 다만 그 버튼의
-    주석은 예약대기 취소이므로, 전송 모양을 증언할 뿐 용도까지 같다고 말하지는
-    않는다. 이 폼으로 실제 미결제 예약이 풀린 것은 확인돼 있다.
+    ``POST /ard/selectListArd02045_n.do`` 입니다. 서버가 렌더링하는 승차권 페이지의
+    ``cncConfirm()`` 이 같은 경로에 같은 세 필드를 보냅니다 —— 그 버튼의 주석은
+    예약대기 취소이므로 전송 모양만 증언합니다. 이 폼으로 실제 미결제 예약이 풀린
+    것은 확인돼 있습니다.
 
-    ``reservation`` 은 :class:`~srt_mobile_api.models.SrtReservationHold` 도,
-    PNR 문자열만도 받는다. 중간에 실패한 호출자에게 PNR 밖에 없을 수 있고, 그
-    경로가 막히면 예약을 풀 방법이 없어진다. 정수로 넘기면 거절한다 ——
-    앞의 0 이 사라져 엉뚱한 예약을 취소하게 된다.
+    ``reservation`` 은 :class:`~srt_mobile_api.models.SrtReservationHold` 도, PNR
+    문자열만도 받습니다 —— 중간에 실패한 호출자에게 PNR 밖에 없을 수 있기
+    때문입니다. 정수로 넘기면 거절합니다: 앞의 0 이 사라져 엉뚱한 예약을 취소하게
+    됩니다.
 
-    ``jrnyCnt`` 는 예약 객체가 **자기가 만들어질 때의 값**을 기억하고 있으므로
+    ``jrnyCnt`` 는 예약 객체가 자기 값을 기억하므로
     (:attr:`~srt_mobile_api.models.SrtReservationHold.journey_count`) 예약을
-    통째로 넘기면 알아서 맞는다. 환승 예약이면 ``"2"`` 다. PNR 문자열로 취소할
-    때만 ``journey_count`` 를 직접 줄 필요가 있고, 주면 그쪽이 이긴다. 좌석
-    수에서 유추하지는 않는다 —— 한 여정의 좌석 두 개는 여전히 한 여정이다.
+    통째로 넘기면 알아서 맞고, 환승 예약이면 ``"2"`` 입니다. PNR 문자열로 취소할
+    때만 ``journey_count`` 를 직접 줄 필요가 있고 주면 그쪽이 이깁니다. 좌석
+    수에서 유추하지는 않습니다.
 
-    PNR 이 비어 있으면 :class:`ValueError` 다. 그 밖에는 값이 이상해도 예외를
-    내지 않는다(:func:`_cancel_journey_count`).
+    PNR 이 비어 있으면 :class:`ValueError` 입니다. 그 밖에는 값이 이상해도 예외를
+    내지 않습니다(:func:`_cancel_journey_count`).
     """
     # isinstance, not `type(...) is`: a SrtReservationHold subclass is still a
     # hold and a str subclass is still a PNR, and refusing one over its exact
@@ -1989,21 +1949,19 @@ PAYMENT_STATION_CONSIST_ORDER = "000000"  # dptStnConsOrdr2 / arvStnConsOrdr2
 
 
 def _payment_amount(value: object, name: str) -> str:
-    """결제금액을 정규화한다. 금액이 아닌 것은 모두 거절한다.
+    """결제금액을 정규화합니다. 금액이 아닌 것은 모두 거절합니다.
 
-    **어느 금액이냐가 중요하다.** 예약 행에는 수납금액(``rcvdAmt``, 할인이
-    적용된 실제 청구액)과 기준운임(``stdrPrc``)·할인액(``dcntPrc``)이 함께
-    있고, 특실 승차권처럼 둘이 크게 어긋나는 경우가 있다. 이 폼에 들어가는 것은
-    수납금액뿐이다. 기준운임은 운임 페이지라는 전혀 다른 읽기로만 닿을 수 있고
-    이 빌더에 연결돼 있지 않다.
+    **어느 금액이냐가 중요합니다.** 예약 행에는 수납금액(``rcvdAmt``, 할인이 적용된
+    실제 청구액)과 기준운임(``stdrPrc``)·할인액(``dcntPrc``)이 함께 있고 특실
+    승차권처럼 둘이 크게 어긋나는 경우가 있습니다. 이 폼에 들어가는 것은
+    수납금액뿐입니다.
 
-    앞의 0 은 뗀다. 서버는 이 값을 0 으로 채워 보내지만(``"00000036900"``),
-    이 경로를 증언하는 구현이 정수로 바꿔 보내고 그것이 실제로 통한 형태다.
+    앞의 0 은 뗍니다. 서버는 0 을 채워 보내지만(``"00000036900"``), 이 경로를
+    증언하는 구현이 정수로 바꿔 보내고 그것이 실제로 통한 형태입니다.
 
     빠졌거나, 숫자가 아니거나, 0 인 금액은 기본값으로 때우지 않고
-    :class:`ValueError` 를 낸다. 취소 폼이 절대 예외를 내지 않는 것과 반대다 ——
-    거기서는 폼을 못 만들면 예약이 방치되지만, 여기서는 폼을 못 만들면 결제가
-    일어나지 않을 뿐이고 그것이 안전한 결과다.
+    :class:`ValueError` 를 냅니다. 취소 폼과 반대 판단입니다 —— 여기서는 폼을 못
+    만들면 결제가 일어나지 않을 뿐이고 그것이 안전한 결과입니다.
     """
     if not isinstance(value, str) or not value.strip():
         raise ValueError(
@@ -2020,17 +1978,17 @@ def _payment_passenger_count(
     reservation: SrtReservationSummary,
     passenger_count: str | None,
 ) -> str:
-    """결제 폼의 승차인원(``totPrnb``)을 정한다.
+    """결제 폼의 승차인원(``totPrnb``)을 정합니다.
 
     예약 행의 ``tkSpecNum``
     (:attr:`~srt_mobile_api.models.SrtReservationSummary.ticket_special_number`)
-    에서 온다. 참고 구현은 그것이 없으면 좌석번호로 대신하지만 그 대체는 따라
-    하지 않았다 —— 좌석번호는 좌석의 **이름**이지 사람 수가 아니고, 결제 폼에서
-    그것을 인원으로 보내면 몇 사람 몫을 결제하는지가 틀어진다.
+    에서 옵니다. 참고 구현은 그것이 없으면 좌석번호로 대신하지만 그 대체는 따라
+    하지 않았습니다 —— 좌석번호는 좌석의 **이름**이지 사람 수가 아니고, 결제 폼에서
+    그것을 인원으로 보내면 몇 사람 몫을 결제하는지가 틀어집니다.
 
     그래서 ``tkSpecNum`` 이 없으면 :class:`ValueError` 이고, 진짜 인원을 아는
-    호출자는 ``passenger_count`` 로 직접 말한다. 명시한 값이 언제나 이긴다.
-    앞뒤 공백은 양쪽 모두 무시한다.
+    호출자는 ``passenger_count`` 로 직접 말합니다. 명시한 값이 언제나 이깁니다.
+    앞뒤 공백은 양쪽 모두 무시합니다.
     """
     if passenger_count is not None:
         # .strip() to match how ticket_special_number below is handled; without
@@ -2065,30 +2023,29 @@ def card_payment_payload(
     settlement_date: str,
     passenger_count: str | None = None,
 ) -> dict[str, str]:
-    """미결제 예약을 카드로 결제하는 폼(31필드)을 만든다.
+    """미결제 예약을 카드로 결제하는 폼(31필드)을 만듭니다.
 
-    **이 폼은 진짜로 카드를 긁는다.** ``payment`` 는
-    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` 에 들어 있다.
+    **이 폼은 진짜로 카드를 긁습니다.** ``payment`` 는
+    :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES` 에 들어 있습니다.
 
-    확인된 것은 단일 여정·성인 1명·개인카드·일시불 한 건이다. 단체, 여러 구간,
-    법인카드, 할부 필드는 아직 실제로 보내 본 적이 없다. 이 경로 자체가 앱
-    번들에 없다는 점도 알아 두어야 한다 —— 앱은 WebView 페이지와 보안 키패드로
-    결제하고, 이 평문 경로는 서버가 여전히 받아 주는 옛 길이다.
+    확인된 것은 단일 여정·성인 1명·개인카드·일시불 한 건입니다. 단체, 여러 구간,
+    법인카드, 할부 필드는 보내 본 적이 없습니다. 이 경로 자체가 앱 번들에 없다는
+    점도 알아 두어야 합니다 —— 앱은 WebView 페이지와 보안 키패드로 결제하고, 이
+    평문 경로는 서버가 여전히 받아 주는 옛 길입니다.
 
-    ``reservation`` 은 :meth:`~srt_mobile_api.client.SrtClient.get_reservations`
-    가 돌려주는 행 하나다. 그 읽기만이 미결제 PNR 의 이름을 댈 수 있다. 이 폼이
-    쓰는 것은 그중 다섯 —— PNR, 수납금액, 승차인원(``tkSpecNum``), 출발시각,
-    도착시각 —— 이고 **어느 것도 기본값이 없다**. 행에 필드가 없다는 것은
-    "서버가 그 이름을 보내지 않았다" 는 뜻이지 값이 0 이라는 뜻이 아니며, 금액이나
-    인원을 추측해 결제 폼에 넣는 것이 곧 엉뚱한 금액을 결제하는 길이다.
+    ``reservation`` 은 :meth:`~srt_mobile_api.client.SrtClient.get_reservations` 가
+    돌려주는 행 하나입니다. 이 폼이 쓰는 것은 PNR, 수납금액, 승차인원
+    (``tkSpecNum``), 출발시각, 도착시각 다섯이고 **어느 것도 기본값이 없습니다**.
+    행에 필드가 없다는 것은 "서버가 그 이름을 보내지 않았다" 는 뜻이지 0 이라는
+    뜻이 아니며, 금액이나 인원을 추측하는 것이 곧 엉뚱한 금액을 결제하는 길입니다.
 
-    ``membership_number``(``mbCrdNo``)는 호출자에게 묻지 말고
-    :attr:`~srt_mobile_api.models.SrtSession.membership_number` 에서 가져온다.
+    ``membership_number``(``mbCrdNo``)는
+    :attr:`~srt_mobile_api.models.SrtSession.membership_number` 에서 가져옵니다.
     ``settlement_date``(``stlDmnDt``, ``yyyyMMdd``)를 인자로 받는 것은 이 모듈이
-    시계를 읽지 않기 위해서다 —— 그래야 같은 입력이 언제나 같은 본문이 된다.
+    시계를 읽지 않기 위해서입니다.
 
     ``reservation``·``card`` 의 타입이 정확하지 않거나, PNR·회원번호가 비었거나,
-    금액·인원·시각이 규격에 맞지 않으면 :class:`ValueError` 다.
+    금액·인원·시각이 규격에 맞지 않으면 :class:`ValueError` 입니다.
     """
     if type(reservation) is not SrtReservationSummary:
         raise ValueError(
@@ -2157,27 +2114,25 @@ REFUND_CANCEL_REASON = "승차권 환불로 취소"
 
 
 def refund_payload(info: SrtRefundTicketInfo) -> dict[str, str]:
-    """이미 발권된 승차권을 환불하는 폼 —— 2단계 중 2단계다.
+    """이미 발권된 승차권을 환불하는 폼 —— 2단계 중 2단계입니다.
 
     1단계는 :meth:`~srt_mobile_api.client.SrtClient.get_refund_ticket_info` 이고,
-    그 결과 ``info`` 가 여기 들어온다.
+    그 결과 ``info`` 가 여기 들어옵니다.
 
-    필드는 일곱이다: PNR, 취소사유 문구, 발권 식별자 셋(``saleDt``·
+    필드는 일곱입니다: PNR, 취소사유 문구, 발권 식별자 셋(``saleDt``·
     ``saleWctNo``·``saleSqno``), 승차권 반환비밀번호(``tkRetPwd``), 구매자
-    이름(``psgNm``). **하나라도 비어 있으면** :class:`ValueError` **다** ——
-    이 일곱이 서버가 승차권을 특정하는 신원이고, 반쪽짜리 신원으로 만든 환불
-    요청이 무엇을 하는지는 아무도 모른다. 만들지 못해도 잃는 것은 없다. 취소
-    폼과 반대 판단이다.
+    이름(``psgNm``). **하나라도 비어 있으면** :class:`ValueError` **입니다** ——
+    반쪽짜리 신원으로 만든 환불 요청이 무엇을 하는지는 아무도 모르고, 만들지 못해도
+    잃는 것은 없습니다. 취소 폼과 반대 판단입니다.
 
-    **필드 이름은 요청용 철자를 쓴다.** 이 앱의 오프라인 승차권 캐시는 같은
-    값들을 ``retPwd``/``buyPsNm``/``pnrNo`` 로 부르지만 그것은 로컬 저장소의
-    이름이지 API 의 이름이 아니다. 실제 환불이 성립한 철자는 ``tkRetPwd``·
-    ``psgNm``·``pnr_no`` 다. 참고로 한 본문 안에서 snake_case 와 camelCase 가
-    섞여 있고, 1단계 응답의 ``ogtkRetPwd``/``buyPsNm`` 이 2단계에서 이름을
-    바꿔 나가는 것도 그대로 재현한 것이다.
+    **필드 이름은 요청용 철자를 씁니다.** 앱의 오프라인 승차권 캐시는 같은 값들을
+    ``retPwd``/``buyPsNm``/``pnrNo`` 로 부르지만 그것은 로컬 저장소의 이름입니다.
+    실제 환불이 성립한 철자는 ``tkRetPwd``·``psgNm``·``pnr_no`` 이고, 1단계 응답의
+    ``ogtkRetPwd``/``buyPsNm`` 이 2단계에서 이름을 바꿔 나가는 것도 그대로 재현한
+    것입니다.
 
-    확인된 것은 단일 여정·성인 1명 승차권 한 건이다. 이 경로를 증언하는 구현은
-    하나뿐이고 앱 번들에는 흔적이 없다.
+    확인된 것은 단일 여정·성인 1명 승차권 한 건입니다. 이 경로를 증언하는 구현은
+    하나뿐이고 앱 번들에는 흔적이 없습니다.
     """
     if type(info) is not SrtRefundTicketInfo:
         raise ValueError(
@@ -2232,30 +2187,28 @@ COUPON_PASSWORD_MAX_LENGTH = 4
 def coupon_registration_payload(
     request: SrtCouponRegistrationRequest,
 ) -> dict[str, str]:
-    """할인쿠폰 등록 폼(``POST /arb/selectListArb02A01_n.do``)을 만든다.
+    """할인쿠폰 등록 폼(``POST /arb/selectListArb02A01_n.do``)을 만듭니다.
 
-    **본문은 두 필드가 전부다.** 쿠폰 페이지의 처리기가 직렬화하는 폼에 입력이
-    둘뿐이다::
+    **본문은 두 필드가 전부입니다.** 쿠폰 페이지의 처리기가 직렬화하는 폼에 입력이
+    둘뿐입니다::
 
         <form name="couponInfo" id="couponInfo">
           <input type="number"   id="c_txt" name="dscp_no"  maxlength="10">
           <input type="password" id="c_pw"  name="dscp_pwd" maxlength="4">
         </form>
 
-    PNR 도, 회원번호도, NetFunnel 키도 없다. 이 쿠폰이 **누구 계정에** 붙는지를
-    말하는 것은 세션뿐이다.
+    PNR 도, 회원번호도, NetFunnel 키도 없습니다. 이 쿠폰이 **누구 계정에** 붙는지를
+    말하는 것은 세션뿐입니다.
 
-    검사는 페이지의 규칙을 그대로 옮긴 것이다. 쿠폰번호는 숫자만, 최대 열
-    자리다(페이지가 입력 중에 숫자 아닌 글자를 지운다). 비밀번호는 최대 네
-    글자이고 숫자로 제한되지 않는다 —— 페이지가 숫자만 강제하는 쪽은 번호
-    필드뿐이다. 둘 다 비어 있으면 안 되며, 어긋난 값은 다듬지 않고
-    :class:`ValueError` 로 거절한다. 다듬는 것은 자격증명을 추측하는 일이다.
+    검사는 페이지의 규칙을 그대로 옮긴 것입니다. 쿠폰번호는 숫자만 최대 열
+    자리이고, 비밀번호는 최대 네 글자이며 숫자로 제한되지 않습니다. 둘 다 비어
+    있으면 안 되고, 어긋난 값은 다듬지 않고 :class:`ValueError` 로 거절합니다 ——
+    다듬는 것은 자격증명을 추측하는 일입니다.
 
-    나가는 키가 정확히 둘이므로,
-    :class:`~srt_mobile_api.consent.MutationPreview` 로 보면 두 값 모두
-    ``[REDACTED]`` 다 —— 쿠폰번호와 비밀번호 모두
-    :data:`~srt_mobile_api.redaction.SENSITIVE_KEYS` 에 있다. **쿠폰번호는
-    소지자가 곧 사용자인 자격증명이다.**
+    나가는 키가 정확히 둘이므로 :class:`~srt_mobile_api.consent.MutationPreview` 로
+    보면 두 값 모두 ``[REDACTED]`` 입니다
+    (:data:`~srt_mobile_api.redaction.SENSITIVE_KEYS`). **쿠폰번호는 소지자가 곧
+    사용자인 자격증명입니다.**
     """
     if type(request) is not SrtCouponRegistrationRequest:
         raise ValueError(
@@ -2309,39 +2262,37 @@ def public_discount_search_payload(
     *,
     page_cursor: str = "",
 ) -> dict[str, str]:
-    """할인 승차권 검색 POST(``/ara/selectListAra10131_n.do``)를 만든다.
+    """할인 승차권 검색 POST(``/ara/selectListAra10131_n.do``)를 만듭니다.
 
     이 경로에는 폼이 둘인데 실제로 열차를 가져오는 것은 이 ajax 폼
-    (``#seatSearchForm``)이다. 다른 하나는 같은 주소로 **화면을 이동**시키는
-    페이지 폼이다.
+    (``#seatSearchForm``)입니다. 다른 하나는 같은 주소로 **화면을 이동**시키는
+    페이지 폼입니다.
 
-    **일반 검색과 다른 점** —— 빌더를 따로 둔 이유다.
+    **일반 검색과 다른 점** —— 빌더를 따로 둔 이유입니다.
 
-    * 필드 셋이 더 붙는다: ``pblDiscCd``·``pblDiscMgNo``·``tgtDtrmYn``. 페이지
+    * 필드 셋이 더 붙습니다: ``pblDiscCd``·``pblDiscMgNo``·``tgtDtrmYn``. 페이지
       폼은 같은 값을 대문자·밑줄(``PBL_DISC_CD`` 등)로 쓰지만 ajax 폼은 이
-      camelCase 다. 할인 이름(``pblDiscNm``)은 전송되지 않는다.
-    * **NetFunnel 키가 없다.** 이 경로의 어느 폼에도 그 필드가 없다. 대기열은
-      요청이 아니라 **화면 이동**에 걸려 있다.
-    * **승객 유형 구성이 없다.** 일반 ajax 는 유형별 슬롯을 싣지만 이쪽은 인원
-      합계 ``psgNum`` 하나다. 그래서 청소년이나 유아는 합계에만 반영된다 ——
-      앱 전체에서 청소년을 표현할 수 있는 유일한 폼이 이 경로의 **페이지** 폼인
-      데도 그렇다. 서버가 그 구성을 화면 이동에서 가져가는지는 알 수 없다.
-    * **페이지 넘김이 시각이 아니라 커서다.** 일반 검색은 ``dptTm`` 을 밀어
-      다음 페이지를 받지만, 여기서는 응답의 ``dsCmdMap.gdNo`` 를 그대로 다시
-      실어 보낸다. ``page_cursor`` 가 그 값이고 첫 페이지는 빈 문자열이다.
-    * ``chtnDvCd`` 는 ``"1"``(직통) 고정이고 ``trnNo`` 는 언제나 빈 값이다.
-      이 페이지에는 환승 토글이 없다.
+      camelCase 입니다. 할인 이름(``pblDiscNm``)은 전송되지 않습니다.
+    * **NetFunnel 키가 없습니다.** 이 경로의 어느 폼에도 그 필드가 없습니다.
+      대기열은 요청이 아니라 **화면 이동**에 걸려 있습니다.
+    * **승객 유형 구성이 없습니다.** 일반 ajax 는 유형별 슬롯을 싣지만 이쪽은 인원
+      합계 ``psgNum`` 하나라, 청소년이나 유아는 합계에만 반영됩니다.
+    * **페이지 넘김이 시각이 아니라 커서입니다.** 응답의 ``dsCmdMap.gdNo`` 를
+      그대로 다시 실어 보냅니다. ``page_cursor`` 가 그 값이고 첫 페이지는 빈
+      문자열입니다.
+    * ``chtnDvCd`` 는 ``"1"``(직통) 고정이고 ``trnNo`` 는 언제나 빈 값입니다. 이
+      페이지에는 환승 토글이 없습니다.
 
-    **인원 하한은 페이지의 규칙을 그대로 옮긴 것이다.** 다자녀(``01``)와 3세대
-    동행할인(``06``)은 3명 미만이면 페이지가 "승객인원 3명이상 선택하십시오."
-    라며 보내지 않는다. 여기서도 :class:`ValueError` 다. 알 수 없는 할인코드나
-    타입이 맞지 않는 인자도 마찬가지다.
+    **인원 하한은 페이지의 규칙을 그대로 옮긴 것입니다.** 다자녀(``01``)와 3세대
+    동행할인(``06``)은 3명 미만이면 페이지가 "승객인원 3명이상 선택하십시오." 라며
+    보내지 않습니다. 여기서도 :class:`ValueError` 이고, 알 수 없는 할인코드나 타입이
+    맞지 않는 인자도 마찬가지입니다.
 
     ``stlbTrnClsfCd``·``trnGpCd`` 는 일반 검색과 같은 방식으로
-    ``query.train_group_code`` 에서 끌어온다. **페이지의 기본값은 그 짝과
-    어긋난다** —— 서버는 ``trnGpCd1="109"``(전체) 옆에 ``stlbTrnClsfCd1="17"``
-    (SRT)를 렌더링하는데, 이 표로는 나오지 않는 조합이다. 서버가 둘 중 어느
-    것을 따르는지는 알 수 없어, 재현하는 대신 호출자가 둘 다 통제하도록 두었다.
+    ``query.train_group_code`` 에서 끌어옵니다. **페이지의 기본값은 그 짝과
+    어긋납니다** —— 서버는 ``trnGpCd1="109"``(전체) 옆에 ``stlbTrnClsfCd1="17"``
+    (SRT)를 렌더링하는데, 이 표로는 나오지 않는 조합입니다. 서버가 어느 것을
+    따르는지 알 수 없어 호출자가 둘 다 통제하도록 두었습니다.
     """
     if type(query) is not TrainSearchQuery:
         raise ValueError("public discount search requires a TrainSearchQuery")

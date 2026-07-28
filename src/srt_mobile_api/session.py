@@ -1,9 +1,9 @@
 """로그인과 세션 정리 —— 쿠키를 얻는 곳.
 
-SRT 는 토큰이 아니라 쿠키(``JSESSIONID``)로 세션을 유지한다. 이 모듈은 앱과
+SRT 는 토큰이 아니라 쿠키(``JSESSIONID``)로 세션을 유지합니다. 이 모듈은 앱과
 같은 순서로 로그인 폼을 POST 하고, 뒤이어 메인·예매 페이지를 GET 해서 그
-쿠키가 실제로 인증된 세션인지 확인한다. 이후의 모든 읽기·쓰기는 같은
-:class:`~srt_mobile_api.http.SrtHttpClient` 의 쿠키를 탄다.
+쿠키가 실제로 인증된 세션인지 확인합니다. 이후의 모든 읽기·쓰기는 같은
+:class:`~srt_mobile_api.http.SrtHttpClient` 의 쿠키를 탑니다.
 """
 
 from __future__ import annotations
@@ -42,12 +42,12 @@ class SrtSessionClient:
 
     :attr:`current` 는 로그인 성공 뒤의
     :class:`~srt_mobile_api.models.SrtSession` 이고, 로그인 전이나
-    :meth:`clear_session` 뒤에는 ``None`` 이다. 쿠키 자체는 주입받은
+    :meth:`clear_session` 뒤에는 ``None`` 입니다. 쿠키 자체는 주입받은
     :class:`~srt_mobile_api.http.SrtHttpClient` 가 보관하며 이 객체는 그것을
-    비우는 권한만 갖는다.
+    비우는 권한만 갖습니다.
 
-    :class:`~srt_mobile_api.client.SrtClient` 가 내부에서 쓰는 부품이다. 직접
-    만들 필요는 보통 없다.
+    :class:`~srt_mobile_api.client.SrtClient` 가 내부에서 쓰는 부품입니다. 직접
+    만들 필요는 보통 없습니다.
     """
 
     def __init__(self, http: SrtHttpClient) -> None:
@@ -57,36 +57,33 @@ class SrtSessionClient:
     def login(
         self, login_id: str, password: str, *, login_type: str | None = None
     ) -> SrtSession:
-        """로그인해 세션 쿠키를 얻고, 그 쿠키가 인증됐는지까지 확인한다.
+        """로그인해 세션 쿠키를 얻고, 그 쿠키가 인증됐는지까지 확인합니다.
 
-        ``POST /apb/selectListApb01080_n.do``. 먼저 기존 세션을 버리고 로그인
-        페이지를 한 번 GET 한 뒤 폼을 보낸다. 성공하면
+        ``POST /apb/selectListApb01080_n.do``. 기존 세션을 버리고 로그인 페이지를
+        한 번 GET 한 뒤 폼을 보냅니다. 성공하면
         :class:`~srt_mobile_api.models.SrtSession` 을 돌려주고 :attr:`current`
-        에도 남긴다.
+        에도 남깁니다.
 
-        ``login_id`` 의 종류(``srchDvCd``)는 넘기지 않으면 자동으로 정한다 ——
-        이메일이면 ``"2"``, 01X 로 시작하는 휴대전화번호면 ``"3"``, 그 밖에는
-        모두 회원번호로 보아 ``"1"`` 이다. 휴대전화번호는 하이픈이 있든 없든
-        판별되고, 보낼 때 하이픈을 뗀다. 자동 판별이 틀리면 ``login_type`` 으로
-        직접 지정한다.
+        ``login_id`` 의 종류(``srchDvCd``)는 넘기지 않으면 자동으로 정합니다 ——
+        이메일이면 ``"2"``, 01X 로 시작하는 휴대전화번호면 ``"3"``(하이픈이 있든
+        없든 판별하고 보낼 때 뗍니다), 그 밖에는 회원번호로 보아 ``"1"``
+        입니다. 자동 판별이 틀리면 ``login_type`` 으로 직접 지정하면 됩니다.
 
-        폼의 ``deviceKey`` 는 기기 식별자가 아니라 상수 ``"-"`` 다. 진짜 기기
+        폼의 ``deviceKey`` 는 기기 식별자가 아니라 상수 ``"-"`` 입니다. 진짜
         식별자인 :attr:`~srt_mobile_api.config.SrtConfig.device_key` 는 로그인
-        직후 GET 하는 ``/main/main.do?deviceId=`` 에만 쓰인다.
+        직후 GET 하는 ``/main/main.do?deviceId=`` 에만 쓰입니다.
 
-        **아이디·비밀번호가 틀린 경우는 언제나**
-        :class:`~srt_mobile_api.errors.SrtAuthError` 다 —— 응답 최상위 ``MSG``
-        를, 없으면 ``userMap.MSG`` 를 메시지로 싣는다. ``userMap`` 이 통째로
-        없어도 프로토콜 오류로 바꾸지 않는다. 성공 판정은
-        ``userMap.RTNCD == "Y"`` 뿐이다.
+        성공 판정은 ``userMap.RTNCD == "Y"`` 뿐이고, **아이디·비밀번호가 틀린
+        경우는 언제나** :class:`~srt_mobile_api.errors.SrtAuthError` 입니다(응답
+        최상위 ``MSG``, 없으면 ``userMap.MSG`` 를 메시지로 싣습니다). ``userMap`` 이
+        통째로 없어도 프로토콜 오류로 바꾸지 않습니다.
 
-        폼이 통과해도 끝이 아니다. 이어서 ``/main/main.do`` 와
-        ``/ara/ara0101v.do`` 를 읽어 로그인 페이지로 튕기지 않는지 본다 —— 여기서
-        걸리면 :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 다. 그래서
-        이 메서드가 돌아왔다는 것은 예매 페이지까지 인증된 상태라는 뜻이다.
+        폼이 통과해도 끝이 아닙니다. 이어서 ``/main/main.do`` 와
+        ``/ara/ara0101v.do`` 를 읽어 로그인 페이지로 튕기지 않는지 보고, 걸리면
+        :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 입니다. 이 메서드가
+        돌아왔다면 예매 페이지까지 인증된 상태입니다.
 
-        **어떤 예외로 끝나든 쿠키는 비워진다.** 실패한 로그인이 반쯤 살아 있는
-        세션을 남기지 않는다.
+        **어떤 예외로 끝나든 쿠키는 비워집니다.**
         """
         self.clear_session()
         resolved_type = login_type if login_type is not None else _detect_login_type(login_id)
@@ -153,10 +150,10 @@ class SrtSessionClient:
             raise
 
     def clear_session(self) -> None:
-        """쿠키를 버리고 :attr:`current` 를 ``None`` 으로 돌린다.
+        """쿠키를 버리고 :attr:`current` 를 ``None`` 으로 돌립니다.
 
-        서버에 로그아웃을 알리지는 않는다 —— 쿠키를 버리는 로컬 동작이다.
-        로그인 전이든 후든 여러 번 불러도 된다.
+        서버에 로그아웃을 알리지는 않습니다 —— 쿠키를 버리는 로컬 동작입니다.
+        로그인 전이든 후든 여러 번 불러도 됩니다.
         """
         self.http.cookies.clear()
         self.current = None
