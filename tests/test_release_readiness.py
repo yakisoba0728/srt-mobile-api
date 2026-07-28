@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from srt_mobile_api.safety import READ_ONLY_ROUTES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "srt_mobile_api"
@@ -1277,9 +1279,21 @@ def test_repository_truth_and_full_mutation_policy() -> None:
     verification = (ROOT / VERIFICATION_DOCUMENT).read_text(encoding="utf-8")
     verification_lower = verification.casefold()
     verification_flat = " ".join(verification_lower.split())
-    assert "installable read-only" in readme_lower
+    # The README is Korean, so the two phrases pinned here are Korean. They are
+    # the same two claims the English pins carried -- WHAT this repository is
+    # ("설치 가능한 기본 읽기 전용 패키지"), and what it must never call itself
+    # again -- and both spellings of the negative stay, because the English one
+    # costs nothing and an English sentence reappearing would be as wrong as a
+    # Korean one.
+    assert "설치 가능한 기본 읽기 전용 패키지" in readme
     assert "analysis workspace" not in readme_lower
-    assert "26 routes" in readme
+    assert "분석 워크스페이스" not in readme
+    # The read-only boundary, asked of the code rather than typed twice. This
+    # used to be `assert "26 routes" in readme`: a literal on both sides, so the
+    # allowlist could grow while the README kept saying 26 and this line kept
+    # passing. Now the number comes from the allowlist itself, and the sentence
+    # around it is pinned too so a bare "26개" elsewhere cannot satisfy it.
+    assert f"읽기 전용 경로 {len(READ_ONLY_ROUTES)}개" in readme
     # The CURRENT offline count. This used to read
     #
     #     assert "1607 passed" in readme
@@ -1556,6 +1570,21 @@ def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmi
     # heading of the entry the 2026-07-26 verification retired, which is correct
     # and must stay. The documents below all describe the CURRENT state, where
     # the same words would simply be wrong.
+    #
+    # The Korean spellings are here because README.md is now Korean. Without
+    # them this test would still PASS on that file and would be checking
+    # nothing: an English-only phrase list cannot see a Korean sentence, and a
+    # pin that cannot fail is the same thing as a deleted pin. The English
+    # entries stay -- the other three documents are still English, and an
+    # English sentence reappearing anywhere would be exactly as false.
+    #
+    # A NOTE FOR WHOEVER TRANSLATES THE OTHER THREE DOCUMENTS. 할인쿠폰 등록
+    # genuinely cannot transmit, so a sentence saying so is TRUE -- but if that
+    # sentence also names 결제 or 환불 ("쿠폰 등록은 결제가 아니므로 전송할 수
+    # 없다") this test reads it as the retired claim and fails. Keep 쿠폰
+    # statements in a sentence of their own. The English text dodged this only
+    # because the subject test was English-only, which was the bug being fixed
+    # here rather than a property worth keeping.
     retired = (
         "cannot be transmitted",
         "cannot transmit",
@@ -1564,6 +1593,13 @@ def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmi
         "no client method",
         "remain unimplemented",
         "stay unimplemented",
+        "전송할 수 없다",
+        "전송될 수 없다",
+        "보낼 수 없다",
+        "아무도 보낸 적이 없다",
+        "클라이언트 메서드가 없다",
+        "구현되지 않은 채로 남는다",
+        "미구현으로 남는다",
     )
     # Checked per SENTENCE rather than per character window. A window is the
     # wrong granularity here: "seat holding and selection have no client method
@@ -1587,6 +1623,11 @@ def test_no_current_state_document_still_claims_payment_or_refund_cannot_transmi
         for sentence in re.split(r"(?<=[.!?])\s+", flat):
             if not any(phrase in sentence for phrase in retired):
                 continue
-            assert not (
-                "payment" in sentence or "refund" in sentence
+            assert not any(
+                subject in sentence
+                # 결제 / 환불: the same two subjects, spelled the way a Korean
+                # document spells them. Both halves of the rule had to be
+                # translated together -- an English subject test would never
+                # fire on a Korean sentence even once the phrase list saw it.
+                for subject in ("payment", "refund", "결제", "환불")
             ), f"{document}: retired claim still stated: {sentence!r}"

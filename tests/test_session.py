@@ -243,8 +243,11 @@ def test_login_rolls_back_cookie_and_current_on_every_step(failure_path, load_js
 def test_zero_config_client_logs_in_with_no_configuration(load_json_fixture):
     """The README quickstart's bare ``SrtClient()`` must actually be able to log in.
 
-    README.md:66 opens with ``client = SrtClient()`` and README.md:92-94 states
-    that "``SrtClient()`` needs no configuration". That was prose only, and the
+    The README's "빠른 시작" opens with ``client = SrtClient()`` and the
+    paragraph under it states that ``SrtClient()`` 는 설정 없이 동작한다. (Named
+    by section rather than by line number: the line numbers this comment used
+    to cite moved the first time the README was edited.) That was prose only,
+    and the
     sibling KORAIL client is the reason it cannot stay prose: there a bare
     ``KorailConfig()`` announced the library instead of the app in the
     User-Agent and left the anti-macro token off, so the server refused the
