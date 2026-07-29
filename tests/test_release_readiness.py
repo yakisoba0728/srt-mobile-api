@@ -22,7 +22,7 @@ from srt_mobile_api.safety import READ_ONLY_ROUTES
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "srt_mobile_api"
 PROJECT_NAME = "srt-mobile-api"
-EXPECTED_KEYWORDS = ['srt','read-only','mobile-api']
+EXPECTED_KEYWORDS = ['srt','read-only-by-default','mobile-api']
 LIVE_ENV = "SRT_MOBILE_API_LIVE"
 CLIENT_NAME = "SrtClient"
 # The audit log the README used to be. See the comment above

@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "srt-mobile-api"
 version = "1.0.0"
-description = "Python client for documented SRT Android app read APIs"
+description = "Python client for documented SRT mobile app APIs: read-only by default, with a consent-gated mutation surface"
 readme = "README.md"
 requires-python = ">=3.11"
 # PEP 639 SPDX form, not the legacy `license = {text = ...}` table. There is
@@ -16,7 +16,7 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "yakisoba0728", email = "yakihyuk0728@gmail.com" }]
-keywords = ["srt", "read-only", "mobile-api"]
+keywords = ["srt", "read-only-by-default", "mobile-api"]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",

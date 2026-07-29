@@ -1,12 +1,13 @@
 # srt-mobile-api
 
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![License](https://img.shields.io/badge/license-Apache--2.0-green)
+[![문서](https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-yaki.kr-1f6feb)](https://yaki.kr/srt-mobile-api/) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
 SRT(수서고속철도) 앱이 쓰는 HTTP API 를 파이썬에서 그대로 부릅니다. 앱과 같은 경로에
 같은 폼 필드를 실어 조회·운임·좌석배치도를 읽고, 예약·취소·결제·환불을 합니다.
 설치 가능한 기본 읽기 전용 패키지라, 상태를 바꾸는 요청은 호출마다 동의 객체를
 건네야만 만들어집니다.
+
+📖 **문서: <https://yaki.kr/srt-mobile-api/>** — 전체 API 레퍼런스와 예제가 있습니다.
 
 > [!WARNING]
 > - **리버스 엔지니어링 결과입니다.** SR 은 API 를 공개하지 않습니다. 경로·필드명·응답 형태는
@@ -211,6 +212,7 @@ TransKey 키패드와 RaonSecure FIDO SDK 를 지나서 HTTP 클라이언트로�
 
 | 문서 | 무엇이 들어 있나 |
 | --- | --- |
+| [문서 사이트](https://yaki.kr/srt-mobile-api/) | 이 README 와 API 레퍼런스를 합쳐 놓은 것 |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | 검증 기록. 확인 코드, 확정하지 **못한** 것, 모든 경로의 정적 출처. |
 | [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md) | 구현 로그. |
 | [docs/analysis/](docs/analysis/README.md) | 정적 분석 산출물과 참조 클라이언트 대조 결과. |
