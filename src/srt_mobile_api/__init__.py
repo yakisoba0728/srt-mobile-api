@@ -18,7 +18,7 @@
 #: ``test_release_readiness.test_package_version_matches_project_metadata`` 가
 #: 지킨다. ``__all__`` 에 넣지 않는 것은 의도다 — 던더는 export 하는 이름
 #: 집합이 아니고, ``from ... import *`` 가 호출자의 같은 이름을 덮으면 안 된다.
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 from .client import SrtClient
 from .config import SrtConfig
