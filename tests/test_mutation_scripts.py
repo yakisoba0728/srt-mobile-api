@@ -58,6 +58,41 @@ def roundtrip_module():
     return _load(ROUNDTRIP_PATH)
 
 
+# --- refusal advice ---------------------------------------------------------
+
+
+def test_a_journey_count_refusal_names_the_flag_instead_of_saying_retry(recover):
+    """``ERR800052`` is deterministic, so "retry" is the one useless reply.
+
+    Observed live on 2026-07-31: a 환승 hold cancelled with the default
+    ``jrnyCnt="1"`` answered ``FAIL``/``ERR800052`` three times, and released on
+    the first attempt with ``"2"``. An operator following "retry this command"
+    would have sat in that loop with a real hold outstanding.
+    """
+    lines = recover._refusal_advice(
+        recover.JOURNEY_COUNT_MISMATCH_CODE, "1", FAKE_PNR
+    )
+    joined = " ".join(lines)
+    assert "--journey-count 2" in joined
+    assert FAKE_PNR in joined
+    assert "Retry this command" not in joined
+
+
+def test_the_advice_falls_back_to_retry_for_a_code_it_cannot_explain(recover):
+    """Only the one code it has evidence for gets specific advice."""
+    lines = recover._refusal_advice("ERR000000", "1", FAKE_PNR)
+    assert lines == ["Retry this command, or cancel it in the SRT app."]
+
+
+def test_a_journey_count_refusal_at_two_does_not_advise_two_again(recover):
+    """If it already sent 2, the mismatch is not the count, and saying so
+    would send the operator round the same loop the advice exists to break."""
+    lines = recover._refusal_advice(
+        recover.JOURNEY_COUNT_MISMATCH_CODE, "2", FAKE_PNR
+    )
+    assert lines == ["Retry this command, or cancel it in the SRT app."]
+
+
 # --- import safety ----------------------------------------------------------
 
 

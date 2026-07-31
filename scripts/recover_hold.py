@@ -68,6 +68,33 @@ def build_cancel_consent() -> MutationConsent:
     )
 
 
+#: The refusal a journey-count mismatch produces. Observed live on 2026-07-31:
+#: a 환승 hold (``jrnyCnt="2"``) cancelled with the default ``"1"`` answered
+#: ``FAIL``/``ERR800052`` three times in a row, and the same PNR released on the
+#: first attempt with ``"2"``. Nothing in the refusal says which field is wrong,
+#: so the code is the only clue an operator gets.
+JOURNEY_COUNT_MISMATCH_CODE = "ERR800052"
+
+
+def _refusal_advice(message_code: str, journey_count: str, pnr: str) -> list[str]:
+    """What to try next, when the refusal code narrows it down.
+
+    "Retry this command" is useless advice for a refusal that is deterministic:
+    a journey-count mismatch will fail identically forever. So when the code
+    says that is what happened, the banner names the flag instead, with the PNR
+    already in the command line.
+    """
+    if message_code == JOURNEY_COUNT_MISMATCH_CODE and journey_count != "2":
+        return [
+            f"{JOURNEY_COUNT_MISMATCH_CODE} is what a jrnyCnt mismatch looks "
+            "like.",
+            "A 환승 hold has TWO journeys, and this ran with",
+            f"--journey-count {journey_count}. Try:",
+            f"  python3 scripts/recover_hold.py {pnr} --journey-count 2",
+        ]
+    return ["Retry this command, or cancel it in the SRT app."]
+
+
 def _print_banner(lines: list[str]) -> None:
     width = max(len(line) for line in lines) + 4
     print("=" * width)
@@ -258,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
                 "SERVER REFUSED THE CANCEL -- THE HOLD STILL EXISTS",
                 f"PNR: {pnr}",
                 f"strResult={result.status} msgCd={result.message_code}",
-                "Retry this command, or cancel it in the SRT app.",
+                *_refusal_advice(result.message_code, args.journey_count, pnr),
             ]
         )
         return 1

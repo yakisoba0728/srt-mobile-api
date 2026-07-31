@@ -340,7 +340,7 @@ form seed — `ara0101v.js:90`,
   byte-for-byte AND order-for-order what it was, so the existing
   single-passenger pins in `test_mutation_live_paths` pass unchanged.
 
-## 환승 (Transfer) Search and Reservation (IMPLEMENTED, NOT LIVE-VERIFIED)
+## 환승 (Transfer) Search and Reservation (RESERVE/CANCEL LIVE-VERIFIED; PAYMENT NOT LIVE-VERIFIED)
 
 The remaining reservation shape, and the inverse of the round trip. 왕복 is two
 reservations of one journey each; 환승 is ONE reservation carrying TWO 여정

@@ -1325,7 +1325,25 @@ class SrtClient:
 
         인자가 :class:`~srt_mobile_api.models.TransferItinerary` 인 것은 이음새
         검사를 생성 시점에 하기 위해서입니다. ``round_trip``·``standby``·단체·좌석지정
-        조합 불가. **한 번도 보내 본 적 없습니다** — 슬롯 2 키 5개는 유추(inferred).
+        조합 불가.
+
+        **2026-07-31 실서버 확인.** 동대구(0015)→목포(0041), 열차 304 + 653, 오송
+        환승, 성인 1명으로 ``SUCC``/``IRR000018`` 을 받았습니다(PNR
+        ``320260733059548``). 유추였던 슬롯 2 키 5개가 그대로 받아들여졌습니다.
+        확인된 것은 **1인·일반실·직통 아님·편도** 한 건입니다.
+
+        **취소는 ``jrnyCnt="2"`` 로 해야 합니다.** 이 예약을 PNR 문자열만으로
+        취소하면 :meth:`cancel` 이 ``jrnyCnt="1"`` 을 보내고 서버가
+        ``FAIL``/``ERR800052`` 로 거절합니다 — 홀드는 그대로 남습니다. 홀드 객체를
+        넘기면 자기 값을 기억하므로 맞고, PNR 만 있으면 ``journey_count="2"`` 를
+        직접 줘야 합니다.
+
+        **환승 조회 결과에는 코레일 열차가 섞여 옵니다.** 같은 날 부산→익산 의 환승
+        5개 중 3개는 구간 하나 이상이 KTX(``stlbTrnClsfCd="00"``) 또는
+        KTX-산천(``"07"``) 이었고, 그런 여정을 넘기면
+        :func:`~srt_mobile_api.payloads.personal_reservation_payload` 가
+        ``reservation requires an SRT train (service_class_code '17')`` 로 전송 전에
+        거절합니다. 예약할 수 있는 것은 양쪽 구간이 다 ``"17"`` 인 여정뿐입니다.
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
