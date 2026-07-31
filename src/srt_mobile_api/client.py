@@ -1,16 +1,12 @@
 """:class:`SrtClient` — 이 패키지에 하나뿐인 진입점.
 
-여기에는 클래스가 하나뿐입니다. 폼을 만드는 일은
-:mod:`srt_mobile_api.payloads`, 서버가 렌더링한 HTML 을 값으로 바꾸는 일은
+폼을 만드는 일은 :mod:`srt_mobile_api.payloads`, HTML 을 값으로 바꾸는 일은
 :mod:`srt_mobile_api.parsers` 에 있고 이 모듈은 그 둘을 라우트 하나에 엮습니다.
 
-공개 메서드는 두 종류뿐입니다. 로그인·읽기 메서드는 인자만 받고, 상태를 바꾸는
-여섯(``reserve``, ``reserve_transfer``, ``cancel``, ``pay_with_card``,
-``refund``, ``register_discount_coupon``)은 키워드 전용 ``consent`` 를 함께
-요구합니다. 후자는 예외 없이
-:func:`~srt_mobile_api.consent.require_mutation_consent` 로 시작하므로 폼을
-만들기도 전에 거절되고, 전송 직전에 :mod:`srt_mobile_api.safety` 가 경로·범주·
-카드 비밀값을 다시 검사합니다.
+공개 메서드는 읽기와 상태변경(6개: ``reserve``, ``reserve_transfer``, ``cancel``,
+``pay_with_card``, ``refund``, ``register_discount_coupon``) 둘로 나뉩니다. 후자는
+:func:`~srt_mobile_api.consent.require_mutation_consent` 로 시작하고,
+:mod:`srt_mobile_api.safety` 가 전송 직전에 다시 검사합니다.
 """
 
 from __future__ import annotations
@@ -452,17 +448,10 @@ class SrtClient:
         departure_code: str,
         arrival_code: str,
     ) -> HtmlPage:
-        """역 선택 팝업의 HTML 을 파싱 없이 돌려줍니다.
+        """역 선택 팝업 HTML(``POST /common/ARA/ARA0501P/view.do``).
 
-        ``POST /common/ARA/ARA0501P/view.do``. 앱이 출발·도착역을 고를 때 여는
-        팝업이고, 넘긴 이름·코드 네 개가 현재 선택값으로 박힌 화면이 돌아옵니다.
-        반환 :class:`~srt_mobile_api.models.HtmlPage` 에 역 목록이 파싱돼 있지 않습니다.
-
-        **역을 고르려고 이 호출을 할 필요는 없습니다.** 이름과 코드 표는 앱 자신의 것을
-        :mod:`~srt_mobile_api.stations` 로 이미 싣고 있습니다.
-
-        로그인이 필요하고, 미인증 응답은
-        :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 입니다.
+        역 코드·이름 표는 :mod:`~srt_mobile_api.stations` 에 이미 있으므로 역을
+        고르기 위해 이 호출을 할 필요는 없습니다. 로그인 필요.
         """
         with self._session_guard():
             return self._get_selector_page(
@@ -474,15 +463,10 @@ class SrtClient:
             )
 
     def get_station_map_selector(self) -> HtmlPage:
-        """노선도 방식 역 선택 팝업의 HTML 을 파싱 없이 돌려줍니다.
+        """노선도 방식 역 선택 팝업 HTML(``POST /common/ARA/ARA0502P/view.do``).
 
-        ``POST /common/ARA/ARA0502P/view.do``, 인자 없음 — 폼은 앱이 처음 열 때 보내는
-        고정값으로 채웁니다. :meth:`get_station_selector` 의 목록형에 대응하는 노선도형
-        화면이고, 반환은 똑같이 파싱되지 않은
-        :class:`~srt_mobile_api.models.HtmlPage` 입니다. 역 코드는
-        :mod:`~srt_mobile_api.stations` 에서 얻는 편이 낫습니다.
-
-        로그인이 필요합니다.
+        인자 없음 — 고정값. 역 코드는 :mod:`~srt_mobile_api.stations` 에서 얻는 편이
+        낫습니다. 로그인 필요.
         """
         with self._session_guard():
             return self._get_selector_page(
@@ -492,14 +476,9 @@ class SrtClient:
             )
 
     def get_date_selector(self, date: str) -> HtmlPage:
-        """날짜 선택 팝업의 HTML 을 파싱 없이 돌려줍니다.
+        """날짜 선택 팝업 HTML(``POST /common/ARA/ARA0401P/view.do``).
 
-        ``POST /common/ARA/ARA0401P/view.do``. ``date`` 는 ``YYYYMMDD`` 여야 하고
-        아니면 요청 전에 :class:`ValueError` 입니다. 반환
-        :class:`~srt_mobile_api.models.HtmlPage` 에 예매 가능일이 파싱돼 있지 않습니다 —
-        앱이 달력을 그리는 데 쓰는 원본 화면입니다.
-
-        로그인이 필요합니다.
+        ``date`` 는 ``YYYYMMDD``, 아니면 :class:`ValueError`. 로그인 필요.
         """
         with self._session_guard():
             return self._get_selector_page(
@@ -509,16 +488,9 @@ class SrtClient:
             )
 
     def get_passenger_selector(self, passengers: PassengerCounts) -> HtmlPage:
-        """승차인원 선택 팝업의 HTML 을 파싱 없이 돌려줍니다.
+        """승차인원 선택 팝업 HTML(``POST /common/ARA/ARA0901P/view.do``).
 
-        ``POST /common/ARA/ARA0901P/view.do``. ``passengers`` 의 인원 구성이 그대로
-        폼에 실려 나가고, 그 값이 채워진 팝업 화면이 돌아옵니다. 반환은 파싱되지 않은
-        :class:`~srt_mobile_api.models.HtmlPage` 입니다.
-
-        검색이나 예약과는 무관합니다 — :meth:`search_trains` 나 :meth:`reserve` 에 인원을
-        넘기는 데 이 호출은 필요 없습니다.
-
-        로그인이 필요합니다.
+        검색·예약과 무관합니다. 로그인 필요.
         """
         with self._session_guard():
             return self._get_selector_page(
@@ -534,16 +506,10 @@ class SrtClient:
         location_seat_attr_code: str = "000",
         seat_name: str = "일반/기본",
     ) -> HtmlPage:
-        """좌석 위치·속성 선택 팝업의 HTML 을 파싱 없이 돌려줍니다.
+        """좌석 위치·속성 선택 팝업 HTML(``POST /common/ARA/ARA0701P/view.do``).
 
-        ``POST /common/ARA/ARA0701P/view.do``. 기본값은 앱이 처음 여는 상태와 같습니다 —
-        ``request_seat_attr_code="015"``, ``location_seat_attr_code="000"``,
-        ``seat_name="일반/기본"``. 반환
-        :class:`~srt_mobile_api.models.HtmlPage` 에 선택 가능한 옵션이 파싱돼 있지 않습니다.
-
-        실제 좌석을 보고 고르는 것은 :meth:`get_seat_page` 와 :meth:`get_seat_grid` 입니다.
-
-        로그인이 필요합니다.
+        기본값은 앱의 초기 상태와 동일. 실제 좌석 확인은 :meth:`get_seat_page` /
+        :meth:`get_seat_grid`. 로그인 필요.
         """
         with self._session_guard():
             return self._get_selector_page(
@@ -561,14 +527,10 @@ class SrtClient:
         train_group_code: SrtTrainGroupCode = "109",
         train_group_name: str = "전체",
     ) -> HtmlPage:
-        """열차 종류 선택 화면의 HTML 을 파싱 없이 돌려줍니다.
+        """열차 종류 선택 팝업 HTML(``POST /common/ARA/ARA0201V/view.do``).
 
-        ``POST /common/ARA/ARA0201V/view.do``. 기본값 ``"109"``/``"전체"`` 는
-        :class:`~srt_mobile_api.models.TrainSearchQuery` 의 ``train_group_code`` 기본값과
-        같은 값입니다. 반환 :class:`~srt_mobile_api.models.HtmlPage` 에 선택지가 파싱돼
-        있지 않습니다.
-
-        로그인이 필요합니다.
+        기본 ``"109"``/``"전체"`` 는 :class:`~srt_mobile_api.models.TrainSearchQuery`
+        기본값과 같습니다. 로그인 필요.
         """
         with self._session_guard():
             return self._get_selector_page(
@@ -676,18 +638,10 @@ class SrtClient:
         return key
 
     def _hold_netfunnel_key(self, previous: str | None, key: str) -> str:
-        """지금 잡고 있는 대기열 자리를 ``key`` 로 바꾸고 ``previous`` 는 놓습니다.
+        """잡고 있는 대기열 자리를 ``key`` 로 바꾸고 ``previous`` 는 놓습니다.
 
-        따로 떼어 둔 이유는 :meth:`_get_act10_key` 가 어느 경로로 빠져나가든 획득과
-        반납이 어긋나지 않게 하기 위해서입니다 — 여기 기록된 것이 곧
-        :meth:`_release_netfunnel_slots` 가 ``setComplete`` 를 보낼 대상입니다.
-
-        ``key`` 는 ``str`` 이고 ``None`` 이 오지 않습니다. 넘어오는 값이 전부
-        :attr:`~srt_mobile_api.models.NetFunnelToken.key` 이고 그것은
-        ``params.get("key", "")`` 로 만들어지기 때문입니다. **"키 없음"은 빈 문자열이고**
-        (300 우회가 그렇습니다) 여기와 :meth:`_get_act10_key` 의 참거짓 검사는 ``None`` 이
-        아니라 그것을 봅니다. ``previous`` 만 선택인 것은 첫 획득에는 놓을 자리가 없기
-        때문입니다.
+        "키 없음" 은 빈 문자열입니다 (300 우회). ``previous`` 만 선택인 것은 첫
+        획득에는 놓을 자리가 없기 때문입니다.
         """
         if previous == key:
             return key
@@ -698,18 +652,9 @@ class SrtClient:
         return key
 
     def _release_netfunnel_slots(self, referer: str) -> None:
-        """아직 잡고 있는 키마다 ``setComplete``(5004)를 보내 자리를 반납합니다.
+        """잡고 있는 키마다 ``setComplete``(5004)를 보내 자리를 반납합니다.
 
-        반납하지 않으면 그 자리는 시간이 다 될 때까지 붙잡혀 있고, 혼잡할 때 그것은
-        우리가 만든 대기열 오염입니다. 번들 설정도 ``TS_AUTO_COMPLETE = true`` 라 앱은
-        자동으로 반납합니다.
-
-        **모든 예외를 삼킵니다.** 반납은 호출자의 진짜 요청이 이미 성공했거나 실패한
-        **뒤에** 하는 뒷정리입니다. 여기서 난 오류가 그 결과를 덮으면, 뒤처리를 못 했다는
-        이유로 성공한 검색이 오류로 보고됩니다.
-
-        구조상 무한 재시도도 되지 않습니다. 키를 꺼낸 다음에 보내므로 실패하면 그 키는
-        버려지지 다시 줄을 서지 않습니다.
+        모든 예외를 삼킵니다 — 뒷정리 실패가 성공한 요청의 결과를 덮으면 안 됩니다.
         """
         while self._netfunnel_slots:
             key = self._netfunnel_slots.pop()
@@ -748,21 +693,9 @@ class SrtClient:
         group: bool,
         transfer: bool = False,
     ) -> tuple[str, dict[str, str]]:
-        # The ceiling half of the 10-person boundary, mirroring the floor
-        # group_search_ajax_payload already enforces. ara0101v.js:562-567
-        # refuses a non-단체 search of 10 or more with "10명 이상은 단체
-        # 예약입니다." and returns, so this is a client-enforced rule in both
-        # directions and only one of the two was reproduced.
-        #
-        # It lives HERE rather than in the payload builder because the builder
-        # cannot tell the two flows apart -- search_page_payload hydrates the
-        # group flow too, so a cap applied there would refuse the very searches
-        # the floor exists to allow. This layer already knows: `group` is the
-        # discriminant every entry point passes down, and this is the one place
-        # all five of them funnel through.
-        #
-        # Refused BEFORE _get_act10_key, so a rejected search never takes a
-        # place in the queue.
+        # 10명 이상 개인검색 금지 (ara0101v.js:562-567). 빌더가 아닌 여기서
+        # 막는 이유: search_page_payload 는 개인/단체를 구분 못 하므로.
+        # _get_act10_key 전에 거절하여 대기열 자리를 낭비하지 않는다.
         if not group and query.passengers.total >= GROUP_MIN_PARTY_SIZE:
             raise ValueError(
                 f"a personal search is limited to {GROUP_MIN_PARTY_SIZE - 1} "
@@ -772,8 +705,7 @@ class SrtClient:
         referer = f"{self.config.base_url}/ara/ara0101v.do"
         key = self._get_act10_key(referer)
         state = self._hydrate_search(query, key, transfer=transfer)
-        # The URL is chosen by grpDv ALONE (ara1001l.js:174-181). 직통 and 환승
-        # share it -- the connection type travels in chtnDvCd, not in the path.
+        # URL chosen by grpDv (ara1001l.js:174-181); 직통/환승 share it.
         path = "/ara/selectListAra10082_n.do" if group else "/ara/selectListAra10007_n.do"
         payload = (
             group_search_ajax_payload(query, key, hydrated_fields=state.hidden_fields)
@@ -1281,15 +1213,9 @@ class SrtClient:
         """예약을 보내는 단 하나의 경로. :meth:`reserve` 와
         :meth:`reserve_transfer` 가 함께 씁니다.
 
-        예약의 안전 속성이 전부 여기 모여 있습니다 — consent 게이트, 세션 필수,
-        I/O 없는 dry-run, NetFunnel 키 1회 획득, 자리 반납 보장, 재시도 없음, 그리고
-        모양이 어긋나도 PNR 만은 건지는 파싱. 앱도 예약 모양마다 폼을 만들지 않고
-        ``#rsvForm`` 하나를 씁니다.
-
-        ``build_form`` 은 키가 생긴 **뒤에 정확히 한 번** 불립니다. 폼이 두 번 만들어지지도
-        두 번 보내지지도 않는다는 뜻입니다. 인증된 세션을 인자로 건네받는 것도 같은
-        이유입니다 — 세션 검사는 여기서 하고, 빌더가 ``self.session.current`` 를 다시 읽으면
-        다른 함수의 가드에 기대게 됩니다.
+        consent 게이트 → 세션 필수 → dry-run 미리보기 → NetFunnel 키 → build_form
+        → 전송 → 자리 반납 → PNR 건지기. 재시도 없음. ``build_form`` 은 키가 생긴
+        뒤 정확히 한 번 불립니다.
         """
         require_mutation_consent(consent, "reserve")
         session = self.session.current
@@ -1304,9 +1230,6 @@ class SrtClient:
                 route=route,
                 payload=build_form(netfunnel_key or "", session),
             )
-        # The booking page is the referer search uses for its own act_10
-        # acquisition (_prepare_search), and reserve gates on the same key, so
-        # the same referer is used rather than inventing a second one.
         booking_referer = f"{self.config.base_url}/ara/ara0101v.do"
         with self._session_guard():
             key = (
@@ -1314,16 +1237,7 @@ class SrtClient:
                 if netfunnel_key
                 else self._get_act10_key(booking_referer)
             )
-            # INSIDE the try, not above it. build_form runs every client-side
-            # refusal this builder owns -- 국회의원 후급, 코레일 전용역, the seat
-            # attr whitelist, the availability requirement, the cabin
-            # cross-check -- and any of them raises with a queue slot already
-            # acquired two lines up. Outside the try, that slot was never
-            # released: the finally below is the only thing that returns it, and
-            # the dominant case (a script stopped by a guard) never flushes at
-            # all. The sibling paths already do it this way -- _search_once
-            # builds inside its guard, _search_public_discount_once builds
-            # before acquiring.
+            # build_form inside try so a guard failure still releases the slot.
             try:
                 form = build_form(key, session)
                 response = self.http.post_mutation_form(
@@ -1331,30 +1245,16 @@ class SrtClient:
                     form,
                     consent=consent,
                     category="reserve",
-                    # The app reserves from the search-result page
-                    # (ara1001l.js:1541-1560), which is the referer every other
-                    # post-search read here sends. INFERRED from the app flow,
-                    # not captured from the wire.
+                    # Inferred referer: app reserves from the search-result page.
                     referer=f"{self.config.base_url}/ara/selectListAra10007_n.do",
                 )
             finally:
-                # Release the queue slot once the reserve is over. Best effort
-                # and exception-swallowing by construction (see
-                # _release_netfunnel_slots), which matters most HERE: a hold may
-                # already exist on the server by this point, and a failed
-                # housekeeping call must never be what the caller sees instead
-                # of the PNR. A caller-supplied netfunnel_key was not acquired
-                # by us and so is not in _netfunnel_slots to release -- whoever
-                # obtained it owns completing it.
+                # Best-effort slot release; must never mask the hold/PNR result.
                 self._release_netfunnel_slots(booking_referer)
-            # From here a hold may EXIST on the server. parse_reservation_hold_
-            # response is the designed guard: it salvages a minimal hold from a
-            # PNR-bearing response rather than letting a strict-validation
-            # failure orphan it, and refuses to manufacture one when the server
-            # declared a failure.
+            # parse_reservation_hold_response salvages PNR from malformed
+            # responses; refuses to manufacture one when server declared failure.
             hold = parse_reservation_hold_response(response)
-            # The form knows how many 여정 it just booked; the response does
-            # not say, and the hold is what cancel() will be handed later.
+            # Attach the journey count the form sent (response doesn't say it).
             sent_journey_count = form.get("jrnyCnt", "1")
             if sent_journey_count != hold.journey_count:
                 hold = dataclasses.replace(
@@ -1376,53 +1276,20 @@ class SrtClient:
         designated_seats: SeatDesignation | None = None,
         seat_attr_code: SrtSeatAttrCode | None = None,
     ) -> MutationPreview | SrtReservationHold:
-        """열차 한 편에 결제 전 개인예약 홀드를 만듭니다. consent 게이트가 있습니다.
+        """열차 한 편에 개인예약 홀드를 만듭니다. consent 게이트.
 
-        ``POST /arc/selectListArc05013_n.do``. ``require_mutation_consent`` 가 첫
-        관문이라 기본
-        :class:`~srt_mobile_api.consent.MutationConsent`(``allow_reserve=False``)나
-        ``None`` 은 폼을 만들기도 전에
-        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` 로 막힙니다. 인증
-        세션도 필요하고 그 검사는 ``dry_run`` 분기보다 **앞**입니다.
+        ``POST /arc/selectListArc05013_n.do``. 기본 ``dry_run=True`` 면
+        :class:`~srt_mobile_api.consent.MutationPreview` 만 돌려주고 네트워크 무사용.
+        ``dry_run=False`` 면 실전송 → :class:`~srt_mobile_api.models.SrtReservationHold`.
 
-        ``dry_run=True``(기본)면 보낼 폼을 담은
-        :class:`~srt_mobile_api.consent.MutationPreview` 만 돌려주고 **네트워크를 전혀
-        쓰지 않습니다**(NetFunnel 키도 받지 않습니다). ``dry_run=False`` 면 실제로
-        전송되고, 성공하면 실계정에 미결제 홀드가 생깁니다. 반환
-        :class:`~srt_mobile_api.models.SrtReservationHold` 의 ``pnr_no`` 가
-        :meth:`cancel` 의 입력이며, **그 홀드는 호출자 책임입니다.** NetFunnel 은
-        검색과 같은 ``act_10`` 키 흐름이고(srtgo ``srt.py:987``; ``act_19`` 가
-        아닙니다) ``netfunnel_key`` 를 직접 주면 그대로 씁니다.
-
-        **실패한 예약은 다시 시도하지 않습니다** —— 재시도는 이중예약이 될 수 있어서 한
-        번의 호출이 만드는 홀드는 최대 하나입니다. 파싱이 걸려도 PNR 만 있으면 취소
-        가능한 최소 홀드를 건져내므로 PNR 은 보관해 두어야 합니다.
-
-        ``standby`` 는 예약대기(``jobId=1102``)입니다. 검색 행이 예약대기를 제공하지
-        않으면 :class:`ValueError` 이고 자동 유추는 하지 않습니다. 번들 근거는
-        있지만(``ara0101v.js:90``, ``ara1001l.js:1445-1448``) 실검증은 없습니다.
-
-        ``round_trip``(``rtnDv=1``, 왕복)은 **두 번째 요청을 보내지 않습니다.** 가는
-        편과 오는 편을 각각 ``round_trip=True`` 로 두 번 부르면 되고, 오는 편 질의는
-        :meth:`~srt_mobile_api.models.TrainSearchQuery.for_return_leg` 가 만듭니다.
-        ``jrnyCnt`` 는 두 번 다 ``"1"`` 이고(``"2"`` 는 환승), PNR 두 개 다 호출자
-        몫이라 독립된 둘로 다루어야 합니다. 코레일 전용역과 국회의원 후급 계정은 폼을
-        만들기 전에 거절합니다(``ara0101v.js:317-341``).
-
-        ``designated_seats`` 는 좌석지정(``jobId=1103``)입니다. :meth:`get_seat_page`
-        → :meth:`get_seat_grid` → :meth:`~srt_mobile_api.models.SeatGrid.choose` 가
-        만든 값을 넘기면 되고, 좌석 수가 인원 수와 다르거나 ``standby``·
-        ``round_trip`` 과 섞으면 전송 전에 :class:`ValueError` 입니다. 폼의 근거와
-        한계는 :func:`~srt_mobile_api.payloads.personal_reservation_payload` 에
-        있습니다. 확인된 조합은 성인 1명·1여정·일반실·직통 하나뿐이고
-        (``SUCC``/``IRR000018``), 다인원·다여정·예약대기·좌석지정은 미검증입니다.
+        재시도 없음(이중예약 방지). 파싱 실패해도 PNR 있으면 최소 홀드 건짐.
+        ``standby`` = 예약대기(``jobId=1102``, ara0101v.js:90, ara1001l.js:1445-1448).
+        ``round_trip`` = ``rtnDv=1``; 두 번째 요청을 보내지 않으므로 각각 호출.
+        ``designated_seats`` = 좌석지정(``jobId=1103``).
+        확인된 조합: 성인 1명·1여정·일반실·직통. 나머지 미검증.
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
-            # membership_number is read off the session _submit_reservation
-            # hands in, not defaulted and not re-read from self.session.current:
-            # that session is the one its own None-check already passed, so the
-            # read cannot be the None the check exists to refuse.
             lambda key, session: personal_reservation_payload(
                 train,
                 passengers or PassengerCounts(),
@@ -1450,45 +1317,18 @@ class SrtClient:
         netfunnel_key: str | None = None,
         seat_attr_code: SrtSeatAttrCode | None = None,
     ) -> MutationPreview | SrtReservationHold:
-        """환승 예약 — 두 다리를 **한 요청**으로 예약합니다. consent 게이트가 있습니다.
-
-        SRT 가 다구간 본문으로 받는 유일한 모양입니다. 환승 토글이 ``jrnyTpCd="14"``
-        와 ``jrnyCnt="2"`` 를 같이 세웁니다(``ara0101v.js:302-303``).
-        :meth:`reserve` 의 ``round_trip`` 은 정반대로, 1여정짜리 예약을 두 번 하는
-        것입니다.
+        """환승 예약 — 두 다리를 한 요청으로 예약합니다. consent 게이트.
 
         경로도 consent 카테고리도 :meth:`reserve` 와 같습니다
-        (``/arc/selectListArc05013_n.do``, ``"reserve"``). 앱이 예약 경로를 가르는
-        것은 ``grpDv`` 하나이고 환승은 그것을 건드리지 않습니다
-        (``ara1001l.js:1542-1547``). consent 게이트, 인증 세션
-        요구(``dry_run`` 분기보다 앞), 기본 무통신 미리보기, NetFunnel 자리 반납,
-        무재시도, PNR 건지기까지 전송 경로가 똑같고, 한 번의 호출이 만드는 홀드는
-        최대 하나입니다.
+        (``/arc/selectListArc05013_n.do``, ``"reserve"``). ``jrnyTpCd="14"`` +
+        ``jrnyCnt="2"`` (ara0101v.js:302-303). 전송 경로·안전 속성 전부 동일.
 
-        인자가 :class:`~srt_mobile_api.models.TransferItinerary` 인 것은 열차 두 개를
-        따로 받으면 어긋난 조합이 조용히 진짜 홀드가 되기 때문입니다. 이 타입은 생성
-        시점에 이음새를 검사합니다(앞 다리 도착역 = 뒤 다리 출발역, 도착이 출발보다
-        늦지 않을 것).
-
-        ``passengers``·``seat_type``·``window_seat`` 는 두 다리에 한 번에 적용됩니다
-        (``ara0101v.js:769-778``). ``round_trip``·``standby``·단체·좌석지정은 조합되지
-        않습니다.
-
-        **한 번도 보내 본 적이 없습니다.** 슬롯 2 의 키 이름 다섯 개
-        (``stlbTrnClsfCd2``, ``dptStnConsOrdr2``, ``arvStnConsOrdr2``,
-        ``dptStnRunOrdr2``, ``arvStnRunOrdr2``)는 슬롯 1 에서 유추한 것입니다(키별
-        근거는 :data:`~srt_mobile_api.payloads.TRANSFER_SLOT2_FIELD_EVIDENCE`).
-        ``reserveType`` 은 :meth:`reserve` 와 같은 ``"11"`` 로 보내며 ``jrnyTpCd`` 를
-        따라가는지는 모릅니다 — 서버가 본문을 거절하면 여기부터 의심하면 됩니다.
-
-        취소는 :meth:`cancel` 에 홀드를 그대로 넘기면 됩니다. 홀드가 자기 여정 수
-        (``"2"``)를 기억합니다. PNR 문자열만 들고 있다면
-        ``cancel(pnr, journey_count="2", consent=…)`` 로 직접 말해야 합니다.
+        인자가 :class:`~srt_mobile_api.models.TransferItinerary` 인 것은 이음새
+        검사를 생성 시점에 하기 위해서입니다. ``round_trip``·``standby``·단체·좌석지정
+        조합 불가. **한 번도 보내 본 적 없습니다** — 슬롯 2 키 5개는 유추(inferred).
         """
         return self._submit_reservation(
             "/arc/selectListArc05013_n.do",
-            # The session is unused here: 환승 carries no mbCrdNo field (the
-            # 국회의원 후급 check is 왕복's, and 왕복 does not compose with 환승).
             lambda key, _session: transfer_reservation_payload(
                 itinerary,
                 passengers or PassengerCounts(),
@@ -1508,32 +1348,12 @@ class SrtClient:
         consent: MutationConsent,
         journey_count: str | None = None,
     ) -> MutationPreview | SrtCancelResult:
-        """만들어졌지만 결제되지 않은 예약을 취소합니다(예약취소). consent 게이트가 있습니다.
+        """미결제 예약을 취소합니다. consent 게이트.
 
-        ``POST /ard/selectListArd02045_n.do``, 본문은 ``pnrNo``/``jrnyCnt``/
-        ``rsvChgTno`` 셋뿐입니다. ``require_mutation_consent(consent, "cancel")`` 로
-        막히고(기본 :class:`~srt_mobile_api.consent.MutationConsent` 는
-        ``allow_cancel=False``), 인증 세션이 필요하며 그 검사는 ``dry_run`` 분기보다
-        앞입니다.
-
-        ``reservation`` 은 :class:`~srt_mobile_api.models.SrtReservationHold` 이거나
-        맨 PNR 문자열입니다 — 회복 중인 호출자가 PNR 밖에 못 가진 경우가 있기
-        때문입니다.
-
-        ``journey_count`` 를 생략하면 홀드가 기억하는 여정 수를 쓰고(환승 홀드는
-        ``"2"``), 맨 PNR 로 부를 때는 ``"1"`` 이 기본입니다. 넘기면 그 값이 이깁니다.
-        숫자로 정규화되고 **절대 거절되지 않습니다** — 폼을 못 만드는 것이 곧 못 푸는
-        홀드이기 때문입니다.
-
-        ``dry_run=True``(기본)면 PNR 을 가린
-        :class:`~srt_mobile_api.consent.MutationPreview` 만 돌려주고 통신하지
-        않습니다. ``dry_run=False`` 면 전송되고
-        :class:`~srt_mobile_api.models.SrtCancelResult` 를 돌려줍니다.
-
-        확인된 것은 1여정·성인 1명 한 건이라 ``jrnyCnt="1"`` 뿐입니다
-        (``SUCC``/``IRG000000``/"정상처리되었습니다"). 경로 자체는 v2.0.41 번들에
-        없지만, 서버가 렌더링하는 승차권 목록 페이지의 ``cncConfirm()`` 이 같은 경로·
-        같은 세 필드·같은 응답 봉투를 씁니다.
+        ``POST /ard/selectListArd02045_n.do``, 본문 ``pnrNo``/``jrnyCnt``/``rsvChgTno``.
+        ``reservation`` 은 :class:`~srt_mobile_api.models.SrtReservationHold` 또는
+        PNR 문자열. ``journey_count`` 생략 시 홀드가 기억하는 값(환승 ``"2"``), 맨
+        PNR 이면 ``"1"``. 기본 ``dry_run=True``.
         """
         require_mutation_consent(consent, "cancel")
         if self.session.current is None:
@@ -1638,35 +1458,15 @@ class SrtClient:
         passenger_count: str | None = None,
         settlement_date: str | None = None,
     ) -> MutationPreview | SrtPaymentResult:
-        """미결제 PNR 하나를 카드로 결제합니다. consent 게이트가 있습니다.
+        """미결제 PNR 을 카드로 결제합니다. consent 게이트.
 
-        ``POST /ata/selectListAta09036_n.do``, 31개 필드.
-        ``require_mutation_consent(consent, "payment")``, 인증 세션, 그리고 세션에
-        회원번호(``userMap.MB_CRD_NO``)가 있어야 하고, 없으면
-        :class:`~srt_mobile_api.errors.SrtAuthError` 입니다. 세 검사 모두 ``dry_run``
-        분기보다 앞입니다.
+        ``POST /ata/selectListAta09036_n.do``, 31개 필드. 세션에 회원번호 필수.
+        ``reservation`` 은 :meth:`get_reservations` 행. 금액은 ``rcvdAmt`` 에서만.
+        기본 ``dry_run=True`` → 민감정보 가린 미리보기. ``dry_run=False`` 면
+        ``require_card_kind_claim`` 추가 필요.
 
-        ``reservation`` 은 :meth:`get_reservations` 가 준 행입니다. 금액은 그 행의
-        :attr:`~srt_mobile_api.models.SrtReservationSummary.received_amount`
-        (``rcvdAmt``, 수납금액)에서만 오고 override 가 없습니다. ``settlement_date``
-        (``stlDmnDt``)는 생략하면 오늘이고, 명시했는데 쓸 수 없는 값이면 조용히 바꾸지
-        않고 거절합니다. ``passenger_count`` 도 호출자용 override 입니다.
-
-        ``dry_run=True``(기본)면 PAN·PIN·유효기간·생년월일·회원번호·PNR 을 모두 가린
-        :class:`~srt_mobile_api.consent.MutationPreview` 만 돌려주고 통신하지
-        않습니다. ``dry_run=False`` 면 consent 가 **어떤 카드인지도** 밝혀야 합니다
-        (:func:`~srt_mobile_api.consent.require_card_kind_claim`: ``fake_card_only`` 와
-        ``real_card_acknowledged`` 중 정확히 하나). 이 주장은 여기서 한 번, 전송
-        경계에서 다시 확인됩니다.
-
-        확인된 조합은 1여정·성인 1명·일반실·개인카드·일시불 하나뿐입니다
-        (``SUCC``/``IRT000000``). 없는 PNR 로 찌르면 404 가 아니라 정상 업무 응답
-        (``FAIL``/``WRT100170``)이 돌아옵니다.
-
-        **출처가 얇은 경로입니다.** ``Ata09*`` 계열 전체가 v2.0.41 번들에서 0-hit
-        이고, 앱 자신은 ``#rsvForm`` 을 ``/ard/selectListArd02017_n.do`` 로 보내며
-        TransKey 보안 키패드와 RaonSecure FIDO 를 거칩니다. 참조 구현 둘은 한 벌이라
-        (srtgo 가 ryanking13/SRT 의 결제 코드를 벤더링) 서로를 뒷받침하지 못합니다.
+        확인된 조합: 1여정·성인 1명·일반실·개인카드·일시불(``SUCC``/``IRT000000``).
+        ``Ata09*`` 전체가 v2.0.41 번들 0-hit. 출처가 얇은 경로입니다.
         """
         require_mutation_consent(consent, "payment")
         session = self.session.current
@@ -1680,9 +1480,7 @@ class SrtClient:
                 "the app itself spells 'not logged in'"
             )
         route = "/ata/selectListAta09036_n.do"
-        # Built before the dry-run branch so a preview validates exactly what a
-        # live send would transmit, matching cancel. stlDmnDt is resolved here
-        # rather than in the builder so payloads.py keeps no clock.
+        # Form built before dry-run branch so preview validates the same way.
         form = card_payment_payload(
             reservation,
             card,
@@ -1705,14 +1503,9 @@ class SrtClient:
                 route=route,
                 payload=form,
             )
-        # Only on the transmit path: a dry run sends nothing, so requiring the
-        # card-kind claim to PREVIEW would buy no safety and would just make
-        # previewing harder. post_mutation_form re-checks this itself.
+        # Only on transmit path: dry run needs no card-kind claim to preview.
         require_card_kind_claim(consent)
         with self._session_guard():
-            # The single send path, so the gate ordering and the refusals stay
-            # the transport layer's decision and cannot drift out of sync with
-            # it. Since 2026-07-26 this reaches the wire.
             response = self.http.post_mutation_form(
                 route,
                 form,
@@ -1746,13 +1539,7 @@ class SrtClient:
         if not isinstance(pnr_no, str) or not pnr_no.strip():
             raise ValueError("refund ticket info requires a non-empty PNR")
         pnr = pnr_no.strip()
-        # ASCII-only and length-bounded, via an explicit character class rather
-        # than str.isalnum(). isalnum() is UNICODE-aware, so "한글PNR", Arabic-Indic
-        # digits and fullwidth letters all satisfied it and then died inside
-        # httpx as a bare UnicodeEncodeError — an exception outside this
-        # library's taxonomy entirely, raised while building the request. The
-        # unbounded form also let a 5,000-character PNR become a 5,058-byte
-        # Referer. Same ASCII-class style as safety.NETFUNNEL_KEY_RE.
+        # ASCII-only, length-bounded: goes into Referer URL verbatim.
         if _REFUND_PNR_RE.fullmatch(pnr) is None:
             raise ValueError(
                 "refund ticket info PNR must be 1-32 ASCII alphanumerics or "
@@ -1818,8 +1605,6 @@ class SrtClient:
                 payload=form,
             )
         with self._session_guard():
-            # The single send path, so gate ordering and refusals stay the
-            # transport layer's decision. Since 2026-07-26 this reaches the wire.
             response = self.http.post_mutation_form(
                 route,
                 form,

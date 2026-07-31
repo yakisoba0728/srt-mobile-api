@@ -1,9 +1,7 @@
 """로그인과 세션 정리 —— 쿠키를 얻는 곳.
 
-SRT 는 토큰이 아니라 쿠키(``JSESSIONID``)로 세션을 유지합니다. 이 모듈은 앱과
-같은 순서로 로그인 폼을 POST 하고, 뒤이어 메인·예매 페이지를 GET 해서 그
-쿠키가 실제로 인증된 세션인지 확인합니다. 이후의 모든 읽기·쓰기는 같은
-:class:`~srt_mobile_api.http.SrtHttpClient` 의 쿠키를 탑니다.
+SRT 는 ``JSESSIONID`` 쿠키로 세션을 유지합니다. 이 모듈은 앱과 같은 순서로
+로그인 폼을 POST 하고, 메인·예매 페이지를 GET 해서 쿠키가 인증됐는지 확인합니다.
 """
 
 from __future__ import annotations
@@ -16,20 +14,14 @@ from .models import SrtSession
 from .parsers import parse_html_page
 
 
-# login.do's srchDvCd (login-tab) selection is server-rendered and absent from the
-# offline bundle, so the ground truth is srtgo (srt.py:691-698): the identifier is
-# auto-detected as email → "2", phone → "3", else membership number → "1". A phone
-# A Korean mobile number (01X prefix, with or without dashes) resolves to a phone
-# login ("3"); the leading "01X" distinguishes it from an all-digit membership number
-# ("1"). srtgo used a dash-requiring regex, but real credentials are commonly entered
-# without dashes -- a real stored dashless phone id must resolve to a phone and not
-# fall through to membership. When the resolved type is "3" the dashes are stripped
-# from the transmitted srchDvNm (srt.py:697-698).
+# login.do srchDvCd 판정: srtgo srt.py:691-698 에서 유래.
+# 이메일 → "2", 01X 휴대폰 → "3", 그 외(회원번호) → "1".
 _EMAIL_LOGIN_RE = re.compile(r"[^@]+@[^@]+\.[^@]+")
 _PHONE_LOGIN_RE = re.compile(r"01[0-9]-?\d{3,4}-?\d{4}")
 
 
 def _detect_login_type(login_id: str) -> str:
+    """로그인 식별자 종류를 자동 판별 → srchDvCd 값."""
     if _EMAIL_LOGIN_RE.fullmatch(login_id):
         return "2"
     if _PHONE_LOGIN_RE.fullmatch(login_id):
@@ -38,16 +30,10 @@ def _detect_login_type(login_id: str) -> str:
 
 
 class SrtSessionClient:
-    """로그인 상태를 들고 있는 얇은 래퍼.
+    """로그인 상태를 들고 있는 래퍼.
 
-    :attr:`current` 는 로그인 성공 뒤의
-    :class:`~srt_mobile_api.models.SrtSession` 이고, 로그인 전이나
-    :meth:`clear_session` 뒤에는 ``None`` 입니다. 쿠키 자체는 주입받은
-    :class:`~srt_mobile_api.http.SrtHttpClient` 가 보관하며 이 객체는 그것을
-    비우는 권한만 갖습니다.
-
-    :class:`~srt_mobile_api.client.SrtClient` 가 내부에서 쓰는 부품입니다. 직접
-    만들 필요는 보통 없습니다.
+    :attr:`current` 는 로그인 성공 후 :class:`~srt_mobile_api.models.SrtSession`,
+    로그인 전이나 :meth:`clear_session` 후에는 ``None``.
     """
 
     def __init__(self, http: SrtHttpClient) -> None:
@@ -57,38 +43,24 @@ class SrtSessionClient:
     def login(
         self, login_id: str, password: str, *, login_type: str | None = None
     ) -> SrtSession:
-        """로그인해 세션 쿠키를 얻고, 그 쿠키가 인증됐는지까지 확인합니다.
+        """``POST /apb/selectListApb01080_n.do`` 로 로그인.
 
-        ``POST /apb/selectListApb01080_n.do``. 기존 세션을 버리고 로그인 페이지를
-        한 번 GET 한 뒤 폼을 보냅니다. 성공하면
-        :class:`~srt_mobile_api.models.SrtSession` 을 돌려주고 :attr:`current`
-        에도 남깁니다.
+        ``login_id`` 종류(``srchDvCd``)는 자동 판별: 이메일 "2", 01X 전화 "3"
+        (하이픈 있든 없든, 전송 시 제거), 그 외 회원번호 "1". ``login_type`` 으로
+        직접 지정 가능.
 
-        ``login_id`` 의 종류(``srchDvCd``)는 넘기지 않으면 자동으로 정합니다 ——
-        이메일이면 ``"2"``, 01X 로 시작하는 휴대전화번호면 ``"3"``(하이픈이 있든
-        없든 판별하고 보낼 때 뗍니다), 그 밖에는 회원번호로 보아 ``"1"``
-        입니다. 자동 판별이 틀리면 ``login_type`` 으로 직접 지정하면 됩니다.
+        폼의 ``deviceKey`` 는 상수 ``"-"`` (srtgo srt.py:704).
+        진짜 ANDROID_ID 인 ``config.device_key`` 는 ``/main/main.do?deviceId=``
+        에만 쓰임 (SRWebActivity.java:1581-1583).
 
-        폼의 ``deviceKey`` 는 기기 식별자가 아니라 상수 ``"-"`` 입니다. 진짜
-        식별자인 :attr:`~srt_mobile_api.config.SrtConfig.device_key` 는 로그인
-        직후 GET 하는 ``/main/main.do?deviceId=`` 에만 쓰입니다.
-
-        성공 판정은 ``userMap.RTNCD == "Y"`` 뿐이고, **아이디·비밀번호가 틀린
-        경우는 언제나** :class:`~srt_mobile_api.errors.SrtAuthError` 입니다(응답
-        최상위 ``MSG``, 없으면 ``userMap.MSG`` 를 메시지로 싣습니다). ``userMap`` 이
-        통째로 없어도 프로토콜 오류로 바꾸지 않습니다.
-
-        폼이 통과해도 끝이 아닙니다. 이어서 ``/main/main.do`` 와
-        ``/ara/ara0101v.do`` 를 읽어 로그인 페이지로 튕기지 않는지 보고, 걸리면
-        :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 입니다. 이 메서드가
-        돌아왔다면 예매 페이지까지 인증된 상태입니다.
+        성공: ``userMap.RTNCD == "Y"``. 실패: 최상위 ``MSG`` 또는
+        ``userMap.MSG`` → SrtAuthError.
 
         **어떤 예외로 끝나든 쿠키는 비워집니다.**
         """
         self.clear_session()
         resolved_type = login_type if login_type is not None else _detect_login_type(login_id)
-        # srchDvNm carries the raw identifier, except a phone number ("3") is sent
-        # without dashes (srtgo re.sub('-', '', id)).
+        # 전화번호("3")는 하이픈 없이 전송 (srtgo re.sub('-', '', id)).
         srch_dv_nm = re.sub("-", "", login_id) if resolved_type == "3" else login_id
         try:
             parse_html_page(self.http.get_text("/login/login.do"), context="login page")
@@ -101,11 +73,6 @@ class SrtSessionClient:
                     "auto": "",
                     "login_referer": "",
                     "hmpgPwdCphd": password,
-                    # The login deviceKey is the server-rendered constant "-", not an
-                    # ANDROID_ID. Both wire refs agree: srtgo srt.py:704 (data["deviceKey"]
-                    # = "-") and ref-srtgo_plus.md:112,120-121. The real ANDROID_ID-shaped
-                    # config.device_key belongs only on /main/main.do?deviceId= below
-                    # (SRWebActivity.java:1582-1584), not on this login field.
                     "deviceKey": "-",
                     "page": "",
                     "customerYn": "",
@@ -116,17 +83,8 @@ class SrtSessionClient:
                 referer=f"{self.http.config.base_url}/login/login.do",
             )
             user_map = response.get("userMap")
-            # Spelled as one negated condition rather than via an `authenticated`
-            # flag so the success path below is provably reached only with
-            # user_map a dict -- the same test, stated where a reader (and a type
-            # checker) can see that SrtSession never receives a non-mapping.
             if not isinstance(user_map, dict) or user_map.get("RTNCD") != "Y":
-                # On a failed login the app reads the TOP-LEVEL MSG and treats it as an
-                # auth failure (srtgo srt.py:716,718 -> raise SRTLoginError(r.json()["MSG"])
-                # for both non-existent-member and wrong-password cases; MSG is sibling to
-                # userMap, which the failure path never touches). Read top-level MSG first,
-                # fall back to userMap.MSG, and always raise SrtAuthError -- never
-                # SrtProtocolError -- even when userMap is absent.
+                # 실패 시 최상위 MSG 우선 (srtgo srt.py:716,718), fallback userMap.MSG.
                 message = response.get("MSG")
                 if not message and isinstance(user_map, dict):
                     message = user_map.get("MSG")
@@ -152,8 +110,7 @@ class SrtSessionClient:
     def clear_session(self) -> None:
         """쿠키를 버리고 :attr:`current` 를 ``None`` 으로 돌립니다.
 
-        서버에 로그아웃을 알리지는 않습니다 —— 쿠키를 버리는 로컬 동작입니다.
-        로그인 전이든 후든 여러 번 불러도 됩니다.
+        서버에 로그아웃을 알리지 않는 로컬 동작입니다.
         """
         self.http.cookies.clear()
         self.current = None

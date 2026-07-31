@@ -137,42 +137,18 @@ TRANSFER_BOTH_LEGS_MESSAGE = (
     "선택하신 열차는 선행 및 후행 열차를 모두 선택하셔야 예약이 가능합니다."
 )
 
-# How each 여정 slot-2 key of a 환승 reservation form is known. Recorded as DATA
-# rather than prose because the honest answer differs per key, and pinned by a
-# test so that nothing here can quietly graduate to a stronger tier:
+# Evidence tier for each 환승 slot-2 key. Kept as data so a test can pin it.
 #
-#   "web"      -- the literal `...2` string is in the offline WEB bundle
-#                 (assets/offline/js), i.e. in the booking flow itself.
-#   "native"   -- the literal `...2` string is in the app's NATIVE two-leg
-#                 model: the offline-ticket parser at
-#                 analysis/jadx/sources/kr/co/srail/newapp/webview/b.java:746-834,
-#                 which reads a whole second leg out of a saved ticket and is
-#                 switched on by `isTransfer` == "true" (:815, consumed at
-#                 a.java:82 and :133). That is the app's own naming for a
-#                 transfer's second leg, from the ticket side rather than the
-#                 booking side.
-#   "hydrated" -- ZERO hits in the bundle. Already emitted by
-#                 search_page_payload on the Ara10007 hydration GET, which the
-#                 live server has accepted on every live run, and listed as a
-#                 booking-page hidden input by the 2026-07-09 survey
-#                 (docs/analysis/srt-app-api-library-spec-2026-07-09.md:162-170).
-#   "inferred" -- ZERO hits anywhere, in any form. Slot 1's name from
-#                 fn_moveRsv (ara1001l.js:1453-1468) with the suffix changed to
-#                 2, which is the rule every "web" and "native" entry obeys.
+#   "web"      -- literal `...2` string in the offline WEB bundle (assets/offline/js).
+#   "native"   -- literal in the native offline-ticket parser (b.java:746-834).
+#   "hydrated" -- 0-hit in bundle; emitted by search_page_payload and accepted live.
+#   "inferred" -- 0-hit anywhere. Slot 1's name with suffix changed to 2.
 #
-# The server-rendered #rsvForm is not in the bundle -- the app POSTs
-# $("#rsvForm").serialize() (ara1001l.js:1550) -- so the hydrated and inferred
-# tiers cannot be settled offline. They are a capture away, not a guess away.
-#
-# THE 2026-07-26 LIVE TRANSFER SEARCH DID NOT MOVE ANY TIER, AND THAT IS THE
-# POINT. It settled the RESPONSE (one row per leg, paired by trnOrdrNo -- see
-# parsers.pair_transfer_itineraries) and it showed that a search ROW carries
-# ...2 columns as EMPTY STRINGS: trnNo2 "", dptRsStnCd2 "", jrnySqno "". Those
-# are blank because the second leg arrives as its own ROW, so there is nothing
-# for the columns to hold -- which says nothing whatsoever about whether the
-# RESERVATION form wants them filled. A response column and a request field that
-# share a name are still two different things, and only a reserve capture can
-# settle the request side. The five INFERRED names below remain inferred.
+# The server-rendered #rsvForm is not in the bundle; hydrated and inferred tiers
+# cannot be settled offline. The 2026-07-26 live transfer search showed ...2
+# response COLUMNS as empty strings (trnNo2 "", dptRsStnCd2 ""), but a response
+# column and a request field sharing a name are different things — only a reserve
+# capture can settle the request side.
 TRANSFER_SLOT2_FIELD_EVIDENCE = {
     # ara1001l.js:1209-1216, the 운임요금 (Ara13010) params: the app sends
     # dptRsStnCd2/arvRsStnCd2/runDt2/trnNo2 verbatim, blank for a direct
@@ -212,18 +188,12 @@ TRANSFER_SLOT2_FIELD_EVIDENCE = {
     "arvStnRunOrdr2": "inferred",
 }
 
-# The 예약대기 row images (ara1001l.js:32-33). The SERVER sends
-# grd_WF_Waiting.png; the app rewrites it to the _S ("selected") spelling when
-# the row is tapped (:1045, :1058), and fn_moveRsv then tests for the _S form
-# (:1447). A library never performs that rewrite, so both spellings count as the
-# same signal.
+# 예약대기 row images (ara1001l.js:32-33). The app rewrites grd_WF_Waiting.png
+# to the _S form when tapped (:1045, :1058); fn_moveRsv tests for _S (:1447).
+# Both spellings count as the same standby signal.
 #
-# THIS IS WHERE THE BUNDLE AND srtgo DISAGREE, and the bundle wins. srtgo picks
-# standby off `reserve_wait_possible_code >= 0` (rsvWaitPsbCd); our app never
-# reads rsvWaitPsbCd for this decision at all -- it reads gnrmRsvPsbImg. The two
-# are not interchangeable: rsvWaitPsbCd is present on personal search rows and
-# ABSENT from group ones (Ara10082 omits it, as our own fixtures show), while
-# gnrmRsvPsbImg is on both.
+# NOTE: the bundle tests gnrmRsvPsbImg, NOT rsvWaitPsbCd (which is absent from
+# group rows). This is where bundle and srtgo disagree, and bundle wins.
 _STANDBY_ROW_IMAGES = frozenset(
     {
         "IMAGE::grd_WF_Waiting.png",
@@ -231,27 +201,13 @@ _STANDBY_ROW_IMAGES = frozenset(
     }
 )
 
-# The minimum party size the app enforces for a 단체 (group) search, and the
-# maximum it allows without one. ara0101v.js:549-566, on the 조회하기 button:
-# 단체 checked with totPrnb < 10 alerts "단체예약은 10매 이상입니다." and returns
-# without sending; 단체 unchecked with totPrnb > 9 alerts "10매 이상은
-# 단체예약입니다." and returns. So 10 is a real, client-enforced boundary in both
-# directions, not a UI hint.
+# 단체 최소 인원 (ara0101v.js:549-566). 단체 checked + totPrnb < 10 alerts
+# "단체예약은 10매 이상입니다."; non-단체 + totPrnb > 9 alerts "10매 이상은
+# 단체예약입니다." Client-enforced boundary in both directions.
 #
-# The one consumer is group_search_ajax_payload. Group BOOKING was removed on
-# 2026-07-26 (Arc06014 answers with a payment page, not a hold -- see
-# docs/IMPLEMENTATION_PROGRESS.md "단체 (group) booking: removed"), and this
-# floor survived that removal because the group SEARCH is still offered and the
-# app enforces the same number on it.
-#
-# The CEILING on personal searches is enforced too, but NOT in this module.
-# ara0101v.js:562-567 refuses a non-단체 search of 10 or more, and no builder
-# here can reproduce that: search_page_payload hydrates the group flow as well,
-# so a cap applied at this layer would refuse the very searches this floor
-# exists to allow. The check therefore lives one layer up, in
-# SrtClient._prepare_search, which receives the `group: bool` that tells the two
-# flows apart. This comment used to read as though the ceiling could not be
-# enforced at all, which is what kept it on the deferred list.
+# The CEILING on personal searches is enforced in SrtClient._prepare_search,
+# not here — search_page_payload hydrates both flows so a cap here would refuse
+# the searches this floor exists to allow.
 GROUP_MIN_PARTY_SIZE = 10
 
 # WINDOW_SEAT mapping (srtgo srt.py:86): None -> "000" (no preference),
@@ -270,35 +226,15 @@ TRAIN_GROUP_OPTIONS = {
     "900": ("KTX+SRT", "00"),
     "109": ("전체", "05"),
 }
-# The SIX psgTpCd slots, in the positional order the app compacts them in, paired
-# with the PassengerCounts attribute each one's count comes from.
+# The SIX psgTpCd slots, paired with the PassengerCounts attribute.
 #
-# THIS TUPLE USED TO BE FIVE, and said so as a fact: "there is NO infant / psgTpCd
-# 6: SRT has no infant type and the string infantCnt appears nowhere in the app".
-# That was true of the v2.0.41 offline bundle and FALSE of the live server. The
-# mistake is worth naming because it is repeatable: it read "absent from the
-# bundle" as "absent from the protocol".
+# Slot 5 carries child + infant (the fold). Slot 6 is 청소년 (psgTpCd 6),
+# absent from commCode.js but present on the 공공할인 path's 승차인원선택 popup.
+# 유아 has no psgTpCd of its own — it is folded into slot 5 and declared
+# separately as `infantCnt`.
 #
-# `psgTpCd` 6 is 청소년, and it is in NEITHER copy of commCode.js -- not v2.0.41,
-# not the live /js/commCode.js fetched 2026-07-26, both of which stop at 5. It
-# exists only in what the server renders on the 공공할인 path, where the 승차인원
-# 선택 popup reveals a seventh counter (`passenger7`, display:none unless the
-# 공공할인 code is "04") and the 할인 승차권 page maps it to
-# psgTpCd6/psgInfoPerPrnb6 (setPassenger_callback).
-#
-# 유아 is NOT here, and its absence is the app's rule rather than an omission: an
-# infant has no psgTpCd of its own. It is folded into the 어린이 slot's COUNT and
-# declared separately as `infantCnt`. See PassengerCounts.child_slot_count and
-# _passenger_slot_counts below.
-#
-# BOTH RULES ARE LIVE-VERIFIED (2026-07-26), by the cheapest possible read: the
-# search route echoes the request back in its own commandMap.
-#   * adult=1, child=2, infant=3 came back as psgTpCd2="5",
-#     psgInfoPerPrnb2="5" and infantCnt="3" -- the fold and the separate
-#     declaration, both, from one infant count;
-#   * adult=1, youth=1 came back as psgTpCd2="6", psgInfoPerPrnb2="1".
-# Both searches returned ten train rows, so the server processed them normally
-# and rejected neither the folded count nor psgTpCd 6.
+# Live-verified 2026-07-26: adult=1, child=2, infant=3 echoed as psgTpCd2="5",
+# psgInfoPerPrnb2="5", infantCnt="3"; adult=1, youth=1 echoed as psgTpCd2="6".
 PASSENGER_TYPE_CODES = (
     ("adult", "1"),
     ("disability_1_to_3", "2"),
@@ -308,27 +244,13 @@ PASSENGER_TYPE_CODES = (
     ("child_slot_count", "5"),
     ("youth", "6"),
 )
-# How many psgTpCd slots the padded (search / fare) forms transmit.
-#
-# FIVE is what the booking page sends: goRevFn loops `i = 1..5` and leaves the
-# psgTpCd6 input it has in the DOM untouched (the two lines that would reset it
-# are commented out in the live page). That five-slot body is the one verified
-# byte-for-byte against the live server in the 2026-07-25 reserve->cancel round
-# trip, so it is what a party with no 청소년 keeps sending, unchanged.
-#
-# SIX is what the page that CAN express 청소년 sends: ARA0301V builds an `oData`
-# of six slots and writes all six to the form. A party with a 청소년 needs the
-# sixth slot to exist, and is by definition on that page's path.
-#
-# So the slot count follows which of the two pages the party could have been
-# assembled on, and a party without a 청소년 is bit-identical to before.
+# Slot count: 5 for a party the booking page assembles (goRevFn loops i=1..5),
+# 6 when 청소년 is present (ARA0301V builds 6 slots). A party without 청소년
+# produces a byte-identical body to the 2026-07-25 live round trip.
 PADDED_PASSENGER_SLOTS = 5
 PADDED_PASSENGER_SLOTS_WITH_YOUTH = 6
-# 유아, declared separately from the 어린이 slot it was folded into. The live
-# booking form carries this field ALWAYS, `infantCnt=0` included; this library
-# emits it only when it is non-zero, so that a party with no infant produces the
-# exact body the live round trip verified. Sending a field the server already
-# defaults to 0 would buy nothing and would retire that evidence.
+# 유아, declared separately. The live form carries infantCnt=0 always, but
+# emitting it only when non-zero preserves byte-for-byte evidence.
 INFANT_COUNT_FIELD = "infantCnt"
 
 
@@ -394,33 +316,13 @@ def reservation_list_payload(page_no: int = 0) -> dict[str, str]:
 
 
 def passenger_selector_payload(passengers: PassengerCounts) -> dict[str, str]:
-    # passengerN here is the POPUP's own numbering, which is NOT psgTpCd and not
-    # the wire numbering used anywhere else in this module:
-    #   1=어른, 2=중증 장애인, 3=경증 장애인, 4=경로, 5=어린이, 6=유아, 7=청소년.
-    # Read off the live popup's labels and its returnPassenger (2026-07-26); the
-    # bundle's request/callback pair is ara0101v.js:213-238 / :795-804.
+    # passengerN is the POPUP's numbering (NOT psgTpCd):
+    #   1=어른, 2=중증, 3=경증, 4=경로, 5=어린이, 6=유아, 7=청소년.
+    # ara0101v.js:213-238 / :795-804.
     #
-    # Note especially that `passenger5` is the UNFOLDED 어린이 count and
-    # `passenger6` is 유아 as its own counter -- the fold into psgTpCd 5 happens
-    # on the page that RECEIVES this popup's answer, not in the popup. So this
-    # builder must send `passengers.child`, never `child_slot_count`; sending the
-    # folded number would seed the picker with infants counted twice.
-    #
-    # 6 and 7 are emitted ONLY when non-zero, which keeps a party without either
-    # byte-identical to what this builder sent before they existed.
-    #
-    # WHAT THE LIVE SERVER DOES WITH THEM, probed 2026-07-26: it ACCEPTS them and
-    # echoes them in the page's own commandMap dump --
-    #   {reqCode=6, isOrg=2, passenger1=1, ..., totalPessnger=2, passenger6=1, sNowSel=1}
-    # -- and does NOT seed them back into the DOM, because the seeding branch
-    # writes only passenger1..5. So the rendered counters for 유아 and 청소년 come
-    # back at 0 no matter what is sent. Sending them is therefore honest rather
-    # than effective: the request carries what the caller asked for, and the popup
-    # is a picker whose answer the caller was going to replace anyway.
-    #
-    # The 청소년 row additionally stays `display:none` regardless, because the page
-    # reveals it only when the SERVER renders `pblDiscCd == "04"` into it -- an
-    # account-level fact, not a request parameter. Confirmed on the same probe.
+    # Note: passenger5 is UNFOLDED 어린이 (not child_slot_count). The fold
+    # happens on the page that receives the popup's answer.
+    # 6/7 emitted only when non-zero to keep existing bodies byte-identical.
     fields = {
         "reqCode": "6",
         "isOrg": "2",
@@ -489,14 +391,9 @@ def _padded_slot_count(passengers: PassengerCounts) -> int:
 
 
 def _compact_passenger_slots(passengers: PassengerCounts) -> list[tuple[str, int]]:
-    # The app packs only the count>0 passenger types into contiguous slots, in
-    # canonical psgTpCd order (ara0101v.js:824-836 for five, ARA0301V's
-    # setPassenger_callback for the same loop over six):
-    #   idx=1; for i in 1..N: if psgInfoPerPrnb[i] > 0: psgTpCd[idx]=code[i];
-    #                                                   psgInfoPerPrnb[idx]=count[i]; idx++
-    # Returns the (psgTpCd, count) pairs for the filled slots, in order. Shared by
-    # the search psgTpCd builder (B1), the fare builder (B3) and the reservation
-    # builder, so all three fold 유아 identically and order 청소년 last.
+    # The app packs only count>0 types into contiguous slots in canonical order
+    # (ara0101v.js:824-836 for five, ARA0301V setPassenger_callback for six).
+    # Shared by search, fare, and reservation builders.
     #
     # A party of infants and no children still fills slot 5, because the app tests
     # the SUM: `if(passenger != '' && passenger != '0')` runs after
@@ -512,15 +409,9 @@ def _passenger_fields(
     passengers: PassengerCounts,
     hydrated_fields: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    # Emit the COMPACTED psgTpCd1..N / psgInfoPerPrnb1..N, then leave the trailing slots
-    # empty. The app seeds them all as psgTpCd="" / psgInfoPerPrnb="0" and overwrites
-    # only the first N filled ones (ara0101v.js:808-836), so the trailing slots are SENT
-    # (psgTpCd="", psgInfoPerPrnb="0"), not omitted.
-    #
-    # `infantCnt` is NOT emitted here, because this builder is shared with the fare
-    # request and the fare request does not carry it: the live fare params are
-    # psgTpCd1..6/psgInfoPerPrnb1..6 and nothing else from the passenger family. The
-    # search call sites add it themselves.
+    # Emit COMPACTED psgTpCd1..N / psgInfoPerPrnb1..N; trailing slots are
+    # psgTpCd="" / psgInfoPerPrnb="0" (ara0101v.js:808-836 seeds and overwrites).
+    # `infantCnt` is NOT emitted here — shared with fare request which omits it.
     hydrated_fields = hydrated_fields or {}
     slots = _compact_passenger_slots(passengers)
     fields: dict[str, str] = {}
@@ -537,25 +428,16 @@ def _passenger_fields(
 
 
 def _infant_count_field(passengers: PassengerCounts) -> dict[str, str]:
-    # 유아 is declared a second time, next to the 어린이 slot it was folded into
-    # (`$('#infantCnt').val(passenger6)` on the booking page,
-    # `$("#infantCnt").val(obj.passenger6)` on the 할인 승차권 page).
-    #
-    # Emitted only when non-zero. The live form always carries `infantCnt=0`, and
-    # sending that would change every existing body by one field while telling the
-    # server exactly what it already assumes -- retiring the byte-for-byte evidence
-    # from the 2026-07-25 live reserve->cancel round trip in exchange for nothing.
+    # 유아 is declared a second time beside the 어린이 slot it was folded into
+    # (`$('#infantCnt').val(passenger6)` on the booking page).
+    # Emitted only when non-zero to preserve byte-for-byte 2026-07-25 evidence.
     return {INFANT_COUNT_FIELD: str(passengers.infant)} if passengers.infant else {}
 
 
 def _distinct_passenger_type_count(passengers: PassengerCounts) -> int:
-    # psgGridcnt is the number of distinct passenger TYPES with count>0, NOT the head
-    # count: the app sets psgGridcnt=idx-1 (occupied type count, ara0101v.js:826-836)
-    # and srtgo uses len(combined_passengers) (srt.py:191). Reuse the compaction helper
-    # so psgGridcnt always equals the number of filled psgTpCd slots (B1).
-    #
-    # A 유아 therefore does NOT add a type -- it was folded into 어린이 -- while a
-    # 청소년 does, being psgTpCd 6 in its own right.
+    # psgGridcnt = number of distinct passenger TYPES with count>0
+    # (ara0101v.js:826-836 sets idx-1; srtgo uses len(combined_passengers)).
+    # 유아 does NOT add a type (folded); 청소년 does (psgTpCd 6).
     return len(_compact_passenger_slots(passengers))
 
 
@@ -745,6 +627,18 @@ def _required_digits(
     return value
 
 
+def _validate_srt_seat_params(
+    train: TrainSummary, cabin_class: str, seat_count: str, *, context: str
+) -> None:
+    """좌석 페이지·배치도 공통 검증: trnGpCd=300, cabin_class, seat_count."""
+    if train.train_group_code != "300":
+        raise ValueError(f"train_group_code must be 300 for an SRT {context}")
+    if cabin_class not in {"1", "2"}:
+        raise ValueError("cabin_class must be '1' (일반실) or '2' (특실)")
+    if not isinstance(seat_count, str) or re.fullmatch(r"[1-9][0-9]*", seat_count) is None:
+        raise ValueError("seat_count must be a positive integer")
+
+
 def seat_page_payload(
     train: TrainSummary,
     cabin_class: str = "1",
@@ -752,14 +646,7 @@ def seat_page_payload(
     *,
     seat_attr_code: str = "015",
 ) -> dict[str, str]:
-    if train.train_group_code != "300":
-        raise ValueError("train_group_code must be 300 for an SRT seat page")
-    if cabin_class not in {"1", "2"}:
-        raise ValueError("cabin_class must be '1' (일반실) or '2' (특실)")
-    # choiceSeatCount is the total passenger count (app: lfn_getRsv("totPrnb"),
-    # ara1001l.js:1511), not a fixed '1'; validate it as a positive integer.
-    if not isinstance(seat_count, str) or re.fullmatch(r"[1-9][0-9]*", seat_count) is None:
-        raise ValueError("seat_count must be a positive integer")
+    _validate_srt_seat_params(train, cabin_class, seat_count, context="seat page")
     train_no = _required_digits(train.train_no, "train_no", max_length=5).zfill(5)
     return {
         "reqCode": "9",
@@ -779,20 +666,9 @@ def seat_page_payload(
             length=4,
         ),
         "psrmClCd": cabin_class,
-        # seatAttCd is sourced from the REQUEST side, not the search-response row: the
-        # app sends seatAttCd = lfn_getRsv("rqSeatAttCd1"), which is seeded to the
-        # constant "015" (ara1001l.js:1508; ara0101v.js:132). srtgo confirms the design
-        # -- it hardcodes rqSeatAttCd1="015" (srt.py:193) and its row parser never reads
-        # a row seatAttCd. So we default to "015" and let a caller pass the
-        # seat-attribute code they searched with.
-        #
-        # CORRECTION, live capture 2026-07-26: this comment used to add that "real
-        # dsOutput1 rows omit seatAttCd" and that the field "is not carried by
-        # genuine responses". That is FALSE. Every one of the 40 live rows
-        # carried seatAttCd, and every one carried "015" -- the value the request
-        # had just sent. The row is echoing our own request back, which is why
-        # reading it would be circular and why the request-side sourcing above is
-        # still the right design. The claim was wrong; the behaviour was not.
+        # seatAttCd: request-side sourced. The app sends lfn_getRsv("rqSeatAttCd1"),
+        # seeded to "015" (ara1001l.js:1508; ara0101v.js:132). Live rows echo it
+        # back, confirming it's request-originated, not row-carried.
         "seatAttCd": _required_digits(seat_attr_code, "seat_attr_code", length=3),
         "dptStnRunOrdr": _required_digits(
             train.departure_run_order,
@@ -806,21 +682,11 @@ def seat_page_payload(
     }
 
 
-# The five-character 열차번호 the seat routes require, and the app's own reason
-# for it. main.html:642-661 defines lfn_getTrNoData with the comment
-# "열차번호를 5자리로 채워서 가져옴" ("get the train number padded to 5 digits")
-# and pads a 3- or 4-character number with leading zeros; ara1001l.js:1461 is
-# the one place trnNo1 is written, and it writes lfn_getTrNoData(item.trnNo).
-# The seat page's own inline script re-does the same padding before serialising
-# trnScarSeatFrm.
-#
-# THIS IS THE GATE ON THE SEAT GRID, live-confirmed 2026-07-26: the identical
-# request with trnNo=315 returns a 147-byte alert shell, and with trnNo=00315
-# returns the seat grid (25,930 bytes, 74 cells). Referer and route length
-# change nothing; the padding is the whole difference. The alert text that
-# comes back unpadded ("출발 20분 전부터 좌석이 자동배정됩니다...") reads like a
-# timing rule and is not one -- it is what this server says when it cannot find
-# the train, and believing it is what kept this endpoint closed.
+# 열차번호 5자리 패딩. main.html:642-661 lfn_getTrNoData "열차번호를 5자리로 채워서
+# 가져옴"; ara1001l.js:1461 writes lfn_getTrNoData(item.trnNo).
+# Live-confirmed 2026-07-26: unpadded trnNo=315 returns an alert shell,
+# padded trnNo=00315 returns the seat grid (25,930 bytes). The padding is the
+# whole difference.
 SEAT_TRAIN_NUMBER_LENGTH = 5
 
 
@@ -848,12 +714,7 @@ def seat_grid_payload(
     ``"1"``(일반실)/``"2"``(특실)이 아니거나, ``seat_count`` 가 양의 정수 문자열이
     아니면 :class:`ValueError` 입니다.
     """
-    if train.train_group_code != "300":
-        raise ValueError("train_group_code must be 300 for an SRT seat grid")
-    if cabin_class not in {"1", "2"}:
-        raise ValueError("cabin_class must be '1' (일반실) or '2' (특실)")
-    if not isinstance(seat_count, str) or re.fullmatch(r"[1-9][0-9]*", seat_count) is None:
-        raise ValueError("seat_count must be a positive integer")
+    _validate_srt_seat_params(train, cabin_class, seat_count, context="seat grid")
     return {
         "trnGpCd": "300",
         "runDt": _required_digits(train.run_date, "run_date", length=8),
@@ -873,8 +734,7 @@ def seat_grid_payload(
             "arrival_station_code",
             length=4,
         ),
-        # Request-side, like the seat page's: the app sends
-        # lfn_getRsv("rqSeatAttCd1"), seeded "015" (ara0101v.js:132).
+        # Request-side: lfn_getRsv("rqSeatAttCd1"), seeded "015" (ara0101v.js:132).
         "seatAttCd": _required_digits(seat_attr_code, "seat_attr_code", length=3),
         "dptStnRunOrdr": _required_digits(
             train.departure_run_order,
@@ -985,12 +845,8 @@ def timetable_payload(train: TrainSummary) -> dict[str, str]:
     }
 
 
-# The live fare form carries SIX passenger slots, one more than the five SRT
-# passenger types. Slot 6 is transmitted EMPTY -- "psgTpCd6":"" with
-# "psgInfoPerPrnb6":"" (empty, not "0") -- which is exactly how the search
-# response's own commandMap echoed it back on 2026-07-26. It is a form slot, not
-# a sixth passenger type: SRT still has no infant type, and no code ever fills
-# it.
+# The live fare form carries SIX slots; slot 6 is transmitted EMPTY (psgTpCd6=""
+# with psgInfoPerPrnb6="") unless 청소년 is aboard.
 _FARE_TRAILING_SLOT = 6
 
 
@@ -1031,11 +887,7 @@ def fare_payload(train: TrainSummary, passengers: PassengerCounts) -> dict[str, 
         "trnNo2": "",
     }
     payload.update(_passenger_fields(passengers))
-    # Slot 6 is the fare form's always-EMPTY trailing slot -- UNLESS a 청소년 is
-    # aboard, in which case psgTpCd6 is that passenger's real slot and blanking it
-    # would drop them from the quote. _passenger_fields has already filled it in
-    # that case; only an unfilled slot 6 gets the fare form's "" / "" pair (note
-    # psgInfoPerPrnb6 is "" here, not the "0" the search form's unfilled slots use).
+    # Slot 6: empty unless 청소년 occupies it. Note psgInfoPerPrnb6="" (not "0").
     if not payload.get(f"psgTpCd{_FARE_TRAILING_SLOT}"):
         payload[f"psgTpCd{_FARE_TRAILING_SLOT}"] = ""
         payload[f"psgInfoPerPrnb{_FARE_TRAILING_SLOT}"] = ""
@@ -1324,27 +1176,12 @@ def personal_reservation_payload(
             "seat callback writes no seat fields at all (ara0101v.js:884-892), "
             "so the 왕복 designated body is unevidenced"
         )
-    # standby × round_trip is deliberately NOT refused, unlike the two
-    # combinations above, and this says so because the asymmetry otherwise
-    # reads as an oversight. Checked in the bundle on 2026-07-27: jobId 1102
-    # is assigned from the 예약대기 image inside the SAME branch that assigns
-    # 1101 (ara1001l.js:1445-1448), and every rtnDv read
-    # (:47, :1248, :1472-1476, :1581) tests rtnDv alone without consulting
-    # jobId. So the app has no rule against the pair, and inventing one here
-    # would refuse something SRT permits.
+    # standby × round_trip is deliberately NOT refused: the app has no rule
+    # against the pair (ara1001l.js:1445-1448 assigns jobId inside the same
+    # branch as 1101, and all rtnDv reads test rtnDv alone without jobId).
     #
-    # Related, and settled the same way: ara0101v.js:379 disables the
-    # #btn_trnGpCd BUTTON when 왕복 is checked. That locks the SELECTOR, not
-    # the value -- the previously chosen trnGpCd stays in the form and is
-    # still sent -- so writing train_group_code on a round trip is correct
-    # and does not need a round_trip branch.
-    # 왕복 × 국회의원 후급 배제. ara0101v.js:317-326's `case "chk_rtrp"` reads
-    # the page-global `mbCrdNo` and, when it is non-empty and its first two
-    # characters are "11", calls callbackChkRtrp() (:322, unchecks the box,
-    # defined :903-906) then srtAlertBoxDivShow(...) and `return`s (:325) --
-    # BEFORE the code that ever sets rtnDv="1" (:381). Same uncheck-alert-
-    # return shape as the already-implemented 환승×왕복 exclusion below
-    # (:296-299, :331-334), so it is refused here too.
+    # 왕복 × 국회의원 후급 배제 (ara0101v.js:317-326): mbCrdNo prefix "11"
+    # triggers uncheck + alert before rtnDv="1" is set.
     is_assembly_member_number = (
         isinstance(membership_number, str) and membership_number.startswith("11")
     )
@@ -1370,34 +1207,15 @@ def personal_reservation_payload(
     departure_date = _required_digits(train.departure_date, "departure_date", length=8)
     departure_time = _required_digits(train.departure_time, "departure_time", length=6)
     arrival_time = _required_digits(train.arrival_time, "arrival_time", length=6)
-    # 운행일자 (operating date), which the app keeps DISTINCT from the departure
-    # date: ara1001l.js:1460 is `"runDt1": item.runDt` while :1462 is
-    # `"dptDt1": item.dptDt`, two different row fields written in the same block.
-    # srtgo sends train.dep_date for both only because SRTTrain has no separate
-    # run date to send; that is indistinguishable for a same-day service and
-    # wrong for a train whose operating date differs from the boarding date
-    # (a past-midnight departure). We do parse the operating date
-    # (TrainSummary.run_date <- row runDt), and seat_page_payload,
-    # timetable_payload and fare_payload already use it, so this builder was the
-    # only one substituting the departure date. Fall back to the departure date
-    # only when the row omits runDt, matching what those builders do.
+    # 운행일자 (ara1001l.js:1460 `"runDt1": item.runDt`). Distinct from departure
+    # date for past-midnight services. Falls back to departure_date when omitted.
     run_date = (
         _required_digits(train.run_date, "run_date", length=8)
         if train.run_date
         else departure_date
     )
-    # 도착일자. The app writes it in the same block as dptDt1/dptTm1/arvTm1
-    # (ara1001l.js:1464 `"arvDt1": item.arvDt`), and srtgo omits it only because
-    # SRTTrain has no arrival date to send -- cross-validation-2026-07-21.md
-    # §"srtgo posts a trimmed body" already records that divergence explicitly.
-    # This is the one mutation route whose shape can be checked statically, so
-    # the field is closed rather than left as an unverified omission.
-    #
-    # Blank when the row omits arvDt, NOT an error: the app's own #rsvForm seed
-    # ships arvDt1="" (ara0101v.js, mirrored by search_payload above), the server
-    # demonstrably accepts a body without the key at all (the 2026-07-25 live
-    # round trip sent srtgo's trimmed form), and refusing to build the form would
-    # mean a reservation that cannot be made. Validated when present.
+    # 도착일자 (ara1001l.js:1464 `"arvDt1": item.arvDt`). Blank when the row
+    # omits arvDt — the seed ships arvDt1="" and the live round trip sent no key.
     arrival_date = (
         _required_digits(train.arrival_date, "arrival_date", length=8)
         if train.arrival_date
@@ -1409,15 +1227,8 @@ def personal_reservation_payload(
     arrival_station_code = _required_digits(
         train.arrival_station_code, "arrival_station_code", length=4
     )
-    # 왕복 × 코레일 전용역 배제. ara0101v.js:337-341's same `case "chk_rtrp"`
-    # handler calls lfn_isKorailStn (offline sub/main.html:568-578) on both
-    # stations; that function scans stationList (js/stationInfo.js) for an
-    # entry whose gubun is "SRT" matching the code, returning False only on a
-    # hit and True otherwise. If EITHER station comes back True the app
-    # force-unchecks #chk_rtrp and shows "코레일 열차는 왕복 열차 예약을
-    # 이용하실 수 없습니다." before returning -- again before rtnDv="1" is
-    # ever set (:381). SRT_STATION_CODES is the 17-code set (stationInfo.js:
-    # 29-45) this reproduces.
+    # 왕복 × 코레일 전용역 배제 (ara0101v.js:337-341 lfn_isKorailStn). If EITHER
+    # station is not in SRT_STATION_CODES the app unchecks and alerts.
     if round_trip and (
         departure_station_code not in SRT_STATION_CODES
         or arrival_station_code not in SRT_STATION_CODES
@@ -1448,24 +1259,9 @@ def personal_reservation_payload(
     )
 
     if standby:
-        # 예약대기 is a 일반실 waitlist in this app: ara1001l.js:1431 assigns
-        # sPsrmClCd=1 for the 예약대기 image, and the 특실 branch immediately
-        # after tests only the two 예약가능 images. See the docstring for why
-        # this has to override rather than defer to seat_type.
-        #
-        # Decided BEFORE _resolve_special_seat rather than after it, because
-        # _resolve_special_seat does not merely return the wrong answer for a
-        # standby row -- it can RAISE past the override. A *_FIRST seat_type
-        # (GENERAL_FIRST is the default) sends it through _require_availability,
-        # which refuses a row that carried no gnrmRsvPsbStr. That refusal is
-        # right when the field decides the class and wrong here, where nothing
-        # reads it: the app settles a 예약대기 row's cabin from the IMAGE field
-        # alone (ara1001l.js:1430-1432), and _refuse_ineligible_standby's own
-        # contract is that a row which dropped columns is still waitlistable.
-        # Resolving first refused a train the app would have queued.
-        #
-        # seat_type is still type-validated, since the raise below is the same
-        # one _resolve_special_seat performs.
+        # 예약대기 forces 일반실 (ara1001l.js:1431 assigns sPsrmClCd=1).
+        # Must be decided BEFORE _resolve_special_seat to avoid a spurious
+        # _require_availability raise on rows that dropped gnrmRsvPsbStr.
         if not isinstance(seat_type, SeatType):
             raise ValueError("seat_type must be a SeatType")
         _refuse_ineligible_standby(train)
@@ -1517,20 +1313,10 @@ def personal_reservation_payload(
         "jrnyTpCd": "11",
         "jrnySqno1": "001",
         "stndFlg": "N",
-        # ara1001l.js:1440 sends item.trnGpCd -- the search row's own value.
-        # Every fixture observed so far pairs stlbTrnClsfCd=="17" with
-        # trnGpCd=="300", and this builder already refuses a non-17 train, so
-        # the constant has never been wrong. Prefer the row's value anyway: the
-        # seat routes at :724-725 and :830-831 already enforce this same field
-        # off the train, and reading it in one place while ignoring it in
-        # another is how the two drift apart.
+        # trnGpCd1: from row (ara1001l.js:1440).
         "trnGpCd1": train.train_group_code or "300",
         "trnGpCd": "109",
-        # 단체구분. Always "0" here: this library builds personal reservations
-        # only, and grpDv="1" is the 단체 branch whose booking was removed on
-        # 2026-07-26 (see docs/IMPLEMENTATION_PROGRESS.md, "단체 (group)
-        # booking: removed"). group_search_ajax_payload still flips it for the
-        # group SEARCH, which is a read.
+        # 단체구분: always "0" (personal only).
         "grpDv": "0",
         # 왕복구분 (ara0101v.js:94, written at :381/:390).
         "rtnDv": "1" if round_trip else "0",
@@ -1541,8 +1327,6 @@ def personal_reservation_payload(
         "arvRsStnCdNm1": arrival_station_name,
         "dptDt1": departure_date,
         "dptTm1": departure_time,
-        # arvDt1 sits between dptTm1 and arvTm1, the app's own field position
-        # (ara1001l.js:1462-1465).
         "arvDt1": arrival_date,
         "arvTm1": arrival_time,
         "trnNo1": train_no,
@@ -1554,13 +1338,9 @@ def personal_reservation_payload(
         "netfunnelKey": netfunnel_key,
     }
     if not standby:
-        # reserveType is set only for a personal reservation (srtgo srt.py:990-991),
-        # so a 예약대기 body omits it entirely. The field is 0-hit in our v2.0.41
-        # bundle -- it is not in the #rsvForm seed and nothing in the app writes it
-        # -- so srtgo is the only source for both its presence and its absence, and
-        # following it in both directions is the only self-consistent choice. Our
-        # 2026-07-25 live round trip sent it and was accepted, which pins the
-        # personal case; the standby case stays srtgo-attested.
+        # reserveType: present for personal (srtgo srt.py:990-991), absent for
+        # 예약대기. 0-hit in bundle; srtgo is the only source. Live round trip
+        # (2026-07-25) sent it and was accepted.
         payload["reserveType"] = "11"
     payload.update(
         _reservation_passenger_fields(
@@ -1570,13 +1350,7 @@ def personal_reservation_payload(
             seat_attr_code=_inherited_seat_attr_code(train, seat_attr_code),
         )
     )
-    # LAST, so that a body without designated seats is byte-for-byte and
-    # order-for-order the one the 2026-07-25 live round trip sent. Where the
-    # server-rendered #rsvForm actually puts these inputs is not knowable
-    # offline (it is the same page fn_submit lives in), so appending is a
-    # position this repository chose rather than one it read; the app writes
-    # them into the gds_rsv store, not into an ordered form, so nothing in the
-    # bundle fixes their place either.
+    # Seat fields appended last (position chosen by this repo, not the bundle).
     payload.update(seat_fields)
     return payload
 
@@ -1882,59 +1656,20 @@ def unpaid_reservation_cancel_payload(
 
 # --- Card payment (카드결제) --------------------------------------------------
 #
-# PROVENANCE, and it is weaker than anything else in this module. Read this
-# before trusting a single field name below.
+# PROVENANCE: `/ata/selectListAta09036_n.do` is 0-hit in our v2.0.41 bundle.
+# The app pays via TransKey + RaonSecure FIDO through server-rendered WebView
+# pages (/ard/selectListArd02017_n.do personal, /ard/selectListArd02018_n.do
+# group). This plaintext endpoint is a legacy path the server still honours.
 #
-# THE ROUTE IS NOT IN OUR APP. `/ata/selectListAta09036_n.do` has ZERO hits
-# across all 21,673 files of our v2.0.41 offline decompile; so does the token
-# `Ata09036`, and so does every `Ata09*` route. The only `/ata/` route the
-# bundle contains at all is `/ata/selectListAta01032_n.do`. What our app
-# actually does to pay is a different flow entirely: ara1001l.js:1550 serialises
-# `#rsvForm` and :1599/:1608 point it at `/ard/selectListArd02018_n.do` (group)
-# or `/ard/selectListArd02017_n.do` (personal), which are server-rendered
-# WebView pages, and the app then runs the charge through the TransKey secure
-# keypad (com.softsecurity.transkey, analysis/jadx/resources/AndroidManifest.xml:143;
-# bridge.js:2,31,66-68) and RaonSecure FIDO (com.raon.fido.*,
-# analysis/jadx/resources/AndroidManifest.xml:315). None of that is HTTP form fields.
+# Live-tested 2026-07-26: this exact form charged a real card (SUCC / IRT000000,
+# 7,500 KRW, 수서→동탄, 1 adult). What was NOT tested: group, multi-leg,
+# corporate cards, instalments — those remain srtgo-attested only.
 #
-# So this plaintext endpoint is a path the app itself does not take. It HAS now
-# been tested: on 2026-07-26 this exact form charged a real card against the real
-# server (SUCC / IRT000000, 7,500 KRW, 수서 -> 동탄, one adult), after a free
-# probe with a fake card had already drawn a proper business envelope
-# (FAIL / WRT100170) rather than a 404. It is a legacy path the server still
-# honours. What that run did NOT do is corroborate the fields it never
-# exercised: it was one single-journey, one-adult ticket on one personal card in
-# one lump sum, so group, multi-leg, corporate cards and instalments below are
-# still srtgo-attested only.
+# srtgo and ryanking13/SRT are ONE source (srtgo internalized ryanking13's code
+# at commit 8423f90; their payment dicts are character-for-character identical).
 #
-# THE TWO REFERENCE LIBRARIES ARE ONE SOURCE, NOT TWO. This was verified rather
-# than assumed, by diffing their payment bodies directly: srtgo's 31-field dict
-# is character-for-character identical to ryanking13/SRT's once the latter's
-# Korean trailing comments are stripped -- same keys, same values, same
-# non-alphabetical ORDER, same local variable names, same indentation, and the
-# same method signature down to its unusual parameter order. srtgo's git history
-# says why: it depended on `SRTrain` (ryanking13/SRT's PyPI name) until commit
-# 8423f90 "Internalize SRT" (2024-12-13) deleted the dependency and added
-# srtgo/srt.py in one move, with the payment dict already fully formed. srtgo's
-# README credits ryanking13 under MIT; ryanking13/SRT credits nobody. Their
-# agreement therefore corroborates NOTHING -- it is one implementation counted
-# twice. (srtgo_plus is a third copy: its srt.py is byte-identical to srtgo's.)
-#
-# WHAT THE BUNDLE DOES AND DOES NOT CORROBORATE. The blanket claim "every field
-# name is 0-hit" is FALSE, and the precise version is more useful. Three of the
-# 32 names do appear in our own bundle, all in the reservation JS and none of
-# them on an Ata09036 form:
-#   * `mbCrdNo`  -- ara0101v.js:319,321, a client-side variable holding the
-#                   회원카드번호, branched on its "11" prefix for 국회의원 후급.
-#   * `totPrnb`  -- ara1001l.js:104,368,1511,1655 and ara0101v.js:114,501,...,
-#                   the 총인원수 the booking screen already sends.
-#   * `jrnyCnt`  -- ara0101v.js:92,311, the 여정건수, hard-coded "1".
-# The other 28 -- including every card field (stlCrCrdNo1, vanPwd1, crdVlidTrm1,
-# athnVal1, athnDvCd1, crdInpWayCd1, ismtMnthNum1), every settlement field
-# (stlDmnDt, stlMnsSqno1, ststlGridcnt, totNewStlAmt, mnsStlAmt1, stlMnsCd1),
-# and ctlDvCd/cgPsId/strJobId/inrecmnsGridcnt/chgMcs/dptStnConsOrdr2/
-# arvStnConsOrdr2 -- are genuinely 0-hit (3 + 28 = 31). So the three that hit tell us the app
-# uses those NAMES for those CONCEPTS; they say nothing about this form.
+# Of the 31 field names, 3 appear in our bundle (mbCrdNo, totPrnb, jrnyCnt) on
+# booking forms — not on Ata09036. The other 28 are genuinely 0-hit.
 
 # Fixed values the payment form carries, with the meaning each documents. Kept
 # as named data rather than inline literals so a test can assert the constant

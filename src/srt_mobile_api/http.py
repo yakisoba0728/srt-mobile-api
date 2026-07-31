@@ -1,20 +1,17 @@
 """HTTP 전송 계층 —— 요청이 실제로 나가는 유일한 지점.
 
 :class:`SrtHttpClient` 는 ``httpx.Client`` 를 감싸면서 안전 규칙을 요청마다
-적용합니다. 읽기와 쓰기가 서로 다른 문으로 나갑니다.
+적용합니다.
 
 * 읽기(:meth:`~SrtHttpClient.get_text`, :meth:`~SrtHttpClient.get_json`,
   :meth:`~SrtHttpClient.post_form`, :meth:`~SrtHttpClient.post_html_form`)는
-  :func:`~srt_mobile_api.safety.assert_read_only_request` 를 지납니다. 등록된
-  읽기 경로가 아니면 나가지 못합니다.
+  :func:`~srt_mobile_api.safety.assert_read_only_request` 를 지납니다.
 * 쓰기는 :meth:`~SrtHttpClient.post_mutation_form` 하나뿐이고, 동의·경로·
   카드비밀 검사를 통과해야 합니다.
 
-``httpx`` 예외는 밖으로 새지 않고 모두
-:class:`~srt_mobile_api.errors.SrtTransportError` 가 됩니다. 리다이렉트는
-따라가지 않으며, 목적지가 로그인 페이지면
-:class:`~srt_mobile_api.errors.SrtSessionExpiredError` 입니다. HTTP 200 에
-로그인 안내 페이지가 실려 오는 경우도 본문을 보고 같은 예외로 바꿉니다.
+``httpx`` 예외는 :class:`~srt_mobile_api.errors.SrtTransportError` 로 감싸고,
+리다이렉트 목적지가 로그인이면
+:class:`~srt_mobile_api.errors.SrtSessionExpiredError` 입니다.
 """
 
 from __future__ import annotations
@@ -54,6 +51,7 @@ LOGIN_API_PATH = "/apb/selectListApb01080_n.do"
 
 
 def _is_login_redirect(request_url: httpx.URL, location: str) -> bool:
+    """Location 헤더가 로그인 페이지를 가리키는지 판정."""
     if not location:
         return False
     try:
@@ -70,15 +68,29 @@ def _is_login_redirect(request_url: httpx.URL, location: str) -> bool:
     )
 
 
+def _check_redirect_and_status(
+    request: httpx.Request, response: httpx.Response
+) -> None:
+    """리다이렉트·오류 상태를 공통 처리. 로그인 리다이렉트 → 세션 만료."""
+    if response.is_redirect:
+        location = response.headers.get("location", "")
+        if _is_login_redirect(request.url, location):
+            raise SrtSessionExpiredError("SRT session redirected to login")
+        raise SrtTransportError(
+            f"SRT HTTP {response.status_code} redirect for"
+            f" {request.method} {request.url.path}"
+        )
+    if response.is_error:
+        raise SrtTransportError(
+            f"SRT HTTP {response.status_code} for"
+            f" {request.method} {request.url.path}"
+        )
+
+
 class SrtHttpClient:
     """쿠키와 안전 검사를 함께 들고 다니는 HTTP 클라이언트.
 
-    ``config`` 의 ``base_url``·``timeout``·``user_agent`` 로 ``httpx.Client`` 를
-    만듭니다. ``transport`` 는 테스트에서 가짜 응답을 물리기 위한 자리이고,
-    실제 사용에서는 넘기지 않습니다.
-
-    로그인 세션은 :attr:`cookies` 에 남습니다. 다 쓰면 :meth:`close` 를 부릅니다 ——
-    :class:`~srt_mobile_api.client.SrtClient` 를 ``with`` 로 쓰면 대신 해 줍니다.
+    ``transport`` 는 테스트에서 가짜 응답을 물리기 위한 자리입니다.
     """
 
     def __init__(self, config: SrtConfig, *, transport: httpx.BaseTransport | None = None) -> None:
@@ -92,11 +104,11 @@ class SrtHttpClient:
 
     @property
     def cookies(self) -> httpx.Cookies:
-        """이 클라이언트의 쿠키 저장소. 로그인 세션(``JSESSIONID``)이 여기 있습니다."""
+        """쿠키 저장소. 로그인 세션(``JSESSIONID``)이 여기 있습니다."""
         return self._client.cookies
 
     def close(self) -> None:
-        """연결 풀을 닫습니다. 이후의 요청은 실패합니다."""
+        """연결 풀을 닫습니다."""
         self._client.close()
 
     @staticmethod
@@ -109,16 +121,16 @@ class SrtHttpClient:
 
     @staticmethod
     def _is_authenticated_login_form(response: httpx.Response) -> bool:
-        # is_unauthenticated_page, not is_login_form: the live server answers an
-        # expired authenticated read with the login-REDIRECT page (HTTP 200, no
-        # login form on it at all), which is_login_form cannot see. The two login
-        # paths stay excluded — the login page legitimately IS a login page.
+        """응답이 로그인 요구 페이지인지. 로그인 경로 자체는 제외."""
+        # is_unauthenticated_page 는 두 모양을 감지: 로그인 폼 + 로그인 안내 스크립트.
+        # 로그인 경로 자체(login.do, login API)는 정상적으로 로그인 페이지이므로 제외.
         return response.request.url.path not in {
             LOGIN_PAGE_PATH,
             LOGIN_API_PATH,
         } and is_unauthenticated_page(response.text, base_url=APP_ORIGIN)
 
     def _parse_json_object(self, response: httpx.Response) -> dict[str, Any]:
+        """응답을 JSON 객체로 파싱. 실패 시 만료·IP차단·프로토콜 오류 분류."""
         try:
             payload = response.json()
         except ValueError:
@@ -127,19 +139,8 @@ class SrtHttpClient:
                     "SRT authenticated request returned the login form",
                     raw=response.text,
                 ) from None
-            # An IP block on the login endpoint returns a non-JSON plain-text body (e.g.
-            # "Your IP Address Blocked ..."). srtgo surfaces this as a login failure
-            # (srt.py:719-720: if "Your IP Address Blocked" in r.text -> SRTLoginError).
-            # Classify it as an auth error -- not a generic protocol error -- so callers
-            # catching SrtAuthError from login() see it, with the block reason preserved.
-            #
-            # SrtIpBlockedError refines that: it SUBCLASSES SrtAuthError, so every
-            # existing `except SrtAuthError` around login() is unaffected, while a
-            # caller that wants to tell "this network is banned" (waiting or changing
-            # egress is the only fix) from "these credentials are wrong" (re-prompt the
-            # user) no longer has to substring-match an English infrastructure message.
-            # This is the one place in the taxonomy that classifies on text, because the
-            # response is not an app response at all: no msgCd, no JSON, no envelope.
+            # IP 차단: 로그인 경로에서 non-JSON "Your IP Address Blocked" 응답.
+            # SrtIpBlockedError ⊂ SrtAuthError 이므로 기존 except SrtAuthError 호환.
             if (
                 response.request.url.path == LOGIN_API_PATH
                 and "Your IP Address Blocked" in response.text
@@ -153,6 +154,7 @@ class SrtHttpClient:
         return payload
 
     def _parse_text(self, response: httpx.Response) -> str:
+        """응답을 텍스트로 반환. JSON content-type 이면 만료 검사 건너뜀."""
         content_type = response.headers.get("content-type", "")
         if self._is_json_content_type(content_type):
             try:
@@ -177,6 +179,7 @@ class SrtHttpClient:
         data: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> httpx.Response:
+        """읽기 전용 요청을 보내고 리다이렉트·오류를 처리."""
         request = self._client.build_request(method, url, params=params, data=data, headers=headers)
         assert_read_only_request(request, self.config)
         try:
@@ -185,18 +188,10 @@ class SrtHttpClient:
             raise SrtTransportError(
                 f"SRT transport failed for {method.upper()} {request.url.path}"
             ) from None
-        if response.is_redirect:
-            location = response.headers.get("location", "")
-            if _is_login_redirect(request.url, location):
-                raise SrtSessionExpiredError("SRT session redirected to login")
-            raise SrtTransportError(
-                f"SRT HTTP {response.status_code} redirect for {method.upper()} {request.url.path}"
-            )
-        if response.is_error:
-            raise SrtTransportError(
-                f"SRT HTTP {response.status_code} for {method.upper()} {request.url.path}"
-            )
+        _check_redirect_and_status(request, response)
         return response
+
+    # ── 읽기 메서드 ──
 
     def get_text(
         self,
@@ -205,13 +200,7 @@ class SrtHttpClient:
         *,
         referer: str | None = None,
     ) -> str:
-        """읽기 GET 을 보내고 응답 본문을 문자열 그대로 돌려줍니다.
-
-        본문이 로그인 안내 페이지면
-        :class:`~srt_mobile_api.errors.SrtSessionExpiredError` 입니다. 단, 서버가
-        JSON content-type 으로 유효한 JSON 을 보냈으면 그 검사를 건너뛰고 원문을
-        그대로 줍니다.
-        """
+        """읽기 GET → 문자열. 로그인 안내 페이지면 SrtSessionExpiredError."""
         headers = {}
         if referer:
             headers["Referer"] = referer
@@ -225,12 +214,7 @@ class SrtHttpClient:
         *,
         referer: str | None = None,
     ) -> dict[str, Any]:
-        """읽기 GET 을 보내고 JSON 객체로 해석합니다.
-
-        본문이 JSON 이 아니면 :class:`~srt_mobile_api.errors.SrtProtocolError`,
-        로그인 안내 페이지면 :class:`~srt_mobile_api.errors.SrtSessionExpiredError`
-        입니다. 최상위가 객체가 아닌 JSON(배열 등)도 프로토콜 오류로 거릅니다.
-        """
+        """읽기 GET → JSON 객체. 비-JSON 이면 SrtProtocolError."""
         headers = {}
         if referer:
             headers["Referer"] = referer
@@ -238,12 +222,7 @@ class SrtHttpClient:
         return self._parse_json_object(response)
 
     def get_text_url(self, url: str, *, referer: str | None = None) -> str:
-        """절대 URL 로 읽기 GET 을 보냅니다 —— NetFunnel 대기열 호스트용입니다.
-
-        :meth:`get_text` 와 같은 처리를 하되 경로가 아니라 URL 을 받습니다. 허용
-        출처는 여전히 :func:`~srt_mobile_api.safety.assert_read_only_request` 가
-        정한 두 곳뿐입니다.
-        """
+        """절대 URL 로 읽기 GET —— NetFunnel 대기열 호스트용."""
         headers = {}
         if referer:
             headers["Referer"] = referer
@@ -258,22 +237,9 @@ class SrtHttpClient:
         accept: str = "*/*",
         referer: str | None = None,
     ) -> dict[str, Any]:
-        """읽기 POST(ajax 폼)를 보냅니다. 상태를 바꾸는 요청은 여기로 못 나갑니다.
-
-        앱의 ajax 헤더(``X-Requested-With``, ``Origin``, 폼 content-type)를 붙여
-        보내고, ``accept`` 또는 응답 content-type 이 JSON 이면 JSON 객체를,
-        아니면 본문을 ``{"html": ...}`` 로 감싸 돌려줍니다.
-
-        경로는 :func:`~srt_mobile_api.safety.assert_read_only_request` 의 허용
-        목록에 있어야 합니다. 예약·취소·결제·환불 경로는 그 목록에 없으므로 이
-        메서드로는 보낼 수 없고 :meth:`post_mutation_form` 만이 보낼 수 있습니다.
-        """
-        response = self._post_form_response(
-            path,
-            data,
-            accept=accept,
-            referer=referer,
-        )
+        """읽기 POST(ajax 폼). accept/content-type 이 JSON 이면 JSON 객체,
+        아니면 ``{"html": ...}`` 로 감싸 반환."""
+        response = self._post_form_response(path, data, accept=accept, referer=referer)
         content_type = response.headers.get("content-type", "")
         if self._expects_json(accept) or self._is_json_content_type(content_type):
             return self._parse_json_object(response)
@@ -287,6 +253,7 @@ class SrtHttpClient:
         accept: str,
         referer: str | None,
     ) -> httpx.Response:
+        """ajax 헤더를 붙여 POST 를 보내는 공통 부분."""
         headers = {
             "Accept": accept,
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -297,179 +264,6 @@ class SrtHttpClient:
             headers["Referer"] = referer
         return self._request("POST", path, data=dict(data or {}), headers=headers)
 
-    def _send_mutation_request(
-        self,
-        path: str,
-        *,
-        category: MutationCategory,
-        data: Mapping[str, Any],
-        headers: Mapping[str, str],
-    ) -> httpx.Response:
-        # Mirrors _request's transport/redirect/error handling, but WITHOUT
-        # assert_read_only_request (which would reject a mutation route). The
-        # consent and dry-run gating happens in post_mutation_form before we
-        # reach here.
-        #
-        # Defense in depth: this is the function that actually calls
-        # self._client.send, i.e. the true send boundary, so it re-asserts the
-        # WHOLE route invariant itself rather than trusting its caller — not
-        # just the category half. Three checks, and all three must hold:
-        #
-        #   * the category is live-enabled. SRT_LIVE_MUTATION_CATEGORIES holds
-        #     the four live-verified categories, so this refuses anything else
-        #     outright.
-        #   * the path is one of the four registered mutation routes, so this
-        #     function cannot be repurposed to POST an arbitrary endpoint.
-        #   * the path BELONGS to that category. Without this one the first
-        #     check is not sufficient: category="reserve" paired with the
-        #     payment route would build and send a POST to
-        #     /ata/selectListAta09036_n.do, carrying whatever `data` held —
-        #     which for a payment is a PAN in the clear. The route/category
-        #     binding used to live only in post_mutation_form, so a direct call
-        #     here bypassed it entirely.
-        #
-        # No future refactor of post_mutation_form can therefore widen either
-        # the categories or the routes that reach the wire.
-        if category not in SRT_LIVE_MUTATION_CATEGORIES:
-            raise SrtMutationNotAllowedError(
-                f"SRT mutation category {category!r} is not live-enabled; only "
-                "reserve, cancel, payment and refund may be transmitted (see "
-                "safety.SRT_LIVE_MUTATION_CATEGORIES)"
-            )
-        assert_mutation_route("POST", path)
-        assert_mutation_route_category(path, category)
-        request = self._client.build_request(
-            "POST", path, data=dict(data), headers=headers
-        )
-        # Stated on the DATA, not on the route, and therefore catching the one
-        # case no route/category rule could: a hand-assembled payment body
-        # posted to the live-enabled RESERVE route under a valid
-        # category="reserve" consent. That is neither a category violation nor a
-        # route violation, so nothing above refuses it. See
-        # safety.CARD_SECRET_FIELDS.
-        if category != "payment":
-            assert_no_card_secrets(request)
-        try:
-            response = self._client.send(request)
-        except httpx.HTTPError:
-            raise SrtTransportError(
-                f"SRT transport failed for POST {request.url.path}"
-            ) from None
-        if response.is_redirect:
-            location = response.headers.get("location", "")
-            if _is_login_redirect(request.url, location):
-                raise SrtSessionExpiredError("SRT session redirected to login")
-            raise SrtTransportError(
-                f"SRT HTTP {response.status_code} redirect for POST {request.url.path}"
-            )
-        if response.is_error:
-            raise SrtTransportError(
-                f"SRT HTTP {response.status_code} for POST {request.url.path}"
-            )
-        return response
-
-    def post_mutation_form(
-        self,
-        path: str,
-        data: Mapping[str, Any],
-        *,
-        consent: MutationConsent,
-        category: MutationCategory,
-        referer: str | None = None,
-        accept: str = "application/json, text/javascript, */*; q=0.01",
-    ) -> dict[str, Any]:
-        """상태를 바꾸는 폼이 나가는 **유일한** 경로.
-
-        관문 다섯을 순서대로 지나야 하고, 하나라도 걸리면
-        :class:`~srt_mobile_api.errors.SrtMutationNotAllowedError` 또는
-        :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
-
-        1. ``category`` 에 해당하는 개별 동의가 켜진
-           :class:`~srt_mobile_api.consent.MutationConsent` 여야 합니다.
-        2. ``consent.dry_run`` 이 ``False`` 여야 합니다. 미리보기는 전송되지
-           않습니다.
-        3. ``category`` 가 :data:`~srt_mobile_api.safety.SRT_LIVE_MUTATION_CATEGORIES`
-           —— ``reserve``·``cancel``·``payment``·``refund`` —— 에 있어야 합니다.
-        4. ``payment`` 는 ``fake_card_only``(청구되지 않는 시험카드)와
-           ``real_card_acknowledged``(실제 청구를 인지) 중 **정확히 하나**여야
-           합니다(:func:`~srt_mobile_api.consent.require_card_kind_claim`).
-        5. 설정이 정규 출처여야 하고, 경로는
-           :data:`~srt_mobile_api.safety.SRT_MUTATION_ROUTES` 중 **그 category 에
-           묶인** 것이어야 합니다.
-
-        3번과 5번은 ``_send_mutation_request`` 가 한 번 더 검사하고, ``payment``
-        가 아닌 요청의 본문에 카드 필드가 있으면
-        :func:`~srt_mobile_api.safety.assert_no_card_secrets` 가 막습니다. 반대편
-        문인 :func:`~srt_mobile_api.safety.assert_read_only_request` 는 이 네 경로를
-        허용 목록에서 빼 두었으므로, 상태 변경은 이 메서드로만 나갑니다.
-
-        관문을 지나면 ``data`` 는 손대지 않고 그대로 나가며, 반환은 파싱된 JSON
-        객체입니다.
-        """
-        require_mutation_consent(consent, category)
-        if consent.dry_run:
-            raise SrtMutationNotAllowedError(
-                "post_mutation_form requires consent.dry_run=False; a dry-run "
-                "preview must never be transmitted"
-            )
-        # Live-enablement block. Placed after the consent and dry-run gates (so
-        # those keep their meaning and their error messages) but before every
-        # check below, because from here on a call would otherwise actually
-        # transmit. SRT_LIVE_MUTATION_CATEGORIES holds the four categories whose
-        # wire format a live run has answered, so this is what refuses anything
-        # else at the transport layer rather than merely by the absence of a
-        # client method.
-        if category not in SRT_LIVE_MUTATION_CATEGORIES:
-            raise SrtMutationNotAllowedError(
-                f"SRT mutation category {category!r} is not live-enabled: only "
-                "reserve, cancel, payment and refund may be transmitted, and "
-                "each is in that set because a live run answered it (reserve "
-                "and cancel 2026-07-25, payment and refund 2026-07-26). Adding "
-                "a category requires verifying its wire format against the live "
-                "server first. Use dry_run=True for a preview "
-                "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
-            )
-        # Defense-in-depth at the transmit boundary: a payment carries the PAN
-        # in the clear, so the send gate itself refuses to transmit one unless
-        # the consent states, unambiguously, WHICH kind of card it is — exactly
-        # one of fake_card_only (a test card) or real_card_acknowledged (a real
-        # charge). See consent.require_card_kind_claim, which SrtClient.
-        # pay_with_card also calls before it reaches this method, so the claim
-        # is enforced at the public entry point AND again here at the layer that
-        # actually sends.
-        #
-        # This sits BEHIND the live-enablement block above deliberately: a
-        # category that may not be transmitted at all should say so first. Since
-        # 2026-07-26 "payment" clears gate 3, so this is now the gate that
-        # actually decides whether a PAN goes out — exactly what it was kept
-        # current for while the switch was shut.
-        if category == "payment":
-            require_card_kind_claim(consent)
-        # Canonical-origin safety, matching the read-only guard's requirement.
-        if (
-            self.config.base_url != APP_ORIGIN
-            or self.config.netfunnel_url != NETFUNNEL_ORIGIN
-        ):
-            raise SrtProtocolError(
-                "SRT request configuration does not use canonical origins"
-            )
-        assert_mutation_route("POST", path)
-        assert_mutation_route_category(path, category)
-        if not isinstance(data, Mapping):
-            raise SrtProtocolError("SRT mutation form data must be a mapping")
-        headers = {
-            "Accept": accept,
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Origin": self.config.base_url,
-            "X-Requested-With": "XMLHttpRequest",
-        }
-        if referer:
-            headers["Referer"] = referer
-        response = self._send_mutation_request(
-            path, category=category, data=data, headers=headers
-        )
-        return self._parse_json_object(response)
-
     def post_html_form(
         self,
         path: str,
@@ -477,20 +271,12 @@ class SrtHttpClient:
         *,
         referer: str | None = None,
     ) -> str:
-        """HTML 조각을 돌려주는 읽기 POST —— 역·날짜 같은 선택기 화면용입니다.
+        """HTML 조각을 돌려주는 읽기 POST —— 선택기 화면용.
 
-        ``Accept: text/html`` 로 보내고 본문을 그대로 돌려줍니다.
-
-        **JSON 이 돌아오면 그것은 언제나 오류입니다.** 이 경로들은 성공하면 HTML 을
-        줍니다. ``ErrorCode`` 가 ``""``/``"0"`` 이 아닌 JSON 은
-        :class:`~srt_mobile_api.errors.SrtAppError` 로, 그 밖의 JSON 은
-        :class:`~srt_mobile_api.errors.SrtProtocolError` 로 올립니다.
+        JSON 이 돌아오면 오류: ``ErrorCode`` 비정상이면 SrtAppError, 그 외 SrtProtocolError.
         """
         response = self._post_form_response(
-            path,
-            data,
-            accept="text/html, */*; q=0.01",
-            referer=referer,
+            path, data, accept="text/html, */*; q=0.01", referer=referer,
         )
         content_type = response.headers.get("content-type", "")
         if not self._is_json_content_type(content_type):
@@ -524,3 +310,98 @@ class SrtHttpClient:
             "Expected selector HTML but received JSON framing",
             raw=payload,
         )
+
+    # ── 쓰기 메서드 ──
+
+    def _send_mutation_request(
+        self,
+        path: str,
+        *,
+        category: MutationCategory,
+        data: Mapping[str, Any],
+        headers: Mapping[str, str],
+    ) -> httpx.Response:
+        """mutation 요청의 실제 전송. 세 중첩 검사로 방어:
+        1) category 가 live-enabled, 2) path 가 mutation route, 3) path/category 바인딩.
+        """
+        if category not in SRT_LIVE_MUTATION_CATEGORIES:
+            raise SrtMutationNotAllowedError(
+                f"SRT mutation category {category!r} is not live-enabled; only "
+                "reserve, cancel, payment and refund may be transmitted (see "
+                "safety.SRT_LIVE_MUTATION_CATEGORIES)"
+            )
+        assert_mutation_route("POST", path)
+        assert_mutation_route_category(path, category)
+        request = self._client.build_request("POST", path, data=dict(data), headers=headers)
+        # payment 가 아닌 요청에 카드 필드가 있으면 거부 (route/category 로는 못 막는 경우).
+        if category != "payment":
+            assert_no_card_secrets(request)
+        try:
+            response = self._client.send(request)
+        except httpx.HTTPError:
+            raise SrtTransportError(
+                f"SRT transport failed for POST {request.url.path}"
+            ) from None
+        _check_redirect_and_status(request, response)
+        return response
+
+    def post_mutation_form(
+        self,
+        path: str,
+        data: Mapping[str, Any],
+        *,
+        consent: MutationConsent,
+        category: MutationCategory,
+        referer: str | None = None,
+        accept: str = "application/json, text/javascript, */*; q=0.01",
+    ) -> dict[str, Any]:
+        """상태를 바꾸는 폼이 나가는 **유일한** 경로.
+
+        관문:
+        1. ``consent`` 에 해당 category 동의가 켜져 있어야 함.
+        2. ``consent.dry_run`` 이 ``False`` 여야 함.
+        3. ``category`` 가 SRT_LIVE_MUTATION_CATEGORIES 에 있어야 함.
+        4. ``payment`` 면 fake_card_only / real_card_acknowledged 중 정확히 하나.
+        5. 정규 출처 + path/category 바인딩.
+        """
+        require_mutation_consent(consent, category)
+        if consent.dry_run:
+            raise SrtMutationNotAllowedError(
+                "post_mutation_form requires consent.dry_run=False; a dry-run "
+                "preview must never be transmitted"
+            )
+        if category not in SRT_LIVE_MUTATION_CATEGORIES:
+            raise SrtMutationNotAllowedError(
+                f"SRT mutation category {category!r} is not live-enabled: only "
+                "reserve, cancel, payment and refund may be transmitted, and "
+                "each is in that set because a live run answered it (reserve "
+                "and cancel 2026-07-25, payment and refund 2026-07-26). Adding "
+                "a category requires verifying its wire format against the live "
+                "server first. Use dry_run=True for a preview "
+                "(see safety.SRT_LIVE_MUTATION_CATEGORIES)"
+            )
+        if category == "payment":
+            require_card_kind_claim(consent)
+        if (
+            self.config.base_url != APP_ORIGIN
+            or self.config.netfunnel_url != NETFUNNEL_ORIGIN
+        ):
+            raise SrtProtocolError(
+                "SRT request configuration does not use canonical origins"
+            )
+        assert_mutation_route("POST", path)
+        assert_mutation_route_category(path, category)
+        if not isinstance(data, Mapping):
+            raise SrtProtocolError("SRT mutation form data must be a mapping")
+        headers = {
+            "Accept": accept,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin": self.config.base_url,
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        if referer:
+            headers["Referer"] = referer
+        response = self._send_mutation_request(
+            path, category=category, data=data, headers=headers
+        )
+        return self._parse_json_object(response)
