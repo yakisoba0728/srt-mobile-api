@@ -1488,8 +1488,11 @@ ten-person minimum — which is why it is out of scope.
 ## Transfer (환승): the one shape SRT reserves as two journeys in one request
 
 `search_transfer_trains(query)` and `reserve_transfer(itinerary, ...)`.
-**Bundle-evidenced request, NOT live-verified — no transfer search or
-reservation has ever been sent from this library.** `reserve_transfer` POSTs the
+**Reserve and cancel are live-verified; transfer PAYMENT is NOT live-verified.**
+Two round trips have run — 2026-07-26 동대구→오송→광주송정 (trains 316 + 655) and
+2026-07-31 동대구→오송→목포 (304 + 653) — both answering `SUCC`/`IRR000018` and
+both released by `cancel(pnr, journey_count="2")`. No transfer ticket has been
+paid for. `reserve_transfer` POSTs the
 **same** endpoint as `reserve` (`arc/selectListArc05013_n.do`) under the **same**
 `reserve` consent category; no route and no category was added, and
 `SRT_LIVE_MUTATION_CATEGORIES` is untouched at
