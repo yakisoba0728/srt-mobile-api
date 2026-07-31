@@ -375,7 +375,7 @@ def _mark_zip_encrypted(path: Path) -> None:
 
 def test_source_release_metadata_is_exact() -> None:
     assert PROJECT["name"] == PROJECT_NAME
-    assert PROJECT["version"] == "1.0.0"
+    assert PROJECT["version"] == "1.1.0"
     assert PROJECT["requires-python"] == ">=3.11"
     assert PROJECT["keywords"] == EXPECTED_KEYWORDS
     assert set(PROJECT["classifiers"]) == EXPECTED_CLASSIFIERS
