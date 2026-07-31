@@ -126,13 +126,16 @@ search, which the server answers `strResult=FAIL` / `WRG000000` /
 ## Live reserve->cancel verification (operator-run)
 
 Two scripts exist for the live run that confirms the reserve and cancel wire
-shapes. **The round trip has been run twice — 2026-07-25 and 2026-07-26 — and
-passed both times**, returning the identical codes on each (reserve
-`SUCC`/`IRR000018` "결제하지 않으면 예약이 취소됩니다.", cancel `SUCC`/`IRG000000`
-"정상처리되었습니다", no trace left in the ticket list) — see the verification
-section above for scope and limits. Both scripts create or release real
-reservations on a real account, so re-running either one is a real state change,
-not a test.
+shapes. **The round trip has been run three times — 2026-07-25, 2026-07-26 and
+2026-07-31 — and passed every time**, returning the identical codes on each
+(reserve `SUCC`/`IRR000018` "결제하지 않으면 예약이 취소됩니다.", cancel
+`SUCC`/`IRG000000` "정상처리되었습니다", no trace left in the ticket list) — see
+the verification section above for scope and limits. The 2026-07-31 run covered
+수서→부산 (`0551`→`0020`), 2026-08-10, train 341 at 14:30, one adult, general
+seat, PNR released immediately; it exists because the package had just been
+refactored, and a wire shape that only offline tests still guard is a wire shape
+nobody has checked. Both scripts create or release real reservations on a real
+account, so re-running either one is a real state change, not a test.
 
 `scripts/verify_reserve_cancel_roundtrip.py` performs the round trip: login,
 search, pick one train that actually has a seat, reserve one adult, print the
