@@ -10,7 +10,7 @@
 [![문서](https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-yaki.kr-1f6feb?style=flat-square)](https://yaki.kr/srt-mobile-api/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
 [![타입](https://img.shields.io/badge/typed-py.typed-2f6f4e?style=flat-square)](src/srt_mobile_api/py.typed)
-[![오프라인 테스트](https://img.shields.io/badge/offline%20tests-1770-4c1?style=flat-square)](#문서)
+[![오프라인 테스트](https://img.shields.io/badge/offline%20tests-1773-4c1?style=flat-square)](#문서)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square)](LICENSE)
 
 [문서](https://yaki.kr/srt-mobile-api/) ·
@@ -41,7 +41,7 @@ python3 -m pip install "srt-mobile-api @ git+https://github.com/yakisoba0728/srt
 
 # 고쳐 볼 생각이면 클론한 뒤
 python3 -m pip install -e ".[test]"
-python3 -m pytest -q -m "not live"      # 1770 passed, 1 deselected
+python3 -m pytest -q -m "not live"      # 1773 passed, 1 deselected
 ```
 
 | 항목 | 값 |
