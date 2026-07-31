@@ -212,29 +212,12 @@ def is_login_form(html: str, *, base_url: str = APP_ORIGIN) -> bool:
     return parser.found
 
 
-# The message key the server puts in the "you are not signed in" alert. Captured
-# live on 2026-07-26: an authenticated read issued with no session cookie
-# (/atc/selectListAtc14017_n.do) answered HTTP 200 with the ORDINARY page shell
-# -- header, footer, every menu form -- and an inline script that pops the alert
-# and leaves:
-#
-#     //console.log("로그인페이지로 이동");
-#     srtAlertBoxDivShow("알림", Sr.msgs.login020, null, "mvLoginPage()");
-#     ...
-#     function mvLoginPage() { location.href = "/login/login.do?page=menu"; }
-#
-# There is no <form action=".../apb/selectListApb01080_n.do">, no hmpgPwdCphd
-# input, no redirect and no error status -- so is_login_form() above, which is
-# specifically a REAL login FORM detector, correctly says False, and every
-# expiry guard keyed on it silently passed the page through as content.
+# Live 2026-07-26: expired session returns HTTP 200 with normal page shell
+# and an inline script: srtAlertBoxDivShow("알림", Sr.msgs.login020, ...).
+# No login form, no redirect, no error status — so is_login_form() misses it.
 LOGIN_REDIRECT_MESSAGE_KEY = "Sr.msgs.login020"
-# mvLoginPage() is DEFINED on ordinary authenticated pages too (the ticket list
-# carries the definition whether or not it is called), so the discriminator is
-# the message key, not the function name. Across the 2026-07-26 capture the key
-# appears in exactly two places: the login page itself, and this expired
-# response. It is 0-hit in every authenticated read -- main, booking page, all
-# six selectors, the search hydration page, the seat page, the timetable, the
-# fare page and the AUTHENTICATED ticket list.
+# The discriminator is the message key, not mvLoginPage() (which is defined on
+# ordinary authenticated pages too).
 _LOGIN_REDIRECT_CALL = "srtAlertBoxDivShow"
 
 
@@ -719,18 +702,7 @@ def parse_discount_coupon_page(html: str) -> DiscountCouponList:
     )
 
 
-# The 할인 승차권 page's eight server-rendered 공공할인 approval flags.
-#
-# Anchored on `var` so only a DECLARATION matches. The comment here used to say
-# the anchor was what kept the page's own `dataNCheck != "Y"` comparisons out,
-# and that was wrong: measured against both fixtures, dropping `var` changes
-# nothing (8 matches either way), because a comparison has no `= "..."` and no
-# trailing `;` for the rest of the pattern to reach. What the anchor actually
-# excludes is a bare RE-assignment -- `data1Check = "N";` without `var` -- which
-# would otherwise overwrite the server's rendered verdict with a later
-# client-side one. No fixture contains such a line, so this is defensive rather
-# than exercised; removing `var` today turns no test red. Kept because the
-# declaration is the value the server asserted, and that is the one to read.
+# Anchored on `var` to match only DECLARATIONS (not client-side reassignments).
 _PUBLIC_DISCOUNT_FLAG_RE = re.compile(
     r'var\s+data([1-8])Check\s*=\s*"([^"]*)"\s*;'
 )
@@ -1161,17 +1133,9 @@ def _declares_status(row: dict[str, Any]) -> bool:
 def normalize_result_row(data: dict[str, Any]) -> dict[str, Any]:
     """두 봉투 중 실제로 결과 행이 든 쪽을 고릅니다.
 
-    이 백엔드는 결과를 ``outDataSets.dsOutput0`` 에도, ``resultMap`` 에도 담습니다.
-    앞쪽을 우선하되 **쓸 만한 행이 있을 때만**입니다. 비었거나 ``null`` 이면
-    ``resultMap`` 으로 물러섭니다.
-
-    **양쪽이 다 상태를 말하고 서로 어긋나면 실패 쪽을 믿습니다.** 관찰된 규칙이
-    아니라 안전한 쪽으로 닫는 선택입니다 —— 곁다리 ``dsOutput0`` 의 ``SUCC`` 가
-    ``resultMap`` 의 FAIL 을 덮으면, 일어나지 않은 환불이 일어난 것처럼 읽힙니다.
-    이 서버가 한 응답 안에 모순된 봉투를 싣는다는 것 자체는 확인돼 있습니다(예약
-    목록 응답은 ``SUCC`` 인 ``resultMap`` 옆에 FAIL 인 ``rsMap`` 을 함께 보냅니다).
-
-    상태 선언이 없는 행은 그대로 돌려주며, 봉투가 둘 다 없으면 빈 딕셔너리입니다.
+    ``outDataSets.dsOutput0`` 를 우선하되 비어 있으면 ``resultMap`` 으로 물러섭니다.
+    **양쪽이 다 상태를 말하고 서로 어긋나면 실패 쪽을 믿습니다** — 안전한 쪽으로
+    닫는 선택입니다. 상태 선언이 없는 행은 그대로 돌려줍니다.
     """
     out = data.get("outDataSets") or {}
     primary: dict[str, Any] = {}
@@ -1250,27 +1214,9 @@ def parse_mutual_verification_response(
     status = row.get("strResult")
     message = row.get("msgTxt", "")
     verification_code = row.get("mutMrkVrfCd")
-    # The app never reads msgCd for Ara10130 -- fn_searchMutMrkVrfCd only checks
-    # dsOutput0.strResult == "FAIL" then reads dsOutput0.mutMrkVrfCd (ara1001l.js:234-241).
-    # Treat msgCd as informational/optional; gate solely on strResult (+ a present
-    # mutMrkVrfCd). Keeping it optional is still right, and the live response is
-    # why the reasoning behind it is restated rather than the old one repeated.
-    #
-    # CORRECTION, live capture 2026-07-26. The old comment added that "the
-    # documented dsOutput0 schema is {strResult, msgTxt, mutMrkVrfCd} with no
-    # msgCd". The real row has SEVEN keys and msgCd is one of them:
-    #
-    #   {"msgCd":"IRZ000008", "wctNo":"<counter>", "strResult":"SUCC",
-    #    "msgTxt":"정상적으로 처리 되었습니다.", "mutMrkVrfCd":"<30 chars>",
-    #    "uuid":"APP...", "cgPsId":"korail"}
-    #
-    # So optional-and-usually-present, not optional-because-absent. wctNo, uuid
-    # and cgPsId are not modelled and stay reachable through
-    # MutualVerificationResult.raw.
-    #
-    # The same capture also showed this route answering SUCC with a fresh
-    # mutMrkVrfCd when called with NO session cookie at all: Ara10130 is public,
-    # unlike every other read behind SrtClient's session guard.
+    # App gates on strResult only, not msgCd (ara1001l.js:234-241).
+    # Live 2026-07-26: row has 7 keys including msgCd "IRZ000008", wctNo, uuid,
+    # cgPsId. Route answers SUCC without a session cookie — it's public.
     message_code = code if isinstance(code, str) else None
     if not isinstance(status, str):
         raise SrtProtocolError(
@@ -1406,52 +1352,25 @@ def parse_reservation_attempt_response(
         container_name="resultMap",
         raw=data,
     )
-    # POLARITY: only an explicit "FAIL" is a failure, exactly as the app.
-    # ara1001l.js:1562 is `if (resultMap.strResult == "FAIL")` -- it alerts and
-    # returns there, and ANY other value falls straight through to :1577/:1609,
-    # which read reservListMap[0].pnrNo and proceed with a created reservation.
-    # So a third status value means "the hold exists"; treating it as failure
-    # would raise SrtAppError for a reservation that IS on the server. Worse, it
-    # would also make _declares_a_declared_failure below refuse the PNR salvage,
-    # producing precisely the orphaned hold this subsystem exists to prevent.
-    # This is the same fix already applied to the search parser for the same
-    # reason (parse_train_search_response, `if status == "FAIL"`), and the app
-    # is consistent about it: ara1001l.js:206, :234 and :1855 are all == "FAIL".
-    #
-    # The DECLARED outcome is classified before any strict optional-field read.
-    # A server that says FAIL is authoritative about the outcome whether or not
-    # msgCd/msgTxt happen to be well formed, and callers distinguish "the
-    # reservation was rejected" from "the response was malformed" purely by
-    # exception type. Reading the optional fields strictly first meant a FAIL
-    # that was ALSO slightly malformed (no msgCd, an int msgCd, no msgTxt) came
-    # out as SrtProtocolError, which sent it into
-    # parse_reservation_hold_response's salvage branch and manufactured a hold
-    # for a reservation that was never created.
+    # Only == "FAIL" is failure (ara1001l.js:1562). A third value means a hold
+    # exists (:1577/:1609 read pnrNo). Failure is classified BEFORE strict field
+    # reads so a malformed FAIL doesn't become SrtProtocolError → false salvage.
     declared_code = result_row.get("msgCd")
     declared_message = result_row.get("msgTxt")
     code_hint = declared_code if isinstance(declared_code, str) else ""
     message_hint = declared_message if isinstance(declared_message, str) else ""
     declared_failure = status == "FAIL"
     if declared_failure and code_hint == "S111":
-        # Bundled JS treats FAIL + msgCd "S111" as a session-expiry / re-login
-        # signal (ara1001l.js:1562-1571; cross-validation-2026-07-21.md §2),
-        # not a generic business error.
+        # S111 = re-login signal (ara1001l.js:1562-1571).
         raise SrtSessionExpiredError(
             message_hint or "SRT reservation attempt session expired",
             raw=data,
         )
-    # WRP011002 (passenger-count error) stays an independent failure signal
-    # rather than being folded into the status test: it was observed live
-    # alongside strResult=FAIL (srt-app-api-library-spec-2026-07-09.md §runtime
-    # probes), so it never contradicts the polarity above, and keeping it means
-    # a server that reports the rejection only in msgCd is still not read as a
-    # hold.
+    # WRP011002 (passenger-count) fails regardless of strResult (live-observed).
     if code_hint == "WRP011002" or declared_failure:
         raise classify_app_error(code_hint, message_hint or status, raw=data)
 
-    # Only a DECLARED SUCCESS reaches the strict reads: there the fields are
-    # load-bearing, a malformed one means we cannot trust the parse, and the
-    # hold parser's salvage path is the designed answer.
+    # Success path: strict field reads (salvage handles malformed cases).
     code = _reservation_attempt_string(
         result_row,
         "msgCd",
@@ -1553,13 +1472,10 @@ def parse_reservation_attempt_response(
 
 
 def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
-    """엄격한 파싱이 거절한 응답에서 **취소에 필요한 신원만** 건져 냅니다.
+    """엄격한 파싱이 거절한 응답에서 취소에 필요한 PNR 만 건져 냅니다.
 
-    쓸 만한 ``reservListMap[0].pnrNo`` 가 없으면 ``None`` 입니다 —— 잃을 예약이
-    없다는 뜻입니다. 나머지 필드는 이미 문자열일 때만 가져옵니다. 부수적인 필드
-    하나가 망가졌다고 PNR 을 통째로 잃지 않기 위해서입니다.
-
-    PNR 은 앞뒤 공백을 떼어 담습니다. 취소 폼이 전송하는 모양과 같습니다.
+    ``reservListMap[0].pnrNo`` 가 없으면 ``None``. 나머지 필드는 문자열일 때만 가져
+    오고, 부수적 필드 하나가 망가졌다고 PNR 을 통째로 잃지 않습니다.
     """
     if not isinstance(data, dict):
         return None
@@ -1584,14 +1500,9 @@ def _minimal_hold_from_raw(data: Any) -> SrtReservationHold | None:
 def _declares_a_declared_failure(data: Any) -> bool:
     """응답 자신이 ``strResult == "FAIL"`` 이라고 선언했는지.
 
-    원본에서 직접 읽습니다. :func:`parse_reservation_attempt_response` 가 이미
-    하는 검사를 일부러 한 번 더 하는 것입니다 —— 선언된 실패가 구제 경로를 타고
-    "예약이 있다" 로 둔갑하는 일을 막는 두 번째 층입니다.
-
-    ``!= "SUCC"`` 가 아니라 ``== "FAIL"`` 인 것이 중요합니다. 제3의 상태값은 앱
-    기준으로 예약이 **생긴** 쪽이므로(``ara1001l.js:1562``, :1577/:1609), 그때
-    구제를 막으면 진짜 예약을 잃습니다. 상태가 아예 없는 것도 "선언된 실패" 가
-    아니라 어긋난 응답이고, 구제 경로는 바로 그것을 위한 것입니다.
+    구제 경로가 선언된 실패를 "예약이 있다" 로 둔갑시키지 않게 하는 두 번째 층.
+    ``== "FAIL"`` (not ``!= "SUCC"``) — 제3의 값은 예약이 생긴 쪽이므로
+    (ara1001l.js:1562, :1577/:1609).
     """
     if not isinstance(data, dict):
         return False
@@ -1600,22 +1511,10 @@ def _declares_a_declared_failure(data: Any) -> bool:
 
 
 def parse_reservation_hold_response(data: dict[str, Any]) -> SrtReservationHold:
-    """예약 응답에서 **취소할 수 있는 최소 신원**만 남깁니다.
+    """예약 응답에서 취소 가능한 최소 신원(PNR·여정키·좌석수)만 남깁니다.
 
-    성공 판정과 봉투 검사는 :func:`parse_reservation_attempt_response` 를 그대로
-    쓰고, 거기서 PNR·여정키·좌석수만 뽑아
-    :class:`~srt_mobile_api.models.SrtReservationHold` 로 만듭니다.
-
-    **파싱이 실패해도 PNR 은 버리지 않습니다.** 쓰지도 않는 필드 하나가 어긋나
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 가 나면 취소할 방법이 사라진
-    예약이 남기 때문입니다. 그래서 프로토콜 오류가 났고 응답에 PNR 이 남아
-    있으면 그 PNR 만으로 최소 예약을 만들어 돌려주고, PNR 조차 없으면 원래 예외를
-    그대로 올립니다.
-
-    **업무 실패와 세션 만료는 구제하지 않습니다.** 그 둘은 예약이 거절됐다는
-    뜻입니다. 없는 예약을 있다고 말하면 호출자가 복구를 그만두므로, 이 배제는 두
-    겹입니다: :func:`parse_reservation_attempt_response` 의 상태 분류와, 여기서
-    원본을 다시 보는 :func:`_declares_a_declared_failure`.
+    :func:`parse_reservation_attempt_response` 의 성공 판정을 거치고, 실패하면
+    PNR 이 있는 한 최소 홀드로 구제합니다. 업무 실패와 세션 만료는 구제하지 않습니다.
     """
     try:
         result = parse_reservation_attempt_response(data)
@@ -1642,18 +1541,9 @@ def _parse_result_envelope(
 ) -> tuple[str, str, str]:
     """공통 SUCC/FAIL 봉투를 ``(strResult, msgCd, msgTxt)`` 로 읽습니다.
 
-    취소·카드결제·환불 세 응답이 같은 봉투를 쓰므로 구현도 하나입니다.
-    :func:`normalize_result_row` 를 지나므로 두 가지 담는 방식
-    (``outDataSets.dsOutput0`` 우선, ``resultMap`` 차선)을 모두 받아들입니다 ——
-    결제만 유독 ``dsOutput0`` 에 답하지만, 어느 쪽이 오든 읽힙니다.
-
-    ``msgCd`` 와 ``msgTxt`` 는 없어도 되고 빈 문자열이 됩니다. 앱도 ``strResult``
-    만 보고 판정합니다. **성패 판정은 여기서 하지 않습니다** —— 알 수 없는 상태값을
-    성공으로 볼지는 취소와 결제가 서로 다르게 답해야 하므로 호출자 몫입니다.
-
-    ``strResult`` 가 비었거나 봉투 자체가 없으면
-    :class:`~srt_mobile_api.errors.SrtProtocolError`, ``ERROR_CODE`` 가 오류를
-    선언하면 :class:`~srt_mobile_api.errors.SrtAppError` 입니다.
+    취소·카드결제·환불이 쓰는 공통 로직. :func:`normalize_result_row` 로 두 담는
+    방식을 모두 받습니다. ``msgCd``/``msgTxt`` 는 없어도 됩니다. **성패 판정은
+    호출자 몫입니다.**
     """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -1797,37 +1687,15 @@ def parse_card_payment_response(data: dict[str, Any]) -> SrtPaymentResult:
 def parse_refund_ticket_info_response(
     data: dict[str, Any],
 ) -> SrtRefundTicketInfo:
-    """환불 1단계 —— 발권된 승차권의 신원을 읽습니다.
+    """환불 1단계 — 발권된 승차권의 신원을 읽습니다.
 
-    ``/atc/getListAtc14087.do`` 의 응답입니다. 여기서 얻은
-    :class:`~srt_mobile_api.models.SrtRefundTicketInfo` 가 2단계 환불 폼의 재료가
-    됩니다(:func:`~srt_mobile_api.payloads.refund_payload`).
-
-    **모양이 두 군데 특이합니다.**
-
-    * 알맹이가 ``outDataSets.dsOutput1[0]`` 에 있습니다 —— 다른 ``outDataSets``
-      읽기가 쓰는 ``dsOutput0`` 이 아닙니다.
-    * 성공 조건이 ``resultMap`` 이 아니라 ``ErrorCode``/``ErrorMsg`` 봉투이고,
-      평소 기준보다 엄격합니다: ``ErrorCode == "0"`` **이면서** ``ErrorMsg == ""``.
-
-    엄격한 조건을 느슨하게 고치지 않았습니다. 환불 폼이 안 만들어지는 것은 대가가
-    없지만, 잘못 읽은 신원으로 나아가면 엉뚱한 승차권이 환불됩니다. 어긋나면 서버의
-    코드와 메시지를 실은 :class:`~srt_mobile_api.errors.SrtAppError` 입니다. 없는
-    PNR 로 물으면 ``WRT300005`` / "조회자료가 없습니다." 가 옵니다.
-
-    **이 파서의 예외만 ``raw`` 가 가려져 있습니다.** 응답에 환불을 승인하는
-    반환비밀번호와 구매자 이름이 실려 오기 때문입니다. 구조는 남으므로 모양 문제를
-    보는 데는 지장이 없습니다.
+    ``/atc/getListAtc14087.do``. 알맹이는 ``outDataSets.dsOutput1[0]`` (다른
+    읽기의 ``dsOutput0`` 이 아님). 성공 조건은 ``ErrorCode == "0"`` && ``ErrorMsg
+    == ""``. **이 파서의 예외만 ``raw`` 가 가려져 있습니다** — 응답에
+    ``ogtkRetPwd`` 와 구매자명이 실려 오기 때문입니다.
     """
-    # THE ONE PARSER WHOSE ERRORS CARRY A REDACTED `raw`, and the exception is
-    # deliberate. Every other parser attaches the response verbatim so a caller
-    # can see exactly what arrived; that is right when the payload is train
-    # times and seat codes. This response carries `ogtkRetPwd` — the credential
-    # that authorises a refund — plus the purchaser's name, and an exception is
-    # the single most likely thing a caller logs. Exception MESSAGES were
-    # already safe (errors.py redacts them); `exc.raw` was not. The structure
-    # survives redaction, so a caller debugging a shape problem still sees the
-    # shape.
+    # Redacted raw: ogtkRetPwd (refund credential) + buyer name in the response.
+    # Structure survives redaction so shape issues are still diagnosable.
     safe_raw = redact_mapping(data) if isinstance(data, dict) else data
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -1960,32 +1828,11 @@ def _reservation_list_container(
     return rows
 
 
-#: Reservation-list columns whose value is a FIXED-WIDTH identifier rather than
-#: a quantity, and the width it must keep. JSON numbers arrive here with their
-#: leading zeros already gone -- a 06:30 departure comes back as 63000 -- and
-#: str() alone would hand a five-character time to a payment builder that
-#: requires six digits, refusing every departure before 10:00. An amount like
-#: rcvdAmt has no such problem, which is why this is a list and not a blanket
-#: rule.
-#:
-#: MEMBERSHIP CRITERION, stated because it was not and the omission kept
-#: pulling wrong candidates back in. A column belongs here only if BOTH hold:
-#:
-#:   1. its width is FIXED by the protocol -- a time is always 6, a station
-#:      code always 4 -- so a shorter string is provably damaged, and
-#:   2. something downstream requires that exact width. dptTm/arvTm/iseLmtTm
-#:      feed card_payment_payload's _required_digits(..., length=6), which is
-#:      an exact-length check and not a minimum.
-#:
-#: `trnNo` fails (1): SRT train numbers are variable-width, so padding one
-#: would CREATE the corruption this table exists to repair. `seatNum` fails
-#: (2): nothing requires a width from it. `rcvdAmt` fails both -- it is a
-#: quantity, and 7500 means 7500.
-#:
-#: A column added here without a case in
-#: tests/test_reservation_list.py::test_a_numeric_identifier_column_keeps_its_width
-#: fails the suite, deliberately: this repair shipped once with no test that
-#: forced it to run at all.
+#: Fixed-width identifier columns that need zero-padding when arriving as JSON
+#: numbers (e.g. 06:30 departure arrives as 63000, must be "063000" for the
+#: 6-digit card_payment_payload check). Membership: width is fixed by protocol
+#: AND downstream requires exact width. trnNo fails (variable width), seatNum/
+#: rcvdAmt fail (no width requirement downstream).
 _ZERO_PADDED_RESERVATION_COLUMNS = {
     "dptTm": 6,
     "arvTm": 6,
@@ -1999,20 +1846,12 @@ def _reservation_list_optional_string(
     row: dict[str, Any],
     key: str,
 ) -> str | None:
-    """행의 필드를 문자열로 읽습니다. 없으면 ``None`` 이고, 예외는 내지 않습니다.
+    """행의 필드를 문자열로 읽습니다. 없으면 ``None``.
 
-    이 응답의 여러 필드가 JSON **숫자**로 옵니다(``"rcvdAmt": 7500``,
-    ``"jrnyCnt": 1``). 그래서 숫자도 문자열로 바꿔 줍니다 —— 숫자를 버리면
-    금액이 실려 있는 예약을 두고 카드결제 폼이 "금액이 없다" 며 거절합니다.
-
-    :data:`_ZERO_PADDED_RESERVATION_COLUMNS` 에 있는 열은 앞의 0 을 되살립니다.
-    JSON 숫자는 선행 0 을 잃어버려서(06:30 출발이 ``63000`` 으로 옵니다) 그대로
-    문자열로 만들면 여섯 자리를 요구하는 결제 폼이 오전 열차를 전부 거절합니다.
-
-    :func:`_optional_row_string` 보다 일부러 너그럽습니다 —— 그쪽은 값이 문자열이
-    아니면 예외입니다. 이 목록에서는 이상한 필드 하나 때문에 예외를 내면 모든
-    예약의 PNR 을 함께 잃습니다. 진짜 못 쓰는 타입(컨테이너, 숫자인 척하는
-    ``bool``)은 버리며, 원본은 ``raw_train``/``raw_pay`` 로 여전히 볼 수 있습니다.
+    숫자도 문자열로 바꿉니다 — JSON 숫자로 오는 필드(``rcvdAmt``, ``jrnyCnt``)가
+    있기 때문입니다. :data:`_ZERO_PADDED_RESERVATION_COLUMNS` 에 있는 열은 앞의
+    0 을 복원합니다 (06:30 → ``63000`` → ``"063000"``). ``bool`` 과 컨테이너는
+    버립니다.
     """
     value = row.get(key)
     if isinstance(value, str):
@@ -2059,27 +1898,13 @@ def parse_reservation_list_response(
 ) -> SrtReservationListResult:
     """예약/발권 목록(``/atc/selectListAtc14016_n.do``) 응답을 읽습니다.
 
-    **여기서 "없음" 은 FAIL 이 아니라 빈 배열입니다.** 열차 검색과 달리 이 경로는
-    ``SUCC`` 와 함께 빈 목록을 보냅니다. 예약이 없다고 예외를 내면 잡아 둔 예약이
-    살아 있는지 확인하려는 순간에 복구 경로가 무용지물이 됩니다.
+    "없음" 은 FAIL 이 아니라 빈 배열입니다 — 서버는 ``SUCC`` + ``IRZ000005`` +
+    빈 ``trainListMap`` 으로 답합니다. ``rsMap`` 의 ``WRT300005`` 는 무시하고
+    ``resultMap`` 만 읽습니다.
 
-    **성공한 응답 안에 FAIL 이라고 말하는 봉투가 같이 옵니다.** 목록이 비었을 때
-    ``rsMap`` 에 ``WRT300005`` "조회자료가 없습니다." 가 실립니다. 그래서 이 파서는
-    ``resultMap`` 만 읽습니다. ``rsMap`` 은
-    :attr:`~srt_mobile_api.models.SrtReservationListResult.raw` 로 볼 수 있고,
-    ``resultMap`` 자신이 FAIL 이면 :func:`~srt_mobile_api.errors.classify_app_error`
-    로 올립니다.
-
-    행은 나란한 두 컨테이너를 인덱스로 짝지어 만듭니다 —— ``trainListMap`` 에
-    좌석·금액이, ``payListMap`` 에 열차·시각·결제기한이 있습니다. 짝이 없으면 빈
-    행으로 두고, ``trainListMap`` 은 끝까지 훑습니다.
-
-    ``pnrNo`` 없는 행은 버립니다(두 컨테이너 어느 쪽에 있어도 찾습니다). 다만 행이
-    있는데 **하나도** PNR 을 못 읽으면 빈 목록 대신
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 를 응답 전체와 함께 올립니다.
-
-    확인된 것은 예약이 없는 계정의 응답 하나뿐입니다. 채워진 목록의 행 필드명은
-    미검증이라 행을 만드는 규칙이 관대합니다.
+    행은 ``trainListMap`` 과 ``payListMap`` 을 인덱스로 짝지어 만듭니다.
+    ``pnrNo`` 없는 행은 버리되, 행이 있는데 하나도 읽히지 않으면
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
     """
     if not isinstance(data, dict) or not data:
         raise SrtProtocolError(
@@ -2107,15 +1932,8 @@ def parse_reservation_list_response(
             raw=data,
         )
     if status == "FAIL":
-        # Gated on == "FAIL" rather than != "SUCC", matching the app's own habit
-        # everywhere else in this file: an unrecognised third status is not a
-        # declared failure, and treating it as one would hide a list that exists.
-        #
-        # Reached only when resultMap ITSELF fails. The verified empty response
-        # does not come here at all: its resultMap says SUCC / IRZ000005, and the
-        # rsMap that says FAIL / WRT300005 on the very same response is never
-        # read. So classification cannot turn "you have no reservations" into an
-        # exception -- the empty account still returns an empty list.
+        # == "FAIL" only, same polarity as the rest of this file
+        # (ara1001l.js:206, :234, :1562). rsMap's FAIL is ignored above.
         raise classify_app_error(code or None, message or status, raw=data)
 
     train_rows = _reservation_list_container(data, "trainListMap")
@@ -2224,31 +2042,11 @@ def _normalize_search_wrapper(data: dict[str, Any]) -> tuple[str, str]:
     return code, message
 
 
-#: Search-row columns whose value is a FIXED-WIDTH identifier, by the SAME
-#: criterion as :data:`_ZERO_PADDED_RESERVATION_COLUMNS` -- the width is fixed
-#: by the protocol AND something downstream requires exactly that width.
-#:
-#: This is the SEARCH row rather than the reservation-list row, and it exists
-#: for the same reason one commit later: the reservation-list readers were
-#: taught to take a JSON number while these still refused one outright. That
-#: asymmetry is a trap rather than a defect on its own -- the search dies
-#: loudly instead of corrupting anything, so it is safe TODAY. It stops being
-#: safe the moment somebody relaxes the type check to match the sibling
-#: readers, because relaxing without padding is exactly how a 06:30 departure
-#: becomes the five-character "63000". Widening and padding therefore land
-#: together, in one place, so they cannot be separated later.
-#:
-#: Each entry's downstream requirement, all in payloads.py, all EXACT-length
-#: checks rather than minimums:
-#:   dptTm/arvTm -> _required_digits(..., length=6)
-#:   dptDt/arvDt/runDt -> length=8
-#:   dptRsStnCd/arvRsStnCd -> length=4, and station_name_by_code keys on the
-#:     padded form
-#:   seatAttCd -> length=3
-#:
-#: Deliberately ABSENT: trnNo, whose width varies and which payloads.py
-#: already zfill(5)s on the way out, so it repairs itself; and the run/consist
-#: orders, which no exact-length check reads.
+#: Search-row fixed-width columns — same criterion as reservation list.
+#: Downstream requirements (all in payloads.py, exact-length checks):
+#:   dptTm/arvTm → length=6, dptDt/arvDt/runDt → length=8,
+#:   dptRsStnCd/arvRsStnCd → length=4, seatAttCd → length=3.
+#: Absent: trnNo (variable width, payloads.py already zfill(5)s it).
 _ZERO_PADDED_SEARCH_ROW_COLUMNS = {
     "dptTm": 6,
     "arvTm": 6,
@@ -2263,18 +2061,8 @@ _ZERO_PADDED_SEARCH_ROW_COLUMNS = {
 
 
 def _row_scalar(value: Any, key: str) -> str | None:
-    """검색 행의 값 하나 —— 문자열, 또는 **폭이 등록된 키**에 한해 숫자도 받습니다.
-
-    ``None`` 을 넣으면 ``None`` 이 나옵니다. 받아들일 수 없는 값도 ``None`` 이라,
-    실패 메시지는 호출자가 자기 문맥으로 냅니다.
-
-    숫자를 받는 키는 :data:`_ZERO_PADDED_SEARCH_ROW_COLUMNS` 에 있는 것뿐이고, 받을
-    때는 그 폭으로 0 을 채웁니다 —— 폭 없이 숫자만 받으면 06:30 출발이 ``"63000"``
-    이 됩니다.
-
-    이 행의 선택 필드 대부분은 한국어 텍스트(``gnrmRsvPsbStr`` 는 ``"예약가능"``)라
-    다른 행 읽기보다 좁습니다. ``bool`` 은 제외합니다 —— 서버가 이 필드들에 참/거짓을
-    보내지 않습니다.
+    """검색 행의 값 하나. 문자열이면 그대로, 등록된 고정폭 키의 숫자면 0-패딩,
+    그 밖은 ``None``. ``bool`` 제외.
     """
     if value is None or isinstance(value, str):
         return value
@@ -2297,20 +2085,11 @@ def _required_row_string(
 
 
 def _row_field_is_absent(row: dict[str, Any], key: str) -> bool:
-    """선택 필드가 없는지. **JSON ``null`` 도 없는 것으로 셉니다.**
+    """선택 필드가 없는지. JSON ``null`` 도 없는 것으로 셉니다.
 
-    이 서버는 실제로 ``null`` 을 보냅니다 —— 검색 행의 ``fresRsvPsbCdNm``, 메타
-    컨테이너의 ``fllwPgExt2`` 가 그렇게 옵니다. 이 API 에서 ``null`` 은 "이 행에는
-    그 값이 없다" 의 평범한 표기입니다. 앱도 구분하지 못합니다.
-
-    구분이 중요한 이유는 선택 필드 읽기가 문자열이 아닌 값에
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 를 내고, 그 예외가 필드
-    하나가 아니라 **검색 전체**를 무너뜨리기 때문입니다. ``null`` 을 없음으로
-    보지 않으면, 예약대기가 없는 열차 하나 때문에 그 노선의 검색이 통째로
-    열차를 못 돌려주게 됩니다.
-
-    ``null`` 이 아닌 이상한 타입은 여전히 예외입니다. 문자열 자리의 숫자나 객체는
-    진짜 낯선 응답입니다.
+    서버가 실제로 ``null`` 을 보냅니다 (``fresRsvPsbCdNm``, ``fllwPgExt2``). ``null``
+    을 없음으로 보지 않으면 선택 필드의 타입 검사가 검색 전체를 무너뜨립니다.
+    ``null`` 이 아닌 이상한 타입은 여전히 예외입니다.
     """
     return key not in row or row[key] is None
 
@@ -2461,24 +2240,13 @@ def parse_train_search_response(
 ) -> TrainSearchResult:
     """열차 검색 응답을 :class:`~srt_mobile_api.models.TrainSearchResult` 로 만듭니다.
 
-    메타데이터는 ``outDataSets.dsOutput0``, 열차 행은 ``dsOutput1`` 에 있습니다.
-    개인·단체·환승 검색이 모두 이 모양입니다.
+    메타데이터는 ``outDataSets.dsOutput0``, 열차 행은 ``dsOutput1``. 개인·단체·
+    환승이 모두 이 모양입니다. 결과 없음은 빈 목록이 아니라 ``strResult=FAIL`` +
+    ``WRG000000`` → :class:`~srt_mobile_api.errors.SrtNoResultsError`.
+    ``NET000001`` → :class:`~srt_mobile_api.errors.SrtNetFunnelKeyError`.
 
-    **결과 없음은 빈 목록이 아니라 실패입니다.** 이 서버는 결과가 없으면
-    ``strResult=FAIL`` 과 ``WRG000000`` "조회 결과가 없습니다." 로 답하고,
-    :func:`~srt_mobile_api.errors.classify_app_error` 가 그것을
-    :class:`~srt_mobile_api.errors.SrtNoResultsError` 로 만듭니다. 직통이 없지만
-    환승은 가능한 구간이면 그 하위 클래스가 옵니다.
-
-    ``msgCd`` 가 ``NET000001`` 이면
-    :class:`~srt_mobile_api.errors.SrtNetFunnelKeyError` 입니다 —— 대기열 키가 상해
-    다시 받아야 한다는 뜻이고, 클라이언트가 한 번만 재시도합니다.
-
-    성패는 ``strResult`` 로만 가릅니다. ``msgCd`` 는 참고값입니다(앱도
-    ``ara1001l.js:206`` 에서 같은 판정을 합니다).
-
-    ``request_context`` 는 요청에 실었던 역 코드·이름입니다. 응답 행에 역 이름이
-    없을 때, 코드가 일치하는 경우에 한해 채워 넣는 데만 씁니다.
+    성패는 ``strResult`` 로만 가릅니다(ara1001l.js:206). ``request_context`` 는
+    응답 행에 역 이름이 없을 때 코드 일치 시 채워 넣는 용도입니다.
     """
     if not isinstance(data, dict):
         raise SrtProtocolError(
@@ -2498,17 +2266,8 @@ def parse_train_search_response(
     status = _required_row_string(result, "strResult", context="search metadata")
     message = _optional_message(result)
     if code == "NET000001":
-        # SrtNetFunnelKeyError subclasses SrtNetFunnelError and keeps code
-        # "NET000001", so _search_with_retry's `exc.code != "NET000001"` gate --
-        # the single bounded retry, and the only self-directed retry in this
-        # library -- behaves exactly as it did.
         raise SrtNetFunnelKeyError(code, message or "NetFunnel key required", raw=data)
-    # The app classifies a search purely on dsOutput0.strResult (== "FAIL" fails, anything
-    # else succeeds) and never inspects msgCd (ara1001l.js:206); srtgo agrees (srt.py:391-401).
-    # msgCd is kept as informational metadata (and drives the NET000001 NetFunnel-retry signal
-    # above) but is NOT required to equal "IRG000000". The FAIL below is where an empty window
-    # lands: live 2026-07-26 the server answered WRG000000 "조회 결과가 없습니다." there, which
-    # classify_app_error refines to SrtNoResultsError.
+    # == "FAIL" only (ara1001l.js:206); empty window lands here as WRG000000.
     if status == "FAIL":
         raise classify_app_error(code or None, message or status or None, raw=data)
     metadata = _parse_search_metadata(result)
@@ -2529,16 +2288,8 @@ def _parse_search_train_rows(
 ) -> list[TrainSummary]:
     """검색 행 목록을 :class:`~srt_mobile_api.models.TrainSummary` 로 바꿉니다.
 
-    같은 행 모양을 돌려주는 두 검색이 갈라지지 않도록 떼어 둔 함수입니다. 일반
-    검색은 이 행들을 ``dsOutput1`` 에, 할인 승차권 검색은 ``trainListMap`` 에
-    담아 보내지만 열은 같습니다 —— 할인 승차권 결과 페이지도 일반 페이지와 같은
-    변수 이름으로 그것을 받습니다.
-
-    **컨테이너를 여는 일은 호출자 몫입니다.** 두 경로가 실제로 다른 지점이 거기입니다.
-
-    ``trnNo`` 는 필수이고, 없으면
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다. 나머지 열은 없으면
-    ``None`` 입니다.
+    일반 검색(``dsOutput1``)과 할인 검색(``trainListMap``)이 같은 열을 쓰므로 한
+    함수로 처리합니다. ``trnNo`` 필수, 나머지는 ``None`` 허용.
     """
     trains: list[TrainSummary] = []
     for row in rows:
@@ -2656,12 +2407,7 @@ def _parse_search_train_rows(
                     "trnCpsCd4",
                     "trnCpsCd5",
                 ),
-                # The 할인 승차권 search's two extra columns, read here rather
-                # than in a second row parser precisely so this list stays one
-                # list. Absent from every ordinary row -- 0-hit in the v2.0.41
-                # bundle and in every live dsOutput1 captured here -- so they
-                # resolve to None there, which is what _optional_row_string
-                # already does for a key the row does not carry.
+                # 할인 승차권 검색 전용 (0-hit in bundle, absent from ordinary rows).
                 general_class_discount_rate=_optional_row_string(
                     row,
                     "gnrmBkclDcntRt",
@@ -2824,20 +2570,10 @@ def _itinerary_key(train: TrainSummary) -> str:
 def _order_transfer_legs(
     rows: tuple[TrainSummary, ...],
 ) -> tuple[TransferItinerary | None, str]:
-    """두 구간의 선행/후행을 **역으로** 가립니다. 응답의 순서는 근거로 쓰지 않습니다.
-
-    성공하면 ``(여정, "")``, 거절하면 ``(None, 이유)`` 입니다.
-
-    행이 순서대로 온 응답을 본 적은 있지만 그것은 한 응답의 관찰일 뿐 보장이
-    아닙니다. 틀렸을 때의 대가가 큽니다 —— 두 여정 슬롯이 거꾸로 들어간 예약은
-    멀쩡히 만들어지고 진짜 승차권이 됩니다. 역은 그것을 분명히 말합니다: 선행은
-    상대가 출발하는 역에 **도착하는** 쪽입니다.
+    """두 구간의 선행/후행을 역 연결로 가립니다. ``(여정, "")`` 또는 ``(None, 이유)``.
 
     두 방향을 모두 :class:`~srt_mobile_api.models.TransferItinerary` 에 넣어 보고
-    그쪽이 판정하게 합니다. 연결·시간 순서·서로 다른 열차 같은 "이것이 여정인가"
-    의 판단이 한 곳에만 있게 하기 위해서입니다. 성립하는 방향이 정확히 하나여야
-    합니다. 0이면 여정이 아니고, 2면 진짜로 모호한 것이므로(시간 순서가 어느
-    쪽으로도 맞는 왕복 고리) 없는 규칙을 만들어 고르지 않고 거절합니다.
+    성립하는 방향이 정확히 하나여야 합니다. 0 이면 여정이 아니고, 2 면 모호합니다.
     """
     first, second = rows
     candidates: list[TransferItinerary] = []
@@ -2863,28 +2599,13 @@ def _order_transfer_legs(
 def pair_transfer_itineraries(result: TrainSearchResult) -> TransferSearchResult:
     """환승 검색의 낱개 행을 ``trnOrdrNo`` 기준으로 두 구간짜리 여정으로 묶습니다.
 
-    **이것은 추론 계층입니다.** 서버는 한 구간짜리 행을 평평하게 보내고 묶는 일은
-    이쪽이 합니다. 그래서 원본 검색 결과는
-    :attr:`~srt_mobile_api.models.TransferSearchResult.search` 에 손대지 않고 그대로
-    남습니다.
+    서버는 한 구간짜리 행을 평평하게 보내므로 묶는 일은 이쪽이 합니다. 원본은
+    :attr:`~srt_mobile_api.models.TransferSearchResult.search` 에 그대로 남습니다.
 
-    규칙은 하나입니다: ``trnOrdrNo`` 가 같은 행은 한 여정이고, 여정은 정확히
-    :data:`TRANSFER_LEGS_PER_ITINERARY` 행입니다. 묶음은 첫 행이 나온 순서대로
-    나가므로 서버의 정렬이 유지됩니다.
-
-    **맞지 않는 묶음은 버리지도, 억지로 맞추지도 않고 따로 둡니다.** 행 수가 다른
-    경우, 두 구간이 이어지지 않거나 시간이 거꾸로인 경우, 선행이 모호한 경우 —— 셋
-    다 이유와 함께 :attr:`~srt_mobile_api.models.TransferSearchResult.unpaired` 로
-    갑니다. 잘못 묶어 주면 두 슬롯이 한 여정이 아닌 예약이 만들어지는데 서버는
-    그것을 받아 줍니다.
-
-    **단, 하나도 묶이지 않으면 예외입니다.** 행이 왔는데 여정이 하나도 안 나왔다면
-    이 규칙이 그 응답에 맞지 않는다는 뜻이고, 그때 빈 목록을 돌려주는 것이야말로
-    조용한 실패입니다. 응답 전체를 ``raw`` 에 실은
-    :class:`~srt_mobile_api.errors.SrtProtocolError` 가 오릅니다.
-
-    행이 아예 없는 응답은 그 경우가 아니라 여정 없음으로 조용히 끝납니다. 실제로
-    결과가 없는 검색은 그 전에 ``strResult=FAIL`` 로 걸립니다.
+    규칙: ``trnOrdrNo`` 가 같은 행이 한 여정이고, 정확히
+    :data:`TRANSFER_LEGS_PER_ITINERARY` 행이어야 합니다. 맞지 않는 묶음은
+    ``unpaired`` 에 이유와 함께 남깁니다. 행이 왔는데 하나도 묶이지 않으면
+    :class:`~srt_mobile_api.errors.SrtProtocolError` 입니다.
     """
     groups: dict[str, list[TrainSummary]] = {}
     for row in result.trains:

@@ -1,39 +1,21 @@
 """할인 코드표 —— 서버가 보낸 할인 코드를 사람이 읽는 이름으로 바꿉니다.
 
-성격이 다른 두 표가 있습니다.
+**할인종류코드(``dcntKndCd``)** — ``commCode.js`` 의 ``dcntKndCd`` 구간을 그대로
+옮긴 173개. 예매 페이지가 전송하는 필드이지만 이 라이브러리는 그 값을 **설정하지
+않습니다** — 돌아온 값을 해독하는 용도이고 :func:`discount_kind_name` 로 읽습니다.
 
-**할인종류코드(``dcntKndCd``)** 는 앱 코드표(``js/commCode.js``)의 ``dcntKndCd``
-구간을 그대로 옮긴 173개입니다. 예매 페이지가 ``<input type="hidden"
-name="dcntKndCd">`` 로 실제 전송하는 필드이지만, 이 라이브러리는 그 값을
-**설정하지 않습니다** —— 할인을 요청하는 기능이 없습니다. 표는 돌아온 값을 해독하는
-용도이고, :func:`discount_kind_name` 로 읽습니다.
+참고:
+* ``133``/``191`` 은 원본에 그룹 키가 없지만 ``132``/``192`` 사이에 위치해 포함.
+* 이름은 불안정: ``205``/``206`` 이 서버에서 개명됨. 이 표는 v2.0.41 번들 표기 유지.
 
-알아 둘 두 가지입니다.
+**공공할인코드(``PBL_DISC_CD``)** — 앱 번들에 없음. 서버가 인증 세션에 렌더링하는
+승차인원선택 팝업(``POST /common/ARA/ARA0901P/view.do``)의 ``setPassenger``
+주석이 출처::
 
-* ``133`` 기본 특별할인(기준)과 ``191`` 정차역 할인은 원본에 그룹 키
-  (``code_group_cd``)가 아예 없습니다(``commCode.js:487-495``). 다만 ``132`` 와
-  ``192`` 사이, ``dcntKndCd`` 구간 한가운데에 있어 원본의 누락으로 보고
-  포함했습니다.
-* 코드는 안정적이지만 이름은 그렇지 않습니다. 서버가 현재 배포하는 같은 파일에서는
-  ``205``/``206`` 이 "장애의정도가심한장애인 할인"/"장애의정도가심하지않은장애인
-  할인" 으로 바뀌어 있습니다(``psgTpCd`` 2·3 의 개명과 같고, 숫자는 그대로입니다).
-  이 표는 근거로 커밋된 v2.0.41 번들의 표기를 유지하므로, 사람에게 보여 줄
-  이름이라면 더 새 표기가 올 수 있음을 감안해야 합니다.
+    //다자녀 //01, //임산부 //02, //기초생활 //03,
+    //청소년 //04, //모범 납세자 //05, //3세대 동행할인 //06
 
-**공공할인코드(``PBL_DISC_CD``)** 는 앱 번들에 없습니다 —— 코드도 값도 v2.0.41
-어디에도 나오지 않습니다. 출처는 서버가 인증된 세션에 렌더링해 주는 승차인원선택
-팝업(``POST /common/ARA/ARA0901P/view.do``)이고, 그 페이지의 ``setPassenger``
-함수가 대응표를 주석으로 적어 둡니다::
-
-    //다자녀             //01
-    //임산부             //02
-    //기초생활           //03
-    //청소년             //04
-    //모범 납세자        //05
-    //3세대 동행할인      //06
-
-할인 승차권 페이지(``/common/ARA/ARA0301V/view.do``)에는 ``07``·``08`` 분기도
-있지만 이름을 밝히는 페이지가 없어 지어내지 않고 비워 두었습니다.
+할인 승차권 페이지에 ``07``·``08`` 분기도 있지만 이름 없어 비워 둠.
 :func:`public_discount_name` 로 읽습니다.
 """
 
@@ -234,28 +216,12 @@ PUBLIC_DISCOUNT_NAMES_BY_CODE: dict[str, str] = {
 # recorded as data rather than restated in prose.
 PUBLIC_DISCOUNT_MINIMUM_PARTY_SIZE: dict[str, int] = {"01": 3, "06": 3}
 
-# 청소년, the one 공공할인 that changes the PASSENGER vocabulary rather than the
-# price. Under it the 승차인원선택 popup reveals a seventh counter (``passenger7``,
-# hidden on every other path) and the 할인 승차권 page sends it as
-# ``psgTpCd6``/``psgInfoPerPrnb6``.
+# 청소년 공공할인: the one code that changes the passenger vocabulary. Under it
+# the popup reveals passenger7 and the 할인 승차권 page sends psgTpCd6/psgInfoPerPrnb6.
+# psgTpCd 6 is NOT in commCode.js — exists only on the 공공할인 path.
 #
-# ``psgTpCd`` 6 is NOT in ``commCode.js`` -- not in the v2.0.41 bundle and not in
-# the live copy fetched 2026-07-26, both of which stop at 5. It exists only in
-# what the server renders on this one path.
-#
-# CORRECTION (2026-07-26): this comment used to end "and NOT wired into
-# PassengerCounts, because emitting it would change the reservation payload for a
-# discount no account in this project can hold". It IS wired in now --
-# ``PassengerCounts.youth`` -- and the reason the old caveat gave was answered
-# rather than ignored: with ``youth=0`` every builder emits exactly what it
-# emitted before, so nothing changed for a caller who does not ask for it.
-#
-# A second correction belongs here too, and it cuts the other way: the 할인
-# 승차권 SEARCH does not transmit ``psgTpCd6`` either. Its ajax form
-# (``#seatSearchForm``) carries ``psgNum``, the head count, and no passenger type
-# mix at all -- only the PAGE form carries the six slots. So the one route that
-# can express a 청소년 in a search is the navigation, not the query. See
-# :func:`~srt_mobile_api.payloads.public_discount_search_payload`.
+# The 할인 승차권 SEARCH does not transmit psgTpCd6: its ajax form carries psgNum
+# (head count) only. See public_discount_search_payload.
 PUBLIC_DISCOUNT_YOUTH_CODE = "04"
 YOUTH_PASSENGER_TYPE_CODE = "6"
 

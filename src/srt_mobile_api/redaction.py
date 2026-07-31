@@ -1,23 +1,9 @@
-"""로그·미리보기에 나가는 값에서 비밀을 가립니다.
+"""로그·미리보기에서 비밀을 마스킹.
 
-:class:`~srt_mobile_api.consent.MutationPreview` 가 dry_run 요청 본문을 보여 줄
-때 이 모듈을 지나고, 예외 메시지도 :func:`redact_url` 을 지납니다. 예외의
-``raw`` 는 대체로 원문 그대로이고, 반환비밀번호가 실려 오는 환불 1단계만
-예외입니다(:func:`~srt_mobile_api.parsers.parse_refund_ticket_info_response`).
-
-가리는 방법은 두 가지입니다. :data:`SENSITIVE_KEYS` 에 든 **키 이름**으로 값을
-통째로 ``[REDACTED]`` 로 바꾸고(대소문자 무시), 남은 문자열은 카드번호
-(13~19자리)·``JSESSIONID``·URL 사용자정보 패턴을 찾아 마스킹합니다.
-
-대상은 자격증명(비밀번호, 카드정보, 승차권 반환비밀번호, 할인쿠폰 번호·
-비밀번호), 신원(로그인 아이디, 이름), 세션·예약 식별자(``JSESSIONID``, PNR,
-NetFunnel 키)입니다. :func:`redact_value` 가 dataclass 를 필드명 기준으로
-가리므로 서버 필드명과 dataclass 속성명을 **양쪽 다** 넣어 두었습니다.
-
-발권 식별자(``saleDt``/``saleWctNo``/``saleSqno`` 와 그 ``ogtk*`` 응답 철자)는
-일부러 가리지 않습니다. 반환비밀번호가 가려진 이상 그것들만으로는 아무것도
-승인되지 않고, 이것마저 가리면 환불 미리보기를 읽을 수 없습니다. 취소 폼에서
-``pnrNo`` 는 가리고 ``jrnyCnt`` 는 가리지 않는 것과 같은 기준입니다.
+두 방법: :data:`SENSITIVE_KEYS` 로 키 기반 ``[REDACTED]``, 나머지는 패턴
+(카드번호 13-19자리, JSESSIONID, URL userinfo).
+대상: 자격증명, 카드, 반환비밀번호, 쿠폰, 세션 ID, PNR, NetFunnel 키.
+발권 식별자(saleDt/saleWctNo/saleSqno)는 의도적 비마스킹 — 반환비밀번호 없이 무해.
 """
 
 from __future__ import annotations
@@ -32,6 +18,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 SENSITIVE_KEYS = frozenset(
     key.casefold()
     for key in {
+        # 로그인·세션
         "srchDvNm",
         "hmpgPwdCphd",
         "password",
@@ -40,6 +27,7 @@ SENSITIVE_KEYS = frozenset(
         "JSESSIONID",
         "netfunnelKey",
         "key",
+        # PNR·예약 식별
         "pnrNo",
         "pnr_number",
         "JRNYLIST_KEY",
@@ -56,11 +44,7 @@ SENSITIVE_KEYS = frozenset(
         "commandMap",
         "mutMrkVrfCd",
         "verification_code",
-        # Payment card fields (srtgo pay_with_card, srt.py:1184-1216). A mutation
-        # preview must never expose card data even though no callable method sends
-        # them here. CARD_RE only masks bare PANs; these mask the keyed
-        # PAN/password/expiry/auth/installment/input-way variants CARD_RE misses,
-        # plus the membership card number carried on the same form.
+        # 결제 카드 (srtgo pay_with_card, srt.py:1184-1216)
         "stlCrCrdNo1",
         "vanPwd1",
         "crdVlidTrm1",
@@ -69,69 +53,29 @@ SENSITIVE_KEYS = frozenset(
         "ismtMnthNum1",
         "crdInpWayCd1",
         "mbCrdNo",
-        # Reservation identity carried on the reserve/cancel/payment forms
-        # (srtgo srt.py:1006/1138/1199). pnrNo is already covered above; these are
-        # the settlement-target and change-number identifiers.
+        # 예약·취소·결제 폼 식별자 (srtgo srt.py:1006/1138/1199)
         "rsvChgTno",
-        # The PNR under its SNAKE_CASE spellings. `pnrNo` and `pnr_number` were
-        # already covered; `pnr_no` was not, and it is BOTH the refund step-2
-        # wire field (srtgo srt.py:1242) and the attribute name on
-        # SrtReservationHold / SrtReservationSummary / SrtRefundTicketInfo. Its
-        # absence meant redact_value(hold) -- which redacts a dataclass by FIELD
-        # NAME -- passed a real PNR through untouched.
+        # PNR snake_case 철자 (wire field + dataclass attr)
         "pnr_no",
-        # Refund secrets. The ticket RETURN PASSWORD is the credential that
-        # authorises a refund, under all three spellings we have seen it in:
-        # `ogtkRetPwd` (srtgo's step-1 response key), `tkRetPwd` (srtgo's step-2
-        # request field) and `retPwd` (our own app's offline ticket cache,
-        # webview/b.java:645-646). All three stay masked. The live API's own
-        # spelling is settled -- the 2026-07-26 refund sent `tkRetPwd` and the
-        # server took it -- but a value this sensitive is masked under every
-        # name it has ever appeared under, not only the winning one, so a cached
-        # or step-1 copy cannot leak through a name this set forgot.
+        # 환불 비밀번호 — 3가지 철자 모두 마스킹
         "ogtkRetPwd",
         "tkRetPwd",
         "retPwd",
-        # Personal names on the refund forms: `buyPsNm` (purchaser, step-1
-        # response and our app's cache) and `psgNm` (passenger, srtgo's step-2
-        # request). Plain PII.
+        # 인명
         "buyPsNm",
         "psgNm",
-        # SrtPaymentCard's own attribute names, so redact_value on the dataclass
-        # masks by field name rather than relying on CARD_RE to recognise the
-        # digits. CARD_RE only matches a 13-19 digit run, which a deliberately
-        # short synthetic test PAN, a 2-digit PIN, a YYMM expiry and a YYMMDD
-        # birthdate all slip past.
+        # SrtPaymentCard dataclass 속성
         "card_number",
         "card_password",
         "card_expire_date",
         "card_validation_number",
-        # 할인쿠폰: the wire fields the coupon page's own couponReg() serialises
-        # (`dscp_no`, `dscp_pwd` -- the live page, 2026-07-26) and the two
-        # attribute names SrtCouponRegistrationRequest carries them under.
-        #
-        # A COUPON NUMBER IS A BEARER CREDENTIAL. Whoever holds the pair can
-        # redeem the coupon against their own account, so it is masked on the
-        # same footing as a PAN, not on the footing of a PNR. Neither half was
-        # covered before: `dscp_pwd` is not the literal key `password`, and
-        # `dscp_no` is at most TEN digits (maxlength="10" on the page's own
-        # input), which CARD_RE -- a 13-to-19 digit run -- never matches. So a
-        # dry-run MutationPreview of a registration would have printed a usable
-        # coupon in full. This project has shipped that exact class of gap
-        # before; these four entries are what stop it here.
+        # 할인쿠폰 (bearer credential — 번호+비밀번호로 타인 계정에 등록 가능)
         "dscp_no",
         "dscp_pwd",
         "coupon_number",
         "coupon_password",
     }
 )
-# DELIBERATELY NOT REDACTED, and this is a decision rather than an oversight:
-# the refund's `saleDt` / `saleWctNo` / `saleSqno` (and their `ogtk*` response
-# spellings) are ticket-ISSUANCE identifiers, not credentials. With the return
-# password above masked they authorise nothing, and leaving them legible is what
-# makes a refund MutationPreview readable at all -- every other field on that
-# form is either the PNR, the password or a name. The same line is already drawn
-# on the cancel form, where `pnrNo` is masked and `jrnyCnt` is not.
 CARD_RE = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
 SESSION_RE = re.compile(r"(?i)(JSESSIONID=)[^&;\s]+")
 URL_USERINFO_RE = re.compile(r"(?i)\b(https?://)[^/@\s]+@")

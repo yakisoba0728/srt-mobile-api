@@ -95,42 +95,16 @@ class SrtSession:
 class PassengerCounts:
     """승차인원 — 앱의 일곱 가지 승객 유형. 그중 다섯만 자기 슬롯으로 나갑니다.
 
-    승차인원선택 팝업은 ``passenger1``..``passenger7`` 일곱 개를 세지만, 전송되는
-    ``psgTpCd`` 슬롯은 다섯입니다.
-
     **유아는 자기 ``psgTpCd`` 가 없어 어린이 슬롯에 접힙니다.** 예약 페이지의
-    ``goRevFn`` 이 한 자리에서 두 가지를 합니다::
+    ``goRevFn`` 이 어린이 슬롯에 유아를 더하고 ``infantCnt`` 로 따로 선언합니다.
+    접힌 수는 :attr:`child_slot_count` 이고, :attr:`child` 와 구분됩니다.
 
-        if(i==5){
-            passenger = passenger + passenger6;   // 어린이 슬롯 인원에 더하고
-            $('#infantCnt').val(passenger6);      // 따로 한 번 더 선언
-        }
+    **청소년은 슬롯이 있습니다 — ``psgTpCd`` 6.** ``commCode.js`` 어느 사본에도
+    없지만 공공할인 ``04`` 경로의 승차인원선택 popup에서 나타납니다.
 
-    그래서 유아는 어린이의 ``psgInfoPerPrnb`` 안에 세어지는 동시에 ``infantCnt`` 로도
-    선언됩니다. ``totPrnb += passenger`` 가 접은 뒤에 실행되므로 :attr:`total` 에도
-    유아가 포함됩니다. 접힌 수는 :attr:`child_slot_count` 이고, :attr:`child` 와
-    이름을 갈라 두었습니다.
-
-    **청소년은 슬롯이 있습니다 — ``psgTpCd`` 6.** 팝업의 ``passenger7`` 이고, 공공할인
-    ``04`` 가 승인된 계정이 아니면 ``display:none`` 이며, 할인 승차권 페이지가
-    ``psgTpCd6``/``psgInfoPerPrnb6`` 로 실어 보냅니다. 이 코드는 ``commCode.js`` 어느
-    사본에도 없습니다 — v2.0.41 에도, 라이브 ``/js/commCode.js`` 에도 — 이 경로에만
-    있습니다.
-
-    ``youth`` 가 0 이 아니어도 자격을 확인하지 않고 받아들입니다. 폼을 만드는 쪽은
-    그것을 알 방법이 없기 때문이며, 자격 확인은
-    :meth:`~srt_mobile_api.client.SrtClient.get_public_discounts` 로 합니다.
-
-    **확인된 범위.** 검색 요청은 응답의 ``commandMap`` 에 그대로 되돌아오므로 두 규칙을
-    읽기만으로 확인할 수 있었습니다 — ``adult=1, child=2, infant=3`` 은
-    ``psgTpCd2="5"``, ``psgInfoPerPrnb2="5"``, ``infantCnt="3"`` 으로 돌아왔고(접기와
-    별도 선언 둘 다), ``adult=1, youth=1`` 은 ``psgTpCd2="6"`` 으로 돌아왔습니다. 즉
-    서버가 두 값을 거절하지 않는다는 것까지입니다.
-
-    **확인되지 않은 것: 청소년으로 실제 예약이 되는지, 운임이 다른지.** 그것을 보려면
-    공공할인 ``04`` 를 가진 계정과 실제 예약이 필요합니다. 운임 조회는 대신이 되지
-    않습니다 — 그쪽은 보낸 인원에 대한 견적이 아니라 유형별 가격표를 어느 인원
-    구성에든 똑같이 돌려줍니다.
+    Live-verified 2026-07-26: child=2,infant=3 → psgTpCd2="5",
+    psgInfoPerPrnb2="5", infantCnt="3"; youth=1 → psgTpCd2="6".
+    **청소년으로 실제 예약이 되는지는 미확인.**
     """
 
     adult: int = 1
@@ -354,39 +328,21 @@ class TrainSummary:
 class TransferItinerary:
     """환승 여정 — 선행 열차와 후행 열차를 한 쌍으로 묶은 것.
 
-    **SRT 의 환승은 여정 슬롯 두 개를 실은 예약 하나입니다.** 왕복과 정반대입니다. 앱의
-    환승 토글이 ``jrnyTpCd="14"``(환승편도)와 ``jrnyCnt="2"``(여정건수 2)를 한 번에
-    씁니다(``ara0101v.js:302-303``, 전송은 ``:310-311``). v2.0.41 번들 전체에서
-    ``jrnyCnt="2"`` 를 쓰는 자리는 여기 하나뿐이라 그 값은 곧 환승을 뜻합니다. 왕복은
-    ``"1"`` 그대로에 예약이 둘입니다(:meth:`~srt_mobile_api.client.SrtClient.reserve`).
+    SRT 의 환승은 여정 슬롯 두 개를 실은 예약 하나입니다. 앱의 환승 토글이
+    ``jrnyTpCd="14"``(환승편도)와 ``jrnyCnt="2"``를 한 번에 씁니다
+    (``ara0101v.js:302-303``). ``jrnyCnt="2"`` 를 쓰는 자리는 번들 전체에서 여기
+    하나뿐이라 그 값은 곧 환승을 뜻합니다. 왕복은 ``"1"`` 그대로에 예약이 둘입니다.
 
-    두 열차는 여정 슬롯 1 과 2 로 들어갑니다 — ``"jrnySqno1" : "001"
-    //여정일련번호1(001:선행, 002:후행)``(``ara0101v.js:97``, ``ara1001l.js:1611``).
     :attr:`first_leg` 가 선행(``jrnySqno1="001"``), :attr:`second_leg` 가
-    후행(``jrnySqno2="002"``)입니다.
+    후행(``jrnySqno2="002"``)입니다(``ara0101v.js:97``).
 
-    **이 타입이 있는 이유: 환승 검색의 한 행은 여정의 절반입니다.**
-    :class:`TrainSummary` 만 봐서는 예약 가능한 직통 열차와 구별되지 않습니다. 그래서
-    환승 검색 결과의 행을 :meth:`~srt_mobile_api.client.SrtClient.reserve` 에 그대로
-    넘기면 두 구간 중 한 구간만 예약되고, PNR 은 멀쩡해 보이는 채로 승객은 중간역에
-    남습니다. :meth:`~srt_mobile_api.client.SrtClient.reserve_transfer` 는 이 타입만
-    받으므로, 절반짜리 여정은 아예 표현할 수 없습니다.
+    이 타입이 검색 결과의 절반짜리 행을 예약 폼에 넘기는 실수를 방지합니다.
+    :meth:`~srt_mobile_api.client.SrtClient.reserve_transfer` 는 이 타입만 받습니다.
 
-    생성 시점에 이음새를 검사합니다.
+    생성 시점 검사: 두 열차 모두 :class:`TrainSummary`, 선행 도착역 == 후행 출발역,
+    후행이 선행 도착보다 먼저 출발 불가, 같은 열차 불가.
 
-    * 두 열차 모두 정확히 :class:`TrainSummary` 여야 합니다,
-    * 선행이 **도착하는 역**이 후행이 **출발하는 역**이어야 합니다 — 그 역이 환승역이고,
-      여기를 틀리는 것이 이 클래스가 막으려는 실패입니다,
-    * 양쪽에 날짜·시각이 다 있을 때는 후행이 선행 도착보다 먼저 떠날 수 없습니다. 앱도
-      왕복 두 번째 구간에 똑같은 비교를 합니다(``ara1001l.js:1258-1272``),
-    * 두 구간이 같은 열차일 수 없습니다.
-
-    전체 여정의 기점과 종점은 :attr:`first_leg` 의 출발과 :attr:`second_leg` 의
-    도착이고, 사이의 환승역은 :attr:`transfer_station_code` 입니다.
-
-    **환승 예약은 한 번도 보낸 적이 없습니다.** 위 ``jrnyTpCd``/``jrnyCnt``/``jrnySqno``
-    값은 전부 v2.0.41 번들에서 읽은 것입니다. 환승 **검색** 응답의 모양은 확인됐습니다
-    — :class:`TransferSearchResult` 참고.
+    **환승 예약은 한 번도 보낸 적이 없습니다.** 환승 검색 응답의 모양만 확인됐습니다.
     """
 
     first_leg: TrainSummary
