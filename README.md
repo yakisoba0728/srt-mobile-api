@@ -1,15 +1,26 @@
 > [!IMPORTANT]
-> ### 프로젝트 통합 안내
-> **`srt-mobile-api`는 [`korail-mobile-api`](https://github.com/yakisoba0728/korail-mobile-api)로 통합되었습니다.**
+> ## 🚄 `srt-mobile-api` — Final Stop
 >
-> 2026년 9월 1일부로 한국철도공사(KORAIL)와 SR의 기관 통합이 완료되었고,
-> KTX와 SRT는 **KTX로 통합 운행**을 시작했습니다. 승차권 검색·예매 역시 통합 앱
-> **코레일+**에서 제공됩니다. 이러한 실제 서비스 운영 체계의 변화에 맞춰
-> SRT 전용 클라이언트를 별도 프로젝트로 계속 확장하지 않고, 후속 개발과 유지보수를
-> `korail-mobile-api`로 통합합니다.
+> ### **이 프로젝트의 운행은 여기서 종료됩니다.**
 >
-> 이 저장소는 기존 SRT 모바일 앱 API 구현과 검증 기록을 보존하기 위해 남겨 둡니다.
-> 신규 사용과 개발은 [`korail-mobile-api`](https://github.com/yakisoba0728/korail-mobile-api)를 권장합니다.
+> **`srt-mobile-api`의 개발과 유지보수는
+> [`korail-mobile-api`](https://github.com/yakisoba0728/korail-mobile-api)로 완전히 통합되었습니다.**
+>
+> 2026년 9월 1일, 한국철도공사(KORAIL)와 SR의 기관 통합이 완료되었고,
+> KTX와 SRT는 **KTX로 통합 운행**을 시작했습니다. 승차권 검색과 예매 역시 통합 앱
+> **코레일+**를 중심으로 하나의 체계로 합쳐졌습니다.
+>
+> 서비스가 하나의 철도로 합쳐진 지금, 코드 역시 두 갈래로 남아 있을 이유가 없습니다.
+> SRT 전용 클라이언트로 이어져 온 이 프로젝트의 역할은 여기서 마무리하며,
+> 앞으로의 기능 개발, 유지보수, 역공학 및 검증 작업은 모두
+> **[`korail-mobile-api`](https://github.com/yakisoba0728/korail-mobile-api)** 에서 계속됩니다.
+>
+> 이 저장소는 삭제하지 않습니다.
+> SRT 모바일 앱의 동작을 추적하고, 실제 서버와 대조하며, 수많은 요청 형식과 안전장치를
+> 검증해 온 기록을 **통합 이전 시대의 기술 아카이브**로 그대로 보존합니다.
+>
+> **한 노선의 운행은 끝났지만, 개발은 다음 노선에서 계속됩니다.**  
+> **The journey continues at [`korail-mobile-api`](https://github.com/yakisoba0728/korail-mobile-api).**
 >
 > 공식 자료: [국토교통부 — KTX·SRT 통합 운행 (2026-08-31)](https://www.korea.kr/news/policyNewsView.do?newsId=148970889)
 
